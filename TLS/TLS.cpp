@@ -28,7 +28,16 @@
 #include <sstream>
 #include <random>
 #include <algorithm>
+
+#ifdef __cpp_impl_coroutine
+#include <coroutine>
+#else
 #include <experimental/coroutine>
+namespace std {
+    namespace experimental {}
+    using namespace experimental;
+}
+#endif
 
 namespace fbw {
 
@@ -70,6 +79,9 @@ std::optional<tls_record> try_extract_record(ustring& input);
         goto END; // cannot co_await inside a catch block
     } catch(const stream_error& e) {
         throw e;
+    } catch(std::out_of_range& e) {
+        // from options
+        std::cout << e.what() << std::endl;
     } catch(const std::exception& e) {
         throw stream_error(e.what());
     }
@@ -249,6 +261,7 @@ bool check_SNI(ustring servernames) {
                     if(name_len != subdomain_name.size()) {
                         return false;
                     }
+                    auto domain_name = get_option("domain_name");
                     if(std::equal(subdomain_name.begin(), subdomain_name.end(), domain_name.begin())) {
                         return true;
                     }
@@ -358,7 +371,7 @@ task<void> TLS::server_certificate(std::optional<milliseconds> timeout) {
     assert(m_expected_record == HandshakeStage::server_certificate);
     tls_record certificate_record(ContentType::Handshake);
     certificate_record.m_contents = {static_cast<uint8_t>(HandshakeType::certificate), 0,0,0, 0,0,0};
-    const auto certs = der_cert_from_file(certificate_file);
+    const auto certs = der_cert_from_file(get_option("certificate_file"));
     for (const auto& cert : certs) {
         ustring cert_header;
         cert_header.append({0, 0, 0});
@@ -407,7 +420,7 @@ task<void> TLS::server_key_exchange(std::optional<milliseconds> timeout) {
     std::array<uint8_t, 32> signature_digest;
     std::copy(signature_digest_vec.cbegin(), signature_digest_vec.cend(), signature_digest.begin());
     
-    auto certificate_private = privkey_from_file(key_file);
+    auto certificate_private = privkey_from_file(get_option("key_file"));
 
     std::array<uint8_t, 32> csrn;
     randomgen.randgen( csrn.begin(), csrn.size());

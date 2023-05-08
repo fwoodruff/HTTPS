@@ -115,14 +115,15 @@ std::vector<std::coroutine_handle<>> reactor::wait() {
     }
     to_poll.pop_back(); // exclude the pipe
     
-    std::scoped_lock lk { m_mut };
-    for(auto& fdd : to_poll) {
-        assert(!(fdd.revents & (POLLNVAL | POLLERR)));
-        if(fdd.revents & (POLLIN | POLLOUT | POLLHUP)) {
+    {
+        std::scoped_lock lk { m_mut };
+        for(auto& fdd : to_poll) {
             auto handle = park_map[fdd.fd].handle;
-            out.push_back(handle);
-            auto res = park_map.erase(fdd.fd);
-            assert(res == 1);
+            if(fdd.revents & (POLLIN | POLLOUT | POLLERR | POLLHUP)) {
+                out.push_back(handle);
+                auto res = park_map.erase(fdd.fd);
+                assert(res == 1);
+            }
         }
     }
     return out;

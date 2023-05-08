@@ -21,12 +21,12 @@
 #include <coroutine>
 #else
 #include <experimental/coroutine>
-#endif
-
 namespace std {
     namespace experimental {}
     using namespace experimental;
 }
+#endif
+
 using namespace std::chrono;
 enum class IO_direction { Read, Write };
 

@@ -61,9 +61,6 @@ bool readable::await_ready() const noexcept {
     return false;
 }
 
-
-// implement a small (but non-zero probability) that this fails
-// so that no client can maintain the connection indefinitely
 bool readable::await_suspend(std::coroutine_handle<> awaitingCoroutine) {
     m_succ = receive_or_park(awaitingCoroutine);
     return m_succ == -1;
@@ -85,10 +82,12 @@ bool writeable::await_ready() const noexcept {
 }
 
 
+
 bool writeable::await_suspend(std::coroutine_handle<> awaitingCoroutine) {
+    // process a few records before moving onto the next client
     static std::atomic<size_t> fail_sometimes = 0;
     size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
-    local_value %= 0x1ff;
+    local_value %= 3;
     if(local_value == 0) {
         m_succ = -1;
         auto& exec = executor_singleton();

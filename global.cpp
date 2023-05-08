@@ -9,35 +9,41 @@
 
 #include <string>
 #include <fstream>
+#include <unordered_map>
+#include <mutex>
+#include <algorithm>
 
 #if __linux__
-const std::string fbw::key_file = "/etc/letsencrypt/live/freddiewoodruff.co.uk/privkey.pem";
-const std::string fbw::certificate_file = "/etc/letsencrypt/live/freddiewoodruff.co.uk/fullchain.pem";
-const std::string fbw::domain_name = "freddiewoodruff.co.uk";
-
-const std::string fbw::MIME_folder = "MIME";
-const std::string fbw::rootdir ("webpages");
-const ssize_t fbw::MAX_SOCKETS = 5000;
-const ssize_t fbw::BUFFER_SIZE = 2000;
-
-
+    const std::string fbw::config_file = "config.txt";
 #else
-
-
-const std::string fbw::key_file = "/Users/freddiewoodruff/Documents/Programming/HTTPS20/ecc_key.pem";
-const std::string fbw::certificate_file = "/Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/TLS/ecc_cert.pem";
-const std::string fbw::MIME_folder = "/Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/HTTP/MIME";
-const std::string fbw::rootdir = "/Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/webpages";
-const std::string fbw::domain_name = "localhost";
-
-
-
-const ssize_t fbw::MAX_SOCKETS = 5000;
-const ssize_t fbw::BUFFER_SIZE = 2000;
+    const std::string fbw::config_file = "/Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/config.txt";
 #endif
 
 
+void strip(std::string& str) {
+    str.erase(std::remove_if(str.begin(), str.end(), isspace), str.end());
+}
 
+std::unordered_map<std::string, std::string> get_options(std::string filename) {
+    auto file = std::ifstream(filename);
+    if(! file.good()) {
+        throw std::runtime_error("no config file");
+    }
+    std::unordered_map<std::string, std::string> options;
+    std::pair<std::string, std::string> option;
+    while(  std::getline(file, option.first, ':') && std::getline(file, option.second)) {
+        strip(option.first);
+        strip(option.second);
+        options.insert(option);
+    }
+    return options;
+}
 
+std::once_flag onceFlag;
 
+std::string fbw::get_option(std::string option) {
+    static std::unordered_map<std::string, std::string> options = get_options(fbw::config_file);
+    std::call_once ( onceFlag, [&]{ options = get_options(fbw::config_file); } );
+    return options.at(option);
+}
 

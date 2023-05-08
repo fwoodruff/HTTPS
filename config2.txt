@@ -1,0 +1,7 @@
+redirect_port : 80
+server_port : 443
+domain_name : freddiewoodruff.co.uk
+certificate_file : /etc/letsencrypt/live/freddiewoodruff.co.uk/fullchain.pem
+key_file : /etc/letsencrypt/live/freddiewoodruff.co.uk/privkey.pem
+webpage_folder : webpages
+MIME_folder : MIME

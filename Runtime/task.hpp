@@ -22,13 +22,14 @@
 #include <coroutine>
 #else
 #include <experimental/coroutine>
-#endif
-
-
 namespace std {
     namespace experimental {}
     using namespace experimental;
 }
+#endif
+
+
+
 
 
 // peared down from Lewis Baker's cppcoro
@@ -177,7 +178,9 @@ public:
         std::suspend_never final_suspend() noexcept {
             return {};
         }
-        void unhandled_exception() { assert(false); }
+        void unhandled_exception() {
+            assert(false);
+        }
     };
     std::coroutine_handle<promise_type> m_coroutine;
 };

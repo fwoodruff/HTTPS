@@ -18,16 +18,9 @@
 namespace fbw {
 
 using ustring = std::basic_string<uint8_t>;
-extern const std::string key_file;
-extern const std::string certificate_file;
-extern const std::string MIME_folder;
-extern const std::string rootdir;
-extern const std::string domain_name;
+extern const std::string config_file;
 
-extern const ssize_t MAX_SOCKETS;
-extern const ssize_t BUFFER_SIZE;
-
-
+std::string get_option(std::string option);
 
 template<typename T>
 [[nodiscard]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {

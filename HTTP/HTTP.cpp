@@ -21,11 +21,15 @@
 
 namespace fbw {
 
+// an HTTP handler streams data in, gets a file from a folder and streams it back
+// or it might redirect unencrypted HTTP traffic
 HTTP::HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect) :
     m_folder(folder), m_redirect(redirect), m_stream(std::move(stream)) {
         assert(m_stream != nullptr);
 }
 
+// to extract a full HTTP request we first need to extract the request's header but
+// the full header may not be in the buffer yet
 std::optional<ustring> HTTP::try_extract_header(ustring& m_buffer) {
     ustring header;
     if(m_buffer.size() > max_bytes_queued) {
@@ -38,6 +42,8 @@ std::optional<ustring> HTTP::try_extract_header(ustring& m_buffer) {
     return header;
 }
 
+// we may receive a partial HTTP request, in which case we want to leave it in a buffer
+// extracting an HTTP request is required to generate a response
 std::optional<ustring> try_extract_body(ustring& m_buffer, ustring header) {
     const auto [delimiter, size] = body_size(header);
     assert(delimiter == "" or size == 0);
@@ -57,6 +63,8 @@ std::optional<ustring> try_extract_body(ustring& m_buffer, ustring header) {
     return { body };
 }
 
+// suspends until enough data has been read in over the network to generate an HTTP header
+// leaves the input buffer intact and ready to consume further HTTP requests
 task<std::optional<http_frame>> HTTP::try_read_http_request() {
     std::optional<ustring> header;
     for(;;) {
@@ -88,8 +96,8 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
     
 }
 
-// Unencrypted raw bytes get buffered in here.
-// Responses are concatenated for each fully framed HTTP request, otherwise an empty value is returned.
+// a per TCP client handler that frames HTTP requests and responds to them, until either the connection is
+// shut down or times out
 task<void> HTTP::client() {
     std::optional<http_error> http_err {};
     try {
@@ -99,8 +107,8 @@ task<void> HTTP::client() {
                 co_return; // connection closed by peer
             }
             if(m_redirect) {
-                assert(false);
-                co_await redirect(std::move(*http_request), domain_name);
+                auto domain = get_option("domain_name");
+                co_await redirect(std::move(*http_request), domain);
             } else {
                 co_await respond(m_folder, std::move(*http_request));
             }
@@ -109,12 +117,16 @@ task<void> HTTP::client() {
         http_err = e;
         goto ERROR; // cannot co_await inside catch block
     } catch(const stream_error& e) {
-        goto ERROR;
+        co_return;
+    } catch(const std::out_of_range& e) {
+        std::cerr << "options not configured" << std::endl;
     }
     catch(...) {
         assert(false);
     }
 ERROR:
+    // if the request handler fails with an HTTP error, the error response is reported to the client here
+    // for example this is where 404 Not Found messages are constructed and sent to clients
     if(http_err) {
         auto error_message = std::string(http_err->what());
         std::ostringstream oss;
@@ -126,20 +138,14 @@ ERROR:
         << "\r\n"
         << error_message;
         ustring output = to_unsigned(oss.str());
-        co_await m_stream->write(output);
-        co_return;
-    } else {
-        // we close connection after a time out
-        // courteous to send client a notification that we're doing this
         try {
-            // co_await m_stream->close_notify();
-        } catch(const stream_error& e) {
-            std::cout << "caught in close notify" << std::endl;
+            co_await m_stream->write(output);
+        } catch (const stream_error& e) {
+            
         }
+        co_return;
     }
 }
-
-
 
 // Creates an HTTP response from an HTTP request
 task<void> HTTP::respond(const std::string& rootdirectory, http_frame http_request) {
@@ -156,18 +162,18 @@ task<void> HTTP::respond(const std::string& rootdirectory, http_frame http_reque
         co_await file_to_http(rootdirectory, filename);
     } else if(method[0] == "POST") {
         handle_POST(std::move( http_request));
-        co_await file_to_http(rootdirectory, filename);
+        //co_await file_to_http(rootdirectory, filename);
     } else {
         throw http_error("405 Method Not Allowed\r\n");
     }
     
 }
 
-/*
- Here we are just sanitising the inputs and putting them in a file
- */
+// POST requests need some server-dependent program logic
+// Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
 void HTTP::handle_POST(http_frame frame) {
     auto body = to_signed(std::move(frame.body));
+    auto rootdir = get_option("webpage_folder");
     std::ofstream fout(rootdir+"/final.html", std::ios_base::app);
     body = std::regex_replace(body, std::regex("username="), "username: ");
     body = std::regex_replace(body, std::regex("&password="), ", password: ");
@@ -179,21 +185,20 @@ void HTTP::handle_POST(http_frame frame) {
     fout << body << std::endl;
 }
 
+// HTTP responses include the body size in the header but, to fascilitate streaming, this is not
+// directly known ahead of time so we need to extract the file size from the file itself
+// rather than just call .size() on a container of data sent
 std::ifstream::pos_type filesize(std::string filename) {
     std::ifstream in(filename, std::ifstream::ate | std::ifstream::binary);
     return in.tellg();
 }
 
-/*
- GET requests need to return files with a header
- */
+// our HTTP client has sent an HTTP request. We send over the response header, then stream the file
+// contents back to them. If sending would block, we park this coroutine for polling
 task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) {
     constexpr time_t day = 24*60*60;
-    
     filename = fix_filename(std::move(filename));
     std::string MIME = Mime_from_file(filename);
-    
-    
     
     std::ifstream t(rootdir+filename, std::ifstream::ate | std::ifstream::binary);
     if(t.fail()) {
@@ -201,16 +206,10 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
     }
     size_t file_size = t.tellg();
     t.seekg(0);
-    
-    
-    
-
-
     auto time = std::time(0);
     if(static_cast<std::time_t>(-1) == time) {
         throw http_error("500 Internal Server Error");
     }
-
     std::ostringstream oss;
     oss << "HTTP/1.1 200 OK\r\n"
         << "Date: " << timestring(time) << "\r\n"
@@ -222,11 +221,10 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
         << "Server: " << make_server_name() << "\r\n"
         // << "ETag: " << make_eTag(file_contents) << "\r\n"
     << "\r\n";
-    
-    
+
     co_await m_stream->write(to_unsigned(oss.str()));
     
-    ustring buffer (20000, '\0');
+    ustring buffer (15900, '\0');
     while(!t.eof()) {
         t.read((char*)buffer.data(), buffer.size());
         ssize_t s = t.gcount();
@@ -235,6 +233,7 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
     }
 }
 
+// if a client connects over http:// we need to form a response redirecting them to https://
 task<void> HTTP::redirect(http_frame request, std::string domain) {
     const auto method = get_method(request.header);
     if(method.size() < 3) {
@@ -255,7 +254,6 @@ task<void> HTTP::redirect(http_frame request, std::string domain) {
         << body;
     
     std::string var = oss.str();
-    assert(false);
     co_await m_stream->write(to_unsigned(var));
 }
 

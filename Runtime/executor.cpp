@@ -14,16 +14,14 @@
 #include <cassert>
 #include <utility>
 
-constexpr size_t NUM_THREADS = 7;
+constexpr size_t NUM_THREADS = 1;
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
 
 
 void executor::thread_function() {
-    //int i = 0;
     for(;;) {
-        //std::cout << "reloop: " << i++ << std::endl;
         std::coroutine_handle<> task;
         bool this_thread_does_poll_wait = false;
         {

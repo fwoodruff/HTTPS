@@ -126,9 +126,8 @@ std::pair<std::string, size_t> body_size(const ustring& header) {
     assert(false);
 }
 
-/*
- Used for finding the Content-Type, Content-Length etc.
- */
+// Treats the HTTP header as a key-value map.
+// Used for finding the Content-Type, Content-Length etc.
 std::string get_argument(const ustring& header, std::string field) {
     assert(header.find(to_unsigned("\r\n\r\n")) != std::string::npos);
     const static std::string endline = "\r\n";
@@ -148,16 +147,14 @@ std::string get_argument(const ustring& header, std::string field) {
     return to_signed(header.substr(st, q-st));
 }
 
-/*
- Tokenises a request header e.g. {'GET', '/<filename>', "HTTP/1.1" }
- */
+
+// Tokenises a request header e.g. {'GET', '/<filename>', "HTTP/1.1" }
 std::vector<std::string> get_method(const ustring& header) {
     const std::string delimiter = " ";
     const std::string endline = "\r\n";
     std::vector<std::string> out;
     const auto line_length = header.find(to_unsigned(endline));
     assert(line_length != std::string::npos);
-
     size_t distance = 0;
     while(true) {
         const auto n = header.find(to_unsigned(delimiter), distance);
@@ -179,6 +176,10 @@ std::vector<std::string> get_method(const ustring& header) {
     return out;
 }
 
+// freddiewoodruff.co.uk implicitly refers to freddiewoodruff.co.uk/index
+// which implicitly refers to either freddiewoodruff.co.uk/index.html or
+// freddiewoodruff.co.uk/index.php and we need the full form to look up
+// the file name locally at the server
 std::string fix_filename(std::string filename) {
     if( filename == "/") {
         return "/index.html";

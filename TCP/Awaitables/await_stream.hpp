@@ -18,16 +18,16 @@
 #include <coroutine>
 #else
 #include <experimental/coroutine>
+namespace std {
+    namespace experimental {}
+    using namespace experimental;
+}
 #endif
 
 #include "stream_base.hpp"
 
 using namespace std::chrono;
 
-namespace std {
-    namespace experimental {}
-    using namespace experimental;
-}
 
 namespace fbw {
 

@@ -25,6 +25,7 @@
 #include <chrono>
 #include <iostream>
 #include <utility>
+#include <cassert>
 
 namespace fbw {
 
@@ -37,6 +38,7 @@ tcplistener::~tcplistener() {
         assert(err == 0);
     }
 }
+
 
 int get_listener_socket(std::string service) {
     int sockfd = -1;
@@ -79,7 +81,6 @@ int get_listener_socket(std::string service) {
 
 tcplistener tcplistener::bind(std::string service) {
     int sockfd = get_listener_socket(service);
-    
     return tcplistener(sockfd);
 }
 

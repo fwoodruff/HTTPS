@@ -24,9 +24,9 @@ namespace fbw {
 decltype(MIMES("")) MIMEmap;
 bool init = false;
 
-/*
- Populates a map from the MIME type file
- */
+// responding to an HTTP request, we need to specify the Content-Type of the file we are sending in the HTTP response
+// this depends on the extension of the file that was requested.
+// we therefore need to map from extension to Content-Type.
 std::unordered_map<std::string,std::string> MIME_csv_to_map(std::string filename) {
     std::ifstream file (filename);
     std::string line;
@@ -46,9 +46,8 @@ std::unordered_map<std::string,std::string> MIME_csv_to_map(std::string filename
     return MIME_types;
 }
 
-/*
- Aggregates a number of MIME files into one map
- */
+// I found some files together containing all the possible content types and the associated
+// extensions, so this function builds that extension -> content-type map
 std::unordered_map<std::string,std::string> MIMES(std::string directory_name) {
     std::unordered_map<std::string,std::string> map;
     DIR *dir;
@@ -72,13 +71,9 @@ std::unordered_map<std::string,std::string> MIMES(std::string directory_name) {
     }
 }
 
-
-
-/*
- The file in the get request header, e.g. /footballscores.html has an extension .html
- Note this is not always trivial to extract for all MIME types since some extensions have multiple '.' tokens
- and the body of the request could also have one
- */
+// The file in the get request header, e.g. /footballscores.html has an extension .html
+// This is not always trivial to extract for all MIME types since some extensions have multiple '.' tokens
+// and the body of the request could also have one
 std::string extension_from_path(std::string path) {
     std::string filename;
     const std::string slash = "/";
@@ -106,14 +101,12 @@ std::string extension_from_path(std::string path) {
     return str;
 }
 
-/*
- Returns the MIME type for a given extension
- e.g. html -> text/html
- This is used in the header of the GET response
- */
+// Returns the MIME type for a given extension
+// e.g. html -> text/html
+// This is used in the header of the GET response
 std::string get_MIME(std::string extension) {
     static std::once_flag init_MIME {};
-    std::call_once(init_MIME, [&](){MIMEmap = MIMES(MIME_folder);});
+    std::call_once(init_MIME, [&](){MIMEmap = MIMES(get_option("MIME_folder"));});
     try {
         return MIMEmap.at(extension);
     } catch(const std::logic_error& e) {
@@ -123,6 +116,8 @@ std::string get_MIME(std::string extension) {
     }
 }
 
+// that icon at the top of the browser tab has media type image/webp
+// otherwise we look up the MIME type
 std::string Mime_from_file(const std::string &filename) {
     if(filename == "/favicon.ico") {
         return "image/webp";
@@ -130,6 +125,5 @@ std::string Mime_from_file(const std::string &filename) {
         return get_MIME(extension_from_path(filename));
     }
 }
-
 
 } // namespace fbw

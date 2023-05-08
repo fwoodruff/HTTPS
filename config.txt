@@ -1,0 +1,7 @@
+redirect_port : 80
+server_port : 443
+domain_name : localhost
+certificate_file : /Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/TLS/ecc_cert.pem
+key_file : /Users/freddiewoodruff/Documents/Programming/HTTPS20/ecc_key.pem
+webpage_folder : /Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/webpages
+MIME_folder : /Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/HTTP/MIME

@@ -11,12 +11,12 @@
 #include <unordered_map>
 #include <string>
 
-/*
- Used for handing MIME types
- Multipurpose Internet Mail Extensions indicate the nature and format of a document
- Parsing extensions is non-trivial. There could be multiple dots, '.', not all referring
- to part of the extension
- */
+
+// Used for handing MIME types
+// Multipurpose Internet Mail Extensions indicate the nature and format of a document
+// Parsing extensions is non-trivial. There could be multiple dots, '.', not all referring
+// to part of the extension.
+// This is used to populate the Content-Type field of the HTTP response
 
 namespace fbw {
 

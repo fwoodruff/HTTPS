@@ -16,15 +16,15 @@
 #include <netinet/ip.h>
 
 #ifdef __cpp_impl_coroutine
-    #include <coroutine>
+#include <coroutine>
 #else
-    #include <experimental/coroutine>
-#endif
-
+#include <experimental/coroutine>
 namespace std {
     namespace experimental {}
     using namespace experimental;
 }
+#endif
+
 
 namespace fbw {
 

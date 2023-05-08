@@ -1,5 +1,4 @@
-# HTTPS20
-HTTPS web server
+# HTTPS Web Server
 
 The implementations for HTTP/1.1 and TLS/1.2 are my own. I am using my own finite elliptic curve group implementations
 for TLS key-exchange and signatures.

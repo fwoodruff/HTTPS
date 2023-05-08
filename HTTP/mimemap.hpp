@@ -28,7 +28,7 @@ std::string Mime_from_file(const std::string &filename);
 
 } // namespace fbw
 
-#endif /* mimemap_hpp */
+#endif // mimemap_hpp
 
 
 

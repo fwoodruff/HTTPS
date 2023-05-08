@@ -182,4 +182,4 @@ public:
 
 } // namespace fbw
 
-#endif /* TLS_enums_hpp */
+#endif // TLS_enums_hpp

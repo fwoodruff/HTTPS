@@ -39,4 +39,4 @@ private:
 };
 }
 
-#endif /* acceptable_hpp */
+#endif // acceptable_hpp

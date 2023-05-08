@@ -67,4 +67,4 @@ private:
 
 }
 
-#endif /* writeable_hpp */
+#endif // writeable_hpp

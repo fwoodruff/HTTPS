@@ -44,4 +44,4 @@ extern thread_local cprng randomgen;
 
 } // namespace fbw
 
-#endif /* keccak_hpp */
+#endif // keccak_hpp

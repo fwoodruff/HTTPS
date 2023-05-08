@@ -103,20 +103,6 @@ ustring decode64(std::string data) {
     return out;
 }
 
-
-/*
-std::array<uint8_t,32> ec_deserialise(ustring asn1) {
-    assert(asn1.size() >=38);
-    // currently this ignores everything and assumes the file is secp256r1
-    std::array<unsigned char,32> privkey;
-    std::copy(&asn1[7], &asn1[39], privkey.begin());
-    auto calc_pub = secp256r1::get_public_key(privkey);
-    std::array<unsigned char,65> asnpub;
-    std::copy(asn1.rbegin(), asn1.rbegin() + 65, asnpub.rbegin());
-    assert(std::equal(calc_pub.begin(), calc_pub.end(), asnpub.begin()));
-    return privkey;
-}*/
-
 std::array<uint8_t,32> deserialise(ustring asn1) {
     assert(asn1.size() >= 68);
     // currently this ignores everything and assumes the file is secp256r1
@@ -124,25 +110,6 @@ std::array<uint8_t,32> deserialise(ustring asn1) {
     std::copy(&asn1[36], &asn1[36 + 32], privkey.begin());
     return privkey;
 }
-
-/*
-std::array<uint8_t,32> ec_privkey_from_file(std::string_view filename) {
-    std::ifstream t(filename);
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    std::string file = buffer.str();
-    std::string begin = "-----BEGIN EC PRIVATE KEY-----\n";
-    std::string end = "-----END EC PRIVATE KEY-----\n";
-    size_t start_idx = file.find(begin);
-    assert(start_idx != std::string::npos);
-    start_idx += begin.size();
-    size_t end_idx = file.find(end);
-    assert(end_idx != std::string::npos);
-    std::string data = file.substr(start_idx,end_idx-start_idx);
-    ustring DER = decode64(data);
-    auto key = deserialise(DER);
-    return key;
-}*/
 
 
 std::array<uint8_t,32> privkey_from_file(std::string filename) {

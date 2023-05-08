@@ -15,21 +15,16 @@
 
 namespace fbw::secp256r1 {
 
-/*
- Signs the message digest with the certificates privte key and a secret random number
- */
+// Signs the message digest with the certificates privte key and a secret random number
 [[nodiscard]] ustring DER_ECDSA(
                      std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,
                       std::array<uint8_t,32> private_key);
 
-
-/*
- converts a private key to a public key
- Similar to x25519 base_multiply
- */
+// converts a private key to a public key
+// Similar to x25519 base_multiply
 [[nodiscard]] std::array<uint8_t,65> get_public_key(std::array<uint8_t,32> private_key) noexcept;
 
 }
 
-#endif /* secp256r1_hpp */
+#endif // secp256r1_hpp

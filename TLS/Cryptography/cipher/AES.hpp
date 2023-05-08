@@ -37,4 +37,4 @@ using aeskey = typename std::vector<uint8_t>;
 
 
 
-#endif /* AES_hpp */
+#endif // AES_hpp

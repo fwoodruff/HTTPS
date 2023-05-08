@@ -23,4 +23,4 @@ namespace fbw {
 } //namespace fbw
 
 
-#endif /* PEMextract_hpp */
+#endif // PEMextract_hpp

@@ -19,13 +19,6 @@
 #include <iostream>
 #include <algorithm>
 
-/*
- To do:
- create a map from http error numbers to code names
- include the file creation date in the output
- make file_exists more portable
- */
-
 namespace fbw {
 
 
@@ -42,9 +35,7 @@ std::string timestring(time_t t) {
     return out;
 }
 
-/*
- helps parse HTTP streams
- */
+// helps parse HTTP streams
 ustring extract(ustring& bytes, std::string delimiter) {
     if(delimiter == "") return {};
     const size_t n = bytes.find(to_unsigned(delimiter));
@@ -55,7 +46,6 @@ ustring extract(ustring& bytes, std::string delimiter) {
     bytes = bytes.substr(n + delimiter.size());
     return ret;
 }
-
 
 ustring extract(ustring& bytes, size_t nbytes) {
     if(nbytes == 0) return {};
@@ -68,17 +58,13 @@ ustring extract(ustring& bytes, size_t nbytes) {
     return ret;
 }
 
-/*
- List of HTTP request types
- Used to distinguish between malformed requests and unsupported requests
- */
+// List of HTTP request types
+// Used to distinguish between malformed requests and unsupported requests
 const static std::unordered_set<std::string> verbs {"GET", "HEAD", "POST", "PUT",
                                                 "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"};
 
-/*
- uses the header to find the length of the HTTP body
- the return tpe is a length or a delimiter
- */
+// uses the header to find the length of the HTTP body
+// the return tpe is a length or a delimiter
 std::pair<std::string, size_t> body_size(const ustring& header) {
     assert(header.find(to_unsigned("\r\n\r\n")) != std::string::npos);
     
@@ -146,7 +132,6 @@ std::string get_argument(const ustring& header, std::string field) {
     }
     return to_signed(header.substr(st, q-st));
 }
-
 
 // Tokenises a request header e.g. {'GET', '/<filename>', "HTTP/1.1" }
 std::vector<std::string> get_method(const ustring& header) {

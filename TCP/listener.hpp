@@ -32,4 +32,4 @@ private:
 
 }
 
-#endif /* listener_hpp */
+#endif // listener_hpp

@@ -188,4 +188,4 @@ public:
 
 
 
-#endif /* task_hpp */
+#endif // task_hpp

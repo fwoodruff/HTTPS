@@ -56,14 +56,10 @@ task<void> redirect_server() {
 task<void> async_main(int argc, const char * argv[]) {
     async_spawn(https_server());
     async_spawn(redirect_server());
-    
     co_return;
 }
 
 int main(int argc, const char * argv[]) {
-    
-    
-    
     run(async_main(argc, argv));
     return 0;
 }

@@ -42,4 +42,4 @@ public:
 } // namespace fbw
 
 
-#endif /* chacha20poly1305_hpp */
+#endif // chacha20poly1305_hpp

@@ -44,4 +44,4 @@ public:
 
 }
 
-#endif /* receiver_hpp */
+#endif // receiver_hpp

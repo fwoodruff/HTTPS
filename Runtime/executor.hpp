@@ -60,8 +60,7 @@ struct yield_coroutine {
     bool await_ready() const noexcept {
         return false;
     }
-    void await_suspend(std::coroutine_handle<> handle) noexcept
-    {
+    void await_suspend(std::coroutine_handle<> handle) noexcept {
         auto& global_executor = executor_singleton();
         std::scoped_lock lk { global_executor.m_mut };
         global_executor.m_ready.push(handle);
@@ -69,7 +68,4 @@ struct yield_coroutine {
     void await_resume() noexcept { }
 };
 
-
-
-
-#endif /* executor_hpp */
+#endif // executor_hpp

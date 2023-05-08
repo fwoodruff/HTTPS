@@ -57,4 +57,4 @@ private:
     std::unordered_map<int, io_handle> park_map;
 };
 
-#endif /* reactor_hpp */
+#endif // reactor_hpp

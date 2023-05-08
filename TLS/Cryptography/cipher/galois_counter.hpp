@@ -42,4 +42,4 @@ public:
 
 } // namespace fbw
 
-#endif /* galois_counter_hpp */
+#endif // galois_counter_hpp

@@ -210,30 +210,6 @@ std::array<unsigned char,32> base_multiply(const std::array<unsigned char,32>& s
     return output_point.serialise();
 }
 
-/*
-std::array<unsigned char, 64>
-EdDSA(const std::array<unsigned char,32>& ran,
-      const std::array<unsigned char,32>& dig,
-      const std::array<unsigned char,32>& priv) {
-    
-    ct_u256 random256 = ct_u256(ran);
-    ct_u256 digest256 = ct_u256(dig);
-    ct_u256 privkey256 = ct_u256(priv);
-    random256 = clamp(random256);
-    privkey256 = clamp(privkey256);
-    
-    auto k = point_multiply(random256, Base.xcoord);
-    auto kp = modular_inverse(k);
-    auto x = (kp * (ct_u512(digest256) + random256 * privkey256)) % Prime;
-    auto xs = x.serialise();
-    auto ks = k.serialise();
-    std::array<unsigned char, 64> out;
-    std::copy(ks.begin(), ks.end(), out.begin());
-    std::copy(xs.begin(), xs.end(), &out[32]);
-    return out;
-}
- */
-
 } // namespace fbw::curve25519
 
 

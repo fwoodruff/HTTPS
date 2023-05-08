@@ -23,4 +23,4 @@ namespace fbw::curve25519 {
 
 }
 
-#endif /* curve25519_hpp */
+#endif // curve25519_hpp

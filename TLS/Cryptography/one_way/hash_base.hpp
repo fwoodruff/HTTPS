@@ -45,4 +45,4 @@ inline ustring hash_base::hash() const & {
 
 } // namespace fbw
 
-#endif /* hash_base_hpp */
+#endif // hash_base_hpp

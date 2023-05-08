@@ -37,4 +37,4 @@ public:
 
 } // namespace fbw
 
-#endif /* block_chain_hpp */
+#endif // block_chain_hpp

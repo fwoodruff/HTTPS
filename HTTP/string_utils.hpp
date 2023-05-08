@@ -66,11 +66,10 @@ ustring extract(ustring& bytes, std::string delimiter);
 // Not cryptographically secure
 [[nodiscard]] std::string make_eTag(const std::string& file_contents);
 
-
 // adds "index", ".html" as necessary and moves to lowercase
 std::string fix_filename(std::string filename);
 
 std::string make_server_name();
 
 } // namespace fbw
-#endif /* string_utils_hpp */
+#endif // string_utils_hpp

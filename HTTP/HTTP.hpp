@@ -18,9 +18,6 @@
 
 namespace fbw {
 
-/*
- Handles HTTP bytestreams
- */
 class HTTP {
     static constexpr long max_bytes_queued = 1000000;
     static std::optional<ustring> try_extract_header(ustring& m_buffer);
@@ -42,9 +39,6 @@ public:
     HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect);
 };
 
-
-
-
 } // namespace fbw
  
-#endif /* http_hpp */
+#endif // http_hpp

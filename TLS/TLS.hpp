@@ -97,14 +97,10 @@ private:
     [[nodiscard]] ustring expand_master(const std::array<unsigned char,48>& master,
                           const std::array<unsigned char,32>& server_random,
                           const std::array<unsigned char,32>& client_random, size_t len) const;
-    
-    
-    
-    
-    
+ 
 };
 
 } // namespace
 
 
-#endif /* tls_connection_hpp */
+#endif // tls_connection_hpp

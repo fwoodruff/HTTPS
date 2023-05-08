@@ -268,9 +268,7 @@ ustring sha256::hash() && {
 }
 
 
-/*
- used in CBC mode
- */
+// used in CBC mode
 sha1::sha1() : datalen(0), m_data({}), done(false) {
     m_state[0] = 0x67452301;
     m_state[1] = 0xEFCDAB89;

@@ -339,4 +339,4 @@ constexpr ct_u512 operator "" _xll(const char* const str, std::size_t siz) {
 
 } // namespace fbw
 
-#endif /* bignum_hpp */
+#endif // bignum_hpp

@@ -45,4 +45,4 @@ private:
 
 }
 
-#endif /* stream_hpp */
+#endif // stream_hpp

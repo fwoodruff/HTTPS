@@ -28,4 +28,4 @@ public:
 };
 } // namespace fbw
 
-#endif /* cipher_base_hpp */
+#endif // cipher_base_hpp

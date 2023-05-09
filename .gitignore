@@ -1,3 +1,4 @@
+.gitignore
 webpages/carina.png
 webpages/cv.pdf
 *.o

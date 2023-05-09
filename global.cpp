@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <algorithm>
+#include <unistd.h>
+#include <vector>
 
 #if __linux__
     const std::string fbw::config_file = "config.txt";
@@ -37,6 +39,26 @@ std::unordered_map<std::string, std::string> get_options(std::string filename) {
         options.insert(option);
     }
     return options;
+}
+
+std::string fbw::absolute_directory(std::string directory) {
+    if(directory.empty()) {
+        std::cerr << "failed to get current working directory" << std::endl;
+        std::terminate();
+    }
+    if(directory[0] == '/') {
+        return directory; // directory is absolute
+    }
+    std::vector<char> absolute_working;
+    absolute_working.resize(PATH_MAX);
+    void* res = getcwd(absolute_working.data(), PATH_MAX);
+    if (res == nullptr) {
+        std::cerr << "failed to get current working directory" << std::endl;
+        std::terminate();
+    }
+    std::string base_dir(absolute_working.data());
+    
+    return base_dir + "/" + directory;
 }
 
 std::once_flag onceFlag;

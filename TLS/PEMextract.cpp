@@ -120,10 +120,16 @@ std::array<uint8_t,32> privkey_from_file(std::string filename) {
     std::string begin = "-----BEGIN PRIVATE KEY-----\n";
     std::string end = "-----END PRIVATE KEY-----\n";
     size_t start_idx = file.find(begin);
-    assert(start_idx != std::string::npos);
+    if(start_idx == std::string::npos) {
+        std::cerr << "Bad server private key" << std::endl;
+        std::terminate();
+    }
     start_idx += begin.size();
     size_t end_idx = file.find(end);
-    assert(end_idx != std::string::npos);
+    if(end_idx == std::string::npos) {
+        std::cerr << "Bad server private key" << std::endl;
+        std::terminate();
+    }
     std::string data = file.substr(start_idx,end_idx-start_idx);
     ustring DER = decode64(data);
     auto key = deserialise(DER);

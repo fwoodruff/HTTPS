@@ -371,6 +371,13 @@ task<void> TLS::server_certificate(std::optional<milliseconds> timeout) {
     assert(m_expected_record == HandshakeStage::server_certificate);
     tls_record certificate_record(ContentType::Handshake);
     certificate_record.m_contents = {static_cast<uint8_t>(HandshakeType::certificate), 0,0,0, 0,0,0};
+    std::string cert_file;
+    try {
+        cert_file = get_option("certificate_file");
+    } catch(...) {
+        std::cerr << "configure TLS certificates" << std::endl;
+        std::terminate();
+    }
     const auto certs = der_cert_from_file(get_option("certificate_file"));
     for (const auto& cert : certs) {
         ustring cert_header;
@@ -420,6 +427,14 @@ task<void> TLS::server_key_exchange(std::optional<milliseconds> timeout) {
     std::array<uint8_t, 32> signature_digest;
     std::copy(signature_digest_vec.cbegin(), signature_digest_vec.cend(), signature_digest.begin());
     
+    
+    std::string priv_key;
+    try {
+        priv_key = get_option("key_file");
+    } catch(...) {
+        std::cerr << "please configure private key" << std::endl;
+        std::terminate();
+    }
     auto certificate_private = privkey_from_file(get_option("key_file"));
 
     std::array<uint8_t, 32> csrn;

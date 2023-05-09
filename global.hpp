@@ -15,6 +15,7 @@
 #include <fstream>
 
 
+
 namespace fbw {
 
 using ustring = std::basic_string<uint8_t>;
@@ -56,6 +57,9 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     out.append(s.cbegin(), s.cend());
     return out;
 }
+
+
+std::string absolute_directory(std::string relative_directory);
 
 } // namespace fbw
 

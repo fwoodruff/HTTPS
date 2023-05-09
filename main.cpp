@@ -11,7 +11,7 @@
 
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect) {
     try {
-        auto webpages = fbw::get_option("webpage_folder");
+        auto webpages = fbw::absolute_directory(fbw::get_option("webpage_folder"));
         fbw::HTTP http_handler { std::move(client_stream), webpages, redirect };
         co_await http_handler.client();
     } catch(const std::out_of_range& e) {

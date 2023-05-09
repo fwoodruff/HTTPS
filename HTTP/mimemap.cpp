@@ -106,7 +106,7 @@ std::string extension_from_path(std::string path) {
 // This is used in the header of the GET response
 std::string get_MIME(std::string extension) {
     static std::once_flag init_MIME {};
-    std::call_once(init_MIME, [&](){MIMEmap = MIMES(get_option("MIME_folder"));});
+    std::call_once(init_MIME, [&](){MIMEmap = MIMES(absolute_directory(get_option("MIME_folder")));});
     try {
         return MIMEmap.at(extension);
     } catch(const std::logic_error& e) {

@@ -26,10 +26,15 @@ sudo ./codeymccodeface
 ```
 
 I am updating certificates with:
-`sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --elliptic-curve=secp256r1 --standalone --force-renewal`
+  
+```
+sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --elliptic-curve=secp256r1 --standalone --force-renewal
+```
 
-`config.txt` is localhost
-`config2.txt` is my Raspberry Pi server config
-config files are just paths (with a leading `'/'` for absolute paths)
+`config.txt` is localhost.
+  
+`config2.txt` is my Raspberry Pi server config.
+  
+Config files are just a bunch of paths, with a leading `'/'` for absolute paths.
 </details>
 

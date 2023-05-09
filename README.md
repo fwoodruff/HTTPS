@@ -18,6 +18,7 @@ This has thrown up many curiosities and helped me harden the server.
 
 <details>
 <summary>Basic usage</summary>
+  
 ```bash
 git clone https://github.com/fwoodruff/HTTPS.git
 git make

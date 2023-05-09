@@ -1,2 +1,7 @@
 webpages/carina.png
 webpages/cv.pdf
+*.o
+*/*.o
+*/*/*.o
+*/*/*/*.o
+codeymccodeface 

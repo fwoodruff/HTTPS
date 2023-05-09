@@ -15,12 +15,8 @@
 #include <unistd.h>
 #include <vector>
 
-#if __linux__
-    const std::string fbw::config_file = "config.txt";
-#else
-    const std::string fbw::config_file = "/Users/freddiewoodruff/Documents/Programming/HTTPS20/HTTPS20/config.txt";
-#endif
 
+const std::string fbw::config_file = fbw::absolute_directory("config.txt");
 
 void strip(std::string& str) {
     str.erase(std::remove_if(str.begin(), str.end(), isspace), str.end());

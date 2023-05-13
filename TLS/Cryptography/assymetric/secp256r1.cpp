@@ -341,7 +341,7 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
     
     auto r = x;
     if (r == "0x0"_xl) {
-        throw std::logic_error("bad random");
+        throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     
     const auto k_randomMonty = REDCQ(RR_Q*k_random);
@@ -355,7 +355,7 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
     const auto s = REDCQ(ct_u512(sMonty));
     
     if (s == "0x0"_xl) {
-        throw std::logic_error("bad random");
+        throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 
     //auto [pubx, puby] = point_multiply(ct_u256(private_key), secp256r1_gx, secp256r1_gy);

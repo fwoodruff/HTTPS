@@ -9,6 +9,7 @@
 #include <fstream>
 #include <string>
 
+// after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect) {
     try {
         auto webpages = fbw::absolute_directory(fbw::get_option("webpage_folder"));
@@ -22,6 +23,9 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
     }
 }
 
+// accepts connections and spins up per-client asynchronous tasks
+// if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
+// when the task wakes we push it to the server
 task<void> https_server() {
     try {
         auto port = fbw::get_option("server_port") ;

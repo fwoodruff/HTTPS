@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <unistd.h>
 #include <vector>
-
+#include <limits.h>
 
 const std::string fbw::config_file = fbw::absolute_directory("config.txt");
 

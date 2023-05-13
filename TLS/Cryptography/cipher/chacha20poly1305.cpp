@@ -91,6 +91,7 @@ ustring chacha20_xorcrypt(   const std::array<uint8_t, 32>& key,
     out.resize(message.size());
     
     size_t k = 0;
+    // massive parallelism here?
     for(size_t i = 0; i < (message.size()+63) /64; i++) {
         std::array<uint8_t, 64> ou = chacha20(key, nonce, uint32_t(i)+blockid);
         for(size_t j = 0;  j < 64 and k < message.size(); j++, k++) {
@@ -218,7 +219,7 @@ std::array<uint8_t, 32> poly1305_key_gen(const std::array<uint8_t, 32>& key, con
 
 
 
-
+// encrypt or decrypt
 std::pair<ustring, std::array<uint8_t, 16>>
 chacha20_aead_crypt(ustring aad, std::array<uint8_t, 32> key, std::array<uint8_t, 12> nonce, ustring text, bool do_encrypt) {
     

@@ -56,7 +56,7 @@ std::optional<ustring> try_extract_body(ustring& m_buffer, ustring header) {
     }
     if(size != 0) {
         body += extract(m_buffer, size);
-        if(body.empty() == 0) {
+        if(body.empty()) {
             return std::nullopt;
         }
     }
@@ -93,7 +93,6 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
     }
     assert(body != std::nullopt);
     co_return http_frame { *header, *body };
-    
 }
 
 // a per TCP client handler that frames HTTP requests and responds to them, until either the connection is
@@ -153,7 +152,6 @@ task<void> HTTP::respond(const std::string& rootdirectory, http_frame http_reque
     if(method.size() < 3) {
         throw http_error("400 Bad Request");
     }
-    
     const std::string& filename = method[1];
     if(method[2] != "HTTP/1.0" and method[2] != "HTTP/1.1") {
         throw http_error("505 HTTP Version Not Supported");
@@ -162,11 +160,10 @@ task<void> HTTP::respond(const std::string& rootdirectory, http_frame http_reque
         co_await file_to_http(rootdirectory, filename);
     } else if(method[0] == "POST") {
         handle_POST(std::move( http_request));
-        //co_await file_to_http(rootdirectory, filename);
+        co_await file_to_http(rootdirectory, filename);
     } else {
         throw http_error("405 Method Not Allowed\r\n");
     }
-    
 }
 
 // POST requests need some server-dependent program logic

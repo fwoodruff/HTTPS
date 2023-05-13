@@ -81,7 +81,7 @@ std::optional<tls_record> try_extract_record(ustring& input);
         throw e;
     } catch(std::out_of_range& e) {
         // from options
-        std::cout << e.what() << std::endl;
+        std::cerr << e.what() << std::endl;
     } catch(const std::exception& e) {
         throw stream_error(e.what());
     }

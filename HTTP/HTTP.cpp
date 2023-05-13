@@ -221,7 +221,7 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
 
     co_await m_stream->write(to_unsigned(oss.str()));
     
-    ustring buffer (15900, '\0');
+    ustring buffer (980, '\0');
     while(!t.eof()) {
         t.read((char*)buffer.data(), buffer.size());
         ssize_t s = t.gcount();

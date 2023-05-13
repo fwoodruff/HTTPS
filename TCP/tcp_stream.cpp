@@ -15,7 +15,7 @@ namespace fbw {
 
 // true = open, false, closed
 task<bool> tcp_stream::read_append(ustring& abuffer, std::optional<milliseconds> timeout) {
-    std::array<uint8_t, 2000> readbuff;
+    std::array<uint8_t, 1600> readbuff;
     std::span<uint8_t> remaining_buffer = { readbuff.data(), readbuff.size() };
     auto bytes_read = co_await read(remaining_buffer, timeout);
     if(bytes_read.empty()) {

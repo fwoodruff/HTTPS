@@ -103,7 +103,7 @@ END:
         }
     }
     
-    constexpr size_t RECORD_SIZE = 15950;
+    constexpr size_t RECORD_SIZE = 1300;
     size_t idx = 0;
     while(idx < data.size()) {
         ustring contents = data.substr(idx, RECORD_SIZE);

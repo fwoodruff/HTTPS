@@ -85,9 +85,9 @@ bool writeable::await_ready() const noexcept {
 
 bool writeable::await_suspend(std::coroutine_handle<> awaitingCoroutine) {
     // process a few records before moving onto the next client
-    static std::atomic<size_t> fail_sometimes = 0;
+    static std::atomic<size_t> fail_sometimes = 1;
     size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
-    local_value %= 3;
+    local_value %= 300;
     if(local_value == 0) {
         m_succ = -1;
         auto& exec = executor_singleton();

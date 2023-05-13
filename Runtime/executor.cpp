@@ -14,7 +14,7 @@
 #include <cassert>
 #include <utility>
 
-constexpr size_t NUM_THREADS = 1;
+static size_t NUM_THREADS = std::thread::hardware_concurrency();
 using namespace std::chrono;
 using namespace std::chrono_literals;
 

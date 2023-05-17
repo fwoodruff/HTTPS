@@ -41,9 +41,9 @@ Config files are just a bunch of paths, with a leading `'/'` for absolute paths.
 <details>
   <summary>Benchmarks</summary>
  
-| Client request                                                         | Bitrate  | Transfer time |
-| ---------------------------------------------------------------------- | -------- | ------------- |
-| `scp freddiewoodruff.co.uk:~/doc/HTTPS20/webpages/assets/carina.png .` | 3.0MB/s  | 41s           |
-| `wget https://freddiewoodruff.co.uk/assets/carina.png`                 | 702KB/s  | 3m 3s         |
+| Client request                                                         | Data-rate | Transfer time |
+| ---------------------------------------------------------------------- | --------- | ------------- |
+| `scp freddiewoodruff.co.uk:~/doc/HTTPS20/webpages/assets/carina.png .` | 3.0MB/s   | 41s           |
+| `wget https://freddiewoodruff.co.uk/assets/carina.png`                 | 702KB/s   | 3m 3s         |
   
 </details>

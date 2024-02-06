@@ -24,17 +24,28 @@ reactor::reactor() {
 
 void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read_write,
                       std::optional<milliseconds> timeout) {
+    io_handle a_handle {};
 
-    io_handle i_handle { .handle = handle, .rw = read_write, .fd = fd };
+    auto rw = ((read_write == IO_direction::Read)? 0 : 1);
+    {
+        std::scoped_lock lk { m_mut };
+        if (auto it = park_map.find(fd); it != park_map.end()) {
+            a_handle = it->second;
+            assert(a_handle.handle[rw] != nullptr);
+        }
+    }
+    
+    a_handle.handle[rw] = handle;
+    a_handle.fd = fd;
     if(timeout) {
-        i_handle.wake_up = steady_clock::now() + *timeout;
+        a_handle.wake_up[rw] = steady_clock::now() + *timeout;
     } else {
-        i_handle.wake_up = std::nullopt;
+        a_handle.wake_up[rw] = std::nullopt;
     }
     
     {
         std::scoped_lock lk { m_mut };
-        park_map.insert({ i_handle.fd, i_handle });
+        park_map[fd] = a_handle;
         // epoll context add fd->handle
     }
     char buff;
@@ -53,13 +64,19 @@ reactor::wakeup_timeouts( const time_point<steady_clock> &now) {
     std::vector<std::coroutine_handle<>> out;
     for(auto it = park_map.begin(); it != park_map.end(); ) {
         auto wakeup = it->second.wake_up;
-        if(wakeup) {
-            if (!first_wake or *wakeup < *first_wake) {
-                first_wake = wakeup;
+        for(int i = 0; i < 2; i++) {
+            if(wakeup[i] != std::nullopt) {
+                if (!first_wake or *(wakeup[i]) < *first_wake) {
+                    first_wake = wakeup[i];
+                }
+            }
+            if(wakeup[i] and *wakeup[i] < now) {
+                out.push_back(it->second.handle[i]);
+                it->second.handle[i] = nullptr;
+                it->second.wake_up[i] = std::nullopt;
             }
         }
-        if(wakeup and *wakeup < now) {
-            out.push_back(it->second.handle);
+        if(it->second.handle[0] == nullptr && it->second.handle[1] == nullptr) {
             it = park_map.erase(it);
         } else {
             it++;
@@ -86,9 +103,9 @@ std::vector<std::coroutine_handle<>> reactor::wait() {
         std::scoped_lock lk { m_mut };
         for(const auto& [fd, hand] : park_map) {
             pollfd poll_fd {};
-            poll_fd.fd = hand.fd;
+            poll_fd.fd = fd;
             assert(hand.fd == fd);
-            poll_fd.events = (hand.rw == IO_direction::Read ? POLLIN  : 0) | (hand.rw == IO_direction::Write ? POLLOUT : 0) ;
+            poll_fd.events = (hand.handle[0] != nullptr ? POLLIN  : 0) | (hand.handle[1] != nullptr ? POLLOUT : 0) ;
             assert(poll_fd.events != 0);
             poll_fd.revents = 0;
             to_poll.push_back(poll_fd);
@@ -118,9 +135,19 @@ std::vector<std::coroutine_handle<>> reactor::wait() {
     {
         std::scoped_lock lk { m_mut };
         for(auto& fdd : to_poll) {
-            auto handle = park_map[fdd.fd].handle;
-            if(fdd.revents & (POLLIN | POLLOUT | POLLERR | POLLHUP)) {
-                out.push_back(handle);
+            auto& handle = park_map[fdd.fd].handle;
+            auto& wakeup = park_map[fdd.fd].wake_up;
+            auto IOevent = std::array{POLLIN, POLLOUT};
+            for(int i = 0; i < 2; i++) {
+                if(fdd.revents & (IOevent[i] | POLLHUP | POLLERR)) {
+                    if (handle[i] != nullptr) {
+                        out.push_back(handle[i]);
+                    }
+                    handle[i] = nullptr;
+                    wakeup[i] = std::nullopt;
+                }
+            }
+            if (handle[0] == nullptr && handle[1] == nullptr) {
                 auto res = park_map.erase(fdd.fd);
                 assert(res == 1);
             }

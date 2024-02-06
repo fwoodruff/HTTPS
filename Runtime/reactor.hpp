@@ -45,9 +45,8 @@ private:
         wakeup_timeouts( const time_point<steady_clock> &now);
     
     struct io_handle {
-        std::coroutine_handle<> handle;
-        IO_direction rw;
-        std::optional<time_point<steady_clock>> wake_up;
+        std::array<std::coroutine_handle<>,2> handle;
+        std::array<std::optional<time_point<steady_clock>>,2> wake_up;
         int fd;
     };
 

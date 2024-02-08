@@ -1,7 +1,7 @@
 redirect_port : 80
 server_port : 443
 domain_name : localhost
-certificate_file : ecc_cert.pem
-key_file : ecc_key.pem
-webpage_folder : webpages
-MIME_folder : MIME
+certificate_file : resources/keypair/ecc_cert.pem
+key_file : resources/keypair/ecc_key.pem
+webpage_folder : resources/webpages
+MIME_folder : resources/MIME

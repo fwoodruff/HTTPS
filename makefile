@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra -Wno-psabi
+CXXFLAGS := -std=c++20 -O2 -Wall -Wextra -Wno-psabi
 
 # Directories
 SRC_DIR := src

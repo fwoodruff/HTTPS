@@ -1,25 +1,41 @@
+# Compiler and flags
+CXX := g++
+CXXFLAGS := -std=c++20 -Wall -Wextra -Wno-psabi
 
-INC = . $(dir $(wildcard */.)) $(dir $(wildcard */*/.)) $(dir $(wildcard */*/*/.)) 
-INCLUDES=$(INC:%=-I%) 
+# Directories
+SRC_DIR := src
+OBJ_DIR := objects
+TARGET_DIR := target
 
-CXX = g++
-CXXFLAGS = -pthread -O2 -std=gnu++2a -Wall -Wno-psabi $(INCLUDES)
-LDFLAGS := -pthread
-SOURCE := $(wildcard *.cpp) $(wildcard */*.cpp) $(wildcard */*/*.cpp) $(wildcard */*/*/*.cpp)
-OBJECTS := ${SOURCE:.cpp=.o}
-DEPENDS = ${OBJECTS:.o=.d}    # substitutes ".o" with ".d"
-EXEC = codeymccodeface                # executable name
+# Source files
+SRC := $(wildcard $(SRC_DIR)/*.cpp) \
+	   $(wildcard $(SRC_DIR)/**/*.cpp) \
+	   $(wildcard $(SRC_DIR)/**/**/*.cpp) \
+	   $(wildcard $(SRC_DIR)/**/**/**/*.cpp) 
+HEADERS := $(wildcard $(SRC_DIR)/**/*.hpp)
+OBJ := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC))
 
+# Directories for object files
+OBJ_SUBDIRS := $(sort $(dir $(OBJ)))
 
-${EXEC} : ${OBJECTS} # link step
-	${CXX} ${OBJECTS} ${LDFLAGS} -o ${EXEC}
+# Target executable
+TARGET := $(TARGET_DIR)/codeymccodeface
 
+# Compile and link
+$(TARGET): $(OBJ)
+	@mkdir -p $(TARGET_DIR)
+	$(CXX) $(CXXFLAGS) $^ -o $@
 
--include ${DEPENDS}          # copies files x.d, y.d, z.d (if they exist)
+# Compile source files into object files
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(HEADERS)
+	@mkdir -p $(OBJ_SUBDIRS)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+# Clean rule
 clean:
-	rm -f *.o
-	rm -f */*.o
-	rm -f */*/*.o
-	rm -f */*/*/*.o
-	rm ${EXEC}
+	rm -rf $(OBJ_DIR) $(TARGET_DIR)
+
+# Phony target to prevent conflicts with files named "clean"
+.PHONY: clean
+
+

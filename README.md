@@ -21,8 +21,8 @@ This has thrown up many curiosities and helped me harden the server.
   
 ```bash
 git clone https://github.com/fwoodruff/HTTPS.git
-git make
-sudo ./codeymccodeface
+make
+./target/codeymccodeface
 ```
 
 I am updating certificates with:

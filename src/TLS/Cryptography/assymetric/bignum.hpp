@@ -8,8 +8,6 @@
 #ifndef bignum_hpp
 #define bignum_hpp
 
-
-
 #include <cassert>
 #include <array>
 #include <string>
@@ -17,6 +15,7 @@
 #include <iostream>
 #include <algorithm>
 #include <climits>
+#include <cstdint>
 
 namespace fbw {
 /*

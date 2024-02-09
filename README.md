@@ -4,7 +4,6 @@ Out on the web there are bots probing every attack surface within the HTTP and T
 This has thrown up many curiosities and helped me harden the server.
 
 <details>
-  
 <summary>Highlights</summary>
   
 * The implementations for HTTP/1.1 and TLS/1.2 are my own.
@@ -14,28 +13,33 @@ This has thrown up many curiosities and helped me harden the server.
 * The C++20 executable was cross-compiled for the Raspberry Pi on an AWS EC2 instance.
 </details>
 
-
-
 <details>
 <summary>Basic usage</summary>
   
+  
+Install with
 ```bash
 git clone https://github.com/fwoodruff/HTTPS.git
-make
-./target/codeymccodeface
+cd HTTPS
+```
+then run with either Make
+```
+make && ./target/codeymccodeface
+```
+or Docker
+```bash
+docker compose up
 ```
 
-I am updating certificates with:
+Every 60 days, CA certificates are updated with:
   
 ```
-sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --elliptic-curve=secp256r1 --standalone --force-renewal
+sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --elliptic-curve=secp256r1 --webroot --force-renewal
 ```
 
-`config.txt` is localhost.
-  
-`config2.txt` is my Raspberry Pi server config.
-  
-Config files are just a bunch of paths, with a leading `'/'` for absolute paths.
+`config.txt` is for localhost.
+
+`config_live.txt` is my Raspberry Pi server config.
 </details>
 
 <details>
@@ -45,5 +49,4 @@ Config files are just a bunch of paths, with a leading `'/'` for absolute paths.
 | ---------------------------------------------------------------------- | --------- | ------------- |
 | `scp freddiewoodruff.co.uk:~/doc/HTTPS20/webpages/assets/carina.png .` | 3.0MB/s   | 41s           |
 | `wget https://freddiewoodruff.co.uk/assets/carina.png`                 | 702KB/s   | 3m 3s         |
-  
 </details>

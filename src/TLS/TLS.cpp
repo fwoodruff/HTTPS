@@ -261,7 +261,7 @@ bool check_SNI(ustring servernames) {
                     if(name_len != subdomain_name.size()) {
                         return false;
                     }
-                    auto domain_name = get_option("domain_name");
+                    auto domain_name = get_option("DOMAIN_NAME");
                     if(std::equal(subdomain_name.begin(), subdomain_name.end(), domain_name.begin())) {
                         return true;
                     }
@@ -302,7 +302,7 @@ void TLS::client_hello(tls_record record) {
     idx += try_bigend_read(hello, idx, 1) + 1;
     // cipher suites
     size_t ciphers_len = try_bigend_read(hello, idx, 2);
-    hello.at(idx+ ciphers_len + 2);
+    static_cast<void>(hello.at(idx+ ciphers_len + 2));
     cipher = cipher_choice(hello.substr(idx + 2, ciphers_len));
     
     idx += ciphers_len + 2;
@@ -373,12 +373,12 @@ task<void> TLS::server_certificate(std::optional<milliseconds> timeout) {
     certificate_record.m_contents = {static_cast<uint8_t>(HandshakeType::certificate), 0,0,0, 0,0,0};
     std::string cert_file;
     try {
-        cert_file = get_option("certificate_file");
+        cert_file = get_option("CERTIFICATE_FILE");
     } catch(...) {
         std::cerr << "configure TLS certificates" << std::endl;
         std::terminate();
     }
-    const auto certs = der_cert_from_file(get_option("certificate_file"));
+    const auto certs = der_cert_from_file(get_option("CERTIFICATE_FILE"));
     for (const auto& cert : certs) {
         ustring cert_header;
         cert_header.append({0, 0, 0});
@@ -430,12 +430,12 @@ task<void> TLS::server_key_exchange(std::optional<milliseconds> timeout) {
     
     std::string priv_key;
     try {
-        priv_key = get_option("key_file");
+        priv_key = get_option("KEY_FILE");
     } catch(...) {
         std::cerr << "please configure private key" << std::endl;
         std::terminate();
     }
-    auto certificate_private = privkey_from_file(get_option("key_file"));
+    auto certificate_private = privkey_from_file(get_option("KEY_FILE"));
 
     std::array<uint8_t, 32> csrn;
     randomgen.randgen( csrn.begin(), csrn.size());
@@ -471,7 +471,7 @@ void TLS::client_key_exchange(tls_record record) {
     if(m_expected_record != HandshakeStage::client_key_exchange) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    key_exchange.at(0);
+    static_cast<void>(key_exchange.at(0));
     assert(key_exchange[0] == static_cast<uint8_t>(HandshakeType::client_key_exchange));
     
     const size_t len = try_bigend_read(key_exchange, 1, 3);
@@ -515,7 +515,7 @@ void TLS::client_handshake_finished(tls_record record) {
     if(m_expected_record != HandshakeStage::client_handshake_finished) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    finish.at(0);
+    static_cast<void>(finish.at(0));
     assert(finish[0] == static_cast<uint8_t>(HandshakeType::finished));
     
     const size_t len = try_bigend_read(finish,1,3);

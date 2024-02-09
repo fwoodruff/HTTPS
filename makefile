@@ -1,6 +1,13 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -O2 -Wall -Wextra -Wno-psabi
+CXXFLAGS := -std=c++20 -O2 -Wall -Wno-psabi -flto
+LDFLAGS :=
+
+ifeq ($(shell uname -s),Linux)
+# GLIBCXX_3.4.30 does not support armv6
+	CXXFLAGS += -static
+    LDFLAGS += -static-libstdc++ -static-libgcc
+endif
 
 # Directories
 SRC_DIR := src
@@ -24,7 +31,7 @@ TARGET := $(TARGET_DIR)/codeymccodeface
 # Compile and link
 $(TARGET): $(OBJ)
 	@mkdir -p $(TARGET_DIR)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 # Compile source files into object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(HEADERS)

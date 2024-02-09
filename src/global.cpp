@@ -29,7 +29,7 @@ std::unordered_map<std::string, std::string> get_options(std::string filename) {
     }
     std::unordered_map<std::string, std::string> options;
     std::pair<std::string, std::string> option;
-    while(  std::getline(file, option.first, ':') && std::getline(file, option.second)) {
+    while(  std::getline(file, option.first, '=') && std::getline(file, option.second)) {
         strip(option.first);
         strip(option.second);
         options.insert(option);

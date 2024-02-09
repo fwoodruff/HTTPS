@@ -106,7 +106,7 @@ task<void> HTTP::client() {
                 co_return; // connection closed by peer
             }
             if(m_redirect) {
-                auto domain = get_option("domain_name");
+                auto domain = get_option("DOMAIN_NAME");
                 co_await redirect(std::move(*http_request), domain);
             } else {
                 co_await respond(m_folder, std::move(*http_request));
@@ -173,7 +173,7 @@ task<void> HTTP::respond(const std::string& rootdirectory, http_frame http_reque
 // Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
 void HTTP::handle_POST(http_frame frame) {
     auto body = to_signed(std::move(frame.body));
-    auto rootdir = absolute_directory(get_option("webpage_folder"));
+    auto rootdir = absolute_directory(get_option("WEBPAGE_FOLDER"));
     std::ofstream fout(rootdir+"/final.html", std::ios_base::app);
     body = std::regex_replace(body, std::regex("username="), "username: ");
     body = std::regex_replace(body, std::regex("&password="), ", password: ");

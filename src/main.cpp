@@ -12,7 +12,7 @@
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect) {
     try {
-        auto webpages = fbw::absolute_directory(fbw::get_option("webpage_folder"));
+        auto webpages = fbw::absolute_directory(fbw::get_option("WEBPAGE_FOLDER"));
         fbw::HTTP http_handler { std::move(client_stream), webpages, redirect };
         co_await http_handler.client();
     } catch(const std::out_of_range& e) {
@@ -28,8 +28,9 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 // when the task wakes we push it to the server
 task<void> https_server() {
     try {
-        auto port = fbw::get_option("server_port") ;
+        auto port = fbw::get_option("SERVER_PORT") ;
         auto listener = fbw::tcplistener::bind(port);
+        std::clog << "HTTPS running on port " << port << std::endl;
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
@@ -44,8 +45,9 @@ task<void> https_server() {
 
 task<void> redirect_server() {
     try {
-        auto port = fbw::get_option("redirect_port") ;
+        auto port = fbw::get_option("REDIRECT_PORT") ;
         auto listener = fbw::tcplistener::bind(port);
+        std::clog << "Redirect running on port " << port << std::endl;
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 std::unique_ptr<fbw::stream> client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));

@@ -3,24 +3,20 @@
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP.hpp"
+#include "HTTP/string_utils.hpp"
 #include "global.hpp"
 
 #include <memory>
 #include <fstream>
 #include <string>
 
-// after a connection is accepted, this is the per-client entry point
-task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect) {
-    try {
-        auto webpages = fbw::absolute_directory(fbw::get_option("WEBPAGE_FOLDER"));
-        fbw::HTTP http_handler { std::move(client_stream), webpages, redirect };
-        co_await http_handler.client();
-    } catch(const std::out_of_range& e) {
-        std::cerr << "no configured webpages folder" << std::endl;
-        std::cerr << e.what();
-    } catch(...) {
-        assert(false);
-    }
+
+task<void> client_receiver(std::shared_ptr<fbw::HTTP> context) {
+    co_await context->client_receiver();
+}
+
+task<void> client_responder(std::shared_ptr<fbw::HTTP> context) {
+    co_await context->client_responder();
 }
 
 // accepts connections and spins up per-client asynchronous tasks
@@ -30,12 +26,15 @@ task<void> https_server() {
     try {
         auto port = fbw::get_option("SERVER_PORT") ;
         auto listener = fbw::tcplistener::bind(port);
+        auto webpages = fbw::absolute_directory(fbw::get_option("WEBPAGE_FOLDER"));
         std::clog << "HTTPS running on port " << port << std::endl;
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
                 std::unique_ptr<fbw::stream> tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
-                async_spawn(http_client(std::move(tls_stream), false));
+                auto context = std::make_shared<fbw::HTTP>(std::move(tls_stream), webpages, false);
+                async_spawn(client_receiver(context));
+                async_spawn(client_responder(context));
             }
         }
     } catch(const std::exception& e) {
@@ -47,11 +46,14 @@ task<void> redirect_server() {
     try {
         auto port = fbw::get_option("REDIRECT_PORT") ;
         auto listener = fbw::tcplistener::bind(port);
+        auto webpages = fbw::absolute_directory(fbw::get_option("WEBPAGE_FOLDER"));
         std::clog << "Redirect running on port " << port << std::endl;
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 std::unique_ptr<fbw::stream> client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
-                async_spawn(http_client(std::move(client_tcp_stream), true));
+                auto context = std::make_shared<fbw::HTTP>(std::move(client_tcp_stream), webpages, true);
+                async_spawn(client_receiver(context));
+                async_spawn(client_responder(context));
             }
         }
     } catch(const std::exception& e ) {

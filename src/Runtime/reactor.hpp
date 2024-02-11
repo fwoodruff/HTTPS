@@ -16,17 +16,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <array>
-
-
-#ifdef __cpp_impl_coroutine
-#include <coroutine>
-#else
-#include <experimental/coroutine>
-namespace std {
-    namespace experimental {}
-    using namespace experimental;
-}
-#endif
+#include "../coroutine_incl.hpp"
 
 using namespace std::chrono;
 enum class IO_direction { Read, Write };

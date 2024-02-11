@@ -2,3 +2,4 @@ resources/webpages/carina.png
 resources/webpages/cv.pdf
 target/
 objects/
+.vscode

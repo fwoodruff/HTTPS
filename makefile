@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -O2 -Wall -Wno-psabi -flto
+CXXFLAGS := -std=c++20 -Wall -Wno-psabi #-flto -O2
 LDFLAGS :=
 
 ifeq ($(shell uname -s),Linux)

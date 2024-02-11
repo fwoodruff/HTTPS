@@ -8,6 +8,7 @@
 #include "HTTP.hpp"
 #include "string_utils.hpp"
 #include "../global.hpp"
+
 #include "mimemap.hpp"
 
 #include <iostream>
@@ -20,6 +21,12 @@
 
 
 namespace fbw {
+
+
+template<class... Ts>
+struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
 // an HTTP handler streams data in, gets a file from a folder and streams it back
 // or it might redirect unencrypted HTTP traffic
@@ -65,58 +72,106 @@ std::optional<ustring> try_extract_body(ustring& m_buffer, ustring header) {
 
 // suspends until enough data has been read in over the network to generate an HTTP header
 // leaves the input buffer intact and ready to consume further HTTP requests
-task<std::optional<http_frame>> HTTP::try_read_http_request() {
-    std::optional<ustring> header;
-    for(;;) {
-        header = try_extract_header(m_buffer);
-        if(header) {
-            break;
+task<http_reader> HTTP::try_read_http_request() {
+    try {
+        std::optional<ustring> header;
+        for(;;) {
+            header = try_extract_header(m_buffer);
+            if(header) {
+                break;
+            }
+            assert(m_stream != nullptr);
+            bool connection_alive = co_await m_stream->read_append(m_buffer);
+            if(!connection_alive) {
+                co_return false;//std::monostate{};
+            }
         }
-        assert(m_stream != nullptr);
-        bool connection_alive = co_await m_stream->read_append(m_buffer);
-        if(!connection_alive) {
-            co_return std::nullopt;
+        std::optional<ustring> body;
+        for(;;) {
+            assert(header != std::nullopt);
+            body = try_extract_body(m_buffer, *header);
+            if(body) {
+                break;
+            }
+            bool connection_alive = co_await m_stream->read_append(m_buffer);
+            if(!connection_alive) {
+                co_return false;//std::monostate{};
+            }
+            continue;
         }
+        assert(body != std::nullopt);
+        co_return http_frame { *header, *body };
+    } catch(...) {
+        co_return std::current_exception();
     }
-    std::optional<ustring> body;
-    for(;;) {
-        assert(header != std::nullopt);
-        body = try_extract_body(m_buffer, *header);
-        if(body) {
-            break;
-        }
-        bool connection_alive = co_await m_stream->read_append(m_buffer);
-        if(!connection_alive) {
-            co_return std::nullopt;
-        }
-        continue;
-    }
-    assert(body != std::nullopt);
-    co_return http_frame { *header, *body };
+    
 }
 
-// a per TCP client handler that frames HTTP requests and responds to them, until either the connection is
-// shut down or times out
-task<void> HTTP::client() {
-    std::optional<http_error> http_err {};
-    try {
-        for(;;) {
-            auto http_request = co_await try_read_http_request();
-            if(!http_request) {
-                co_return; // connection closed by peer
+// a per-connection client handler that frames HTTP requests and buffers them for responses
+task<void> HTTP::client_receiver() {
+    std::exception_ptr eptr{};
+    for(;;) {
+        auto http_request = co_await try_read_http_request();
+        try {
+            bool success = co_await m_ringbuffer.enqueue(std::move(http_request));
+            if (!success) {
+                co_return;
             }
+            co_await yield_coroutine{}; // prioritise responding to requests over reading requests
+            
+        } catch(...) {
+            assert(false);
+        }
+        if(!std::holds_alternative<http_frame>(http_request)) {
+            co_return;
+        }
+    }
+}
+
+// a per TCP client handler that consumes HTTP requests and responds to them
+task<void> HTTP::client_responder() {
+    std::exception_ptr eptr{};
+    for(;;) {
+        auto http_request = co_await m_ringbuffer.dequeue();
+        bool return_after = false;
+        
+        if(!std::holds_alternative<http_frame>(http_request)) {
+            return_after = true;
+        }
+        try {
             if(m_redirect) {
                 auto domain = get_option("DOMAIN_NAME");
-                co_await redirect(std::move(*http_request), domain);
+                co_await redirect(std::move(http_request), domain);
+                m_ringbuffer.fast_fail();
             } else {
-                co_await respond(m_folder, std::move(*http_request));
+                co_await respond(m_folder, std::move(http_request));
             }
+        } catch(...) {
+            eptr = std::current_exception();
+            goto ERROR;
         }
-    } catch(const http_error& e) {
-        http_err = e;
+        if (return_after) {
+            co_return; // connection closed by peer or error
+        }
+    }
+
+    ERROR:
+    co_await exception_handler(eptr);
+}
+
+
+task<void> HTTP::exception_handler(std::exception_ptr eptr) {
+    m_ringbuffer.fast_fail();
+    std::optional<http_error> http_err {};
+    try {
+        if (eptr) {
+            std::rethrow_exception(eptr);
+        }
+        assert(false)
+;    } catch(const http_error& e) {
+        http_err = e; 
         goto ERROR; // cannot co_await inside catch block
     } catch(const stream_error& e) {
-        co_return;
     } catch(const std::out_of_range& e) {
         std::cerr << e.what();
         std::cerr << "options not configured" << std::endl;
@@ -126,31 +181,44 @@ task<void> HTTP::client() {
     } catch(...) {
         assert(false);
     }
+    co_return; // cannot co_return inside catch block
 ERROR:
     // if the request handler fails with an HTTP error, the error response is reported to the client here
     // for example this is where 404 Not Found messages are constructed and sent to clients
-    if(http_err) {
-        auto error_message = std::string(http_err->what());
-        std::ostringstream oss;
-        oss << "HTTP/1.1 " << error_message << "\r\n"
-        << "Connection: close\r\n"
-        << "Content-Type: text/html; charset=UTF-8\r\n"
-        << "Content-Length: " << error_message.size() << "\r\n"
-        << "Server: FredPi/0.1 (Unix) (Raspbian/Linux)\r\n"
-        << "\r\n"
-        << error_message;
-        ustring output = to_unsigned(oss.str());
-        try {
-            co_await m_stream->write(output);
-        } catch (const stream_error& e) {
-            
-        }
-        co_return;
+    auto error_message = std::string(http_err->what());
+    std::ostringstream oss;
+    oss << "HTTP/1.1 " << error_message << "\r\n"
+    << "Connection: close\r\n"
+    << "Content-Type: text/html; charset=UTF-8\r\n"
+    << "Content-Length: " << error_message.size() << "\r\n"
+    << "Server: FredPi/0.1 (Unix) (Raspbian/Linux)\r\n"
+    << "\r\n"
+    << error_message;
+    ustring output = to_unsigned(oss.str());
+    try {
+        co_await m_stream->write(output);
+    } catch (const stream_error& e) {
+        
     }
+    co_return;
 }
 
+
 // Creates an HTTP response from an HTTP request
-task<void> HTTP::respond(const std::string& rootdirectory, http_frame http_request) {
+task<void> HTTP::respond(const std::string& rootdirectory, http_reader request_var) {
+    
+    http_frame http_request {};
+
+    co_await std::visit(overloaded{
+            [&](http_frame arg) -> task<void> { http_request = std::move(arg); co_return; },
+            [&](const std::exception_ptr& arg) -> task<void> { co_await exception_handler(arg); },
+            [](bool b) -> task<void> { co_return; }
+    }, request_var);
+    if(!std::holds_alternative<http_frame>(request_var)) {
+        co_return;
+    }
+    
+
     const auto method = get_method( http_request.header);
     if(method.size() < 3) {
         throw http_error("400 Bad Request");
@@ -219,7 +287,6 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
         << "Connection: Keep-Alive\r\n"
         << "Keep-Alive: timeout=5, max=1000\r\n"
         << "Server: " << make_server_name() << "\r\n"
-        // << "ETag: " << make_eTag(file_contents) << "\r\n"
     << "\r\n";
 
     co_await m_stream->write(to_unsigned(oss.str()));
@@ -233,8 +300,24 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
     }
 }
 
+
 // if a client connects over http:// we need to form a response redirecting them to https://
-task<void> HTTP::redirect(http_frame request, std::string domain) {
+task<void> HTTP::redirect(http_reader request_var, const std::string& domain) {
+    
+    http_frame request {};
+    
+    co_await std::visit(overloaded{
+            [&](http_frame arg) -> task<void> { request = std::move(arg); co_return; },
+            [&](const std::exception_ptr& arg) -> task<void> { co_await exception_handler(arg); },
+            [](bool b) -> task<void> {co_return; } 
+    }, request_var);
+    
+
+    if(!std::holds_alternative<http_frame>(request_var)) {
+        co_return;
+    } 
+    
+
     const auto method = get_method(request.header);
     if(method.size() < 3) {
         throw http_error("400 Bad Request");
@@ -256,5 +339,6 @@ task<void> HTTP::redirect(http_frame request, std::string domain) {
     std::string var = oss.str();
     co_await m_stream->write(to_unsigned(var));
 }
+
 
 };// namespace fbw

@@ -219,7 +219,6 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
         << "Connection: Keep-Alive\r\n"
         << "Keep-Alive: timeout=5, max=1000\r\n"
         << "Server: " << make_server_name() << "\r\n"
-        // << "ETag: " << make_eTag(file_contents) << "\r\n"
     << "\r\n";
 
     co_await m_stream->write(to_unsigned(oss.str()));

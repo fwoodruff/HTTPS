@@ -31,7 +31,7 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
         std::scoped_lock lk { m_mut };
         if (auto it = park_map.find(fd); it != park_map.end()) {
             a_handle = it->second;
-            assert(a_handle.handle[rw] != nullptr);
+            assert(a_handle.handle[!rw] != nullptr);
         }
     }
     

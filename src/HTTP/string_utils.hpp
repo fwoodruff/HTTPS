@@ -61,11 +61,6 @@ ustring extract(ustring& bytes, std::string delimiter);
 // returns the length of the body or its closing delimiter depending on the encoding
 [[nodiscard]] std::pair<std::string, size_t> body_size(const ustring& header);
 
-
-// a file checksum to send in the response header
-// Not cryptographically secure
-[[nodiscard]] std::string make_eTag(const std::string& file_contents);
-
 // adds "index", ".html" as necessary and moves to lowercase
 std::string fix_filename(std::string filename);
 

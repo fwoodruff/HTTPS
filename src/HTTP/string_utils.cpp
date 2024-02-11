@@ -188,20 +188,6 @@ void shuffle(std::array<uint8_t, 32>& state) {
     }
 }
 
-std::string make_eTag(const std::string& file_contents) {
-    std::array<uint8_t, 32> state {0};
-    for(unsigned i = 0; i < file_contents.size(); i ++) {
-        state[i % 32] ^= file_contents[i];
-    }
-    shuffle(state);
-    state[2] = 0x22;
-    
-    std::ostringstream ss;
-    for(size_t i = 0; i < 8; ++i) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(state[i]);
-    }
-    return ss.str();
-}
 
 std::vector<std::string> operating_systems {
     "(5G Vaccine Mast Tower)",

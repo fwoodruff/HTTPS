@@ -2,7 +2,7 @@ FROM gcc:13 as builder
 WORKDIR /
 COPY src/ src/
 COPY makefile .
-RUN make
+RUN make -j8
 
 FROM scratch
 EXPOSE 80 443

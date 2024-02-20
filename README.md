@@ -24,7 +24,7 @@ cd HTTPS
 ```
 then run with either Make
 ```
-make && ./target/codeymccodeface
+make -j8 && ./target/codeymccodeface
 ```
 or Docker
 ```bash

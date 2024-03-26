@@ -106,8 +106,11 @@ task<void> HTTP::client() {
                 co_return; // connection closed by peer
             }
             if(m_redirect) {
-                auto domain = get_option("DOMAIN_NAME");
-                co_await redirect(std::move(*http_request), domain);
+                auto domains = get_multi_option("DOMAIN_NAMES");
+                if(domains.empty()) {
+                    throw std::runtime_error("no configured domain names");
+                } 
+                co_await redirect(std::move(*http_request), domains[0]);
             } else {
                 co_await respond(m_folder, std::move(*http_request));
             }
@@ -118,7 +121,7 @@ task<void> HTTP::client() {
     } catch(const stream_error& e) {
         co_return;
     } catch(const std::out_of_range& e) {
-        std::cerr << e.what();
+        std::cerr << e.what() << std::endl;
         std::cerr << "options not configured" << std::endl;
     }
     catch(const std::runtime_error& e) {

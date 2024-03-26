@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <vector>
 #include <limits.h>
+#include <sstream>
 
 const std::string fbw::config_file = fbw::absolute_directory("config.txt");
 
@@ -65,3 +66,23 @@ std::string fbw::get_option(std::string option) {
     return options.at(option);
 }
 
+void remove_whitespace(std::string& str) {
+    str.erase(std::remove_if(str.begin(), str.end(), ::isspace), str.end());
+}
+
+// Function to convert comma-separated string to vector of strings
+std::vector<std::string> split_string(const std::string& input) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(input);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        remove_whitespace(token);
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+std::vector<std::string> fbw::get_multi_option(std::string option) {
+    auto opt = fbw::get_option(option);
+    return split_string(opt);
+}

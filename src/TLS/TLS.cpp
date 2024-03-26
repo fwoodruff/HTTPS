@@ -261,9 +261,12 @@ bool check_SNI(ustring servernames) {
                     if(name_len != subdomain_name.size()) {
                         return false;
                     }
-                    auto domain_name = get_option("DOMAIN_NAME");
-                    if(std::equal(subdomain_name.begin(), subdomain_name.end(), domain_name.begin())) {
-                        return true;
+                    auto domain_names = get_multi_option("DOMAIN_NAMES");
+                    auto str_domain_name = to_signed(subdomain_name);
+                    for(auto name : domain_names) {
+                        if (name == str_domain_name) {
+                            return true;
+                        }
                     }
                     break;
                 }

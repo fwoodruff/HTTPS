@@ -253,7 +253,7 @@ public:
     }
     constexpr bool operator==(const uVar &b) const noexcept {
         bool equal = true;
-        for(/*volatile*/ size_t i = 0; i < v.size(); i++) {
+        for(size_t i = 0; i < v.size(); i++) {
             equal = equal and v[i] == b.v[i];
         }
         return equal;
@@ -263,7 +263,7 @@ public:
         bool ina = true;
         bool outa = true;
         assert(v.size() >= 1);
-        for(/*volatile*/ ssize_t i = v.size() -1 ; i >= 0; i--) {
+        for(ssize_t i = v.size() -1 ; i >= 0; i--) {
             ina &= (v[i]==rhs.v[i]);
             ret |= (v[i] > rhs.v[i]) and (ina != outa);
             outa = ina;
@@ -296,23 +296,27 @@ public:
         return out;
     }
     
-    
     template<int LBITS>
     constexpr friend std::pair<uVar<LBITS>,uVar> divmod(const uVar<LBITS>& numerator, const uVar& denominator) noexcept {
         std::pair<uVar<LBITS>,uVar> out {{},{}};
-        uVar<LBITS+INTBITS> quotbuff;
-        uVar<LBITS+INTBITS> numbuff;
-        std::copy(denominator.v.cbegin(), denominator.v.cend(), &quotbuff.v[numerator.v.size()]);
-        std::copy(numerator.v.cbegin(), numerator.v.cend(), numbuff.v.begin());
+        uVar<LBITS+INTBITS> quotient_shifted;
+        uVar<LBITS+INTBITS> numerator_sub;
+        std::copy(denominator.v.cbegin(), denominator.v.cend(), &quotient_shifted.v[numerator.v.size()]);
+        std::copy(numerator.v.cbegin(), numerator.v.cend(), numerator_sub.v.begin());
 
         for (long i = numerator.v.size()*RADIXBITS; i >= 0; i--) {
-            if(numbuff >= quotbuff) {
-                out.first.v[i/RADIXBITS] |= (1ULL << (i % RADIXBITS));
-                numbuff -= quotbuff;
+            bool numerator_greater = numerator_sub >= quotient_shifted;
+            auto set_bit = uint64_t(numerator_greater) << (i % RADIXBITS);
+            out.first.v[i/RADIXBITS] |= set_bit;
+
+            auto masked_quotient_buffer = quotient_shifted;
+            for(auto& val : masked_quotient_buffer.v) {
+                val *= numerator_greater;
             }
-            quotbuff >>= 1;
+            numerator_sub -= masked_quotient_buffer;
+            quotient_shifted >>= 1;
         }
-        std::copy(numbuff.v.begin(), &numbuff.v[denominator.v.size()], out.second.v.begin());
+        std::copy(numerator_sub.v.begin(), &numerator_sub.v[denominator.v.size()], out.second.v.begin());
         return out;
     }
     template<int LBITS>

@@ -1,11 +1,10 @@
-version: '3.8'
-
 services:
   server:
     container_name: server
     build:
       context: .
       dockerfile: Dockerfile
+    init: true
     ports:
-      - 80:80
+      - 80:80 # redirect
       - 443:443

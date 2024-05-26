@@ -218,8 +218,12 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
         << "Content-Length: " << file_size << "\r\n"
         << "Connection: Keep-Alive\r\n"
         << "Keep-Alive: timeout=5, max=1000\r\n"
-        << "Server: " << make_server_name() << "\r\n"
-    << "\r\n";
+        << "Server: " << make_server_name() << "\r\n";
+
+    if(get_option("HTTP_STRICT_TRANSPORT_SECURITY") == "true") {
+        oss << "Strict-Transport-Security: max-age=31536000\r\n";
+    }
+    oss << "\r\n";
 
     co_await m_stream->write(to_unsigned(oss.str()));
     

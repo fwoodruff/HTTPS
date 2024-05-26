@@ -5,3 +5,4 @@ CERTIFICATE_FILE=resources/keypair/ecc_cert.pem
 KEY_FILE=resources/keypair/ecc_key.pem
 WEBPAGE_FOLDER=resources/webpages
 MIME_FOLDER=resources/MIME
+HTTP_STRICT_TRANSPORT_SECURITY=false

@@ -356,7 +356,24 @@ task<void> TLS::server_hello(std::optional<milliseconds> timeout) {
     checked_bigend_write(cipher, ciph, 0, 2);
     hello_record.m_contents.append(ciph);
     hello_record.m_contents.append({0}); // no compression
-    hello_record.m_contents.append({0x00, 0x05, 0xff, 0x01, 0x00, 0x01, 0x00}); // extensions
+
+    const ustring handshake_reneg = { 0xff, 0x01, 0x00, 0x01, 0x00 }; // announces no support for vulnerable handshake renegotiation attacks
+
+    ustring alpn_protocol_data { 0x00, 0x10, 0x00, 0x00, 0x00, 0x00 };  // announces application layer will use http/1.1
+    auto http11 = to_unsigned("http/1.1");
+    auto lenhttp11 = static_cast<uint8_t>(http11.size());
+    alpn_protocol_data.push_back(lenhttp11);
+    alpn_protocol_data.append(http11);
+    checked_bigend_write(alpn_protocol_data.size() - 6, alpn_protocol_data, 4, 2);
+    checked_bigend_write(alpn_protocol_data.size() - 4, alpn_protocol_data, 2, 2);
+
+    ustring extensions { 0x00, 0x00 };
+    extensions.append(handshake_reneg);
+    extensions.append(alpn_protocol_data);
+    checked_bigend_write(extensions.size() - 2, extensions, 0, 2);
+
+    hello_record.m_contents.append(extensions);
+
     assert(hello_record.m_contents.size() >= 4);
     checked_bigend_write(hello_record.m_contents.size() - 4, hello_record.m_contents, 1, 3);
 

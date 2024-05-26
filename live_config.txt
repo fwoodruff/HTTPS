@@ -5,3 +5,4 @@ CERTIFICATE_FILE=/etc/letsencrypt/live/freddiewoodruff.co.uk/fullchain.pem
 KEY_FILE=/etc/letsencrypt/live/freddiewoodruff.co.uk/privkey.pem
 WEBPAGE_FOLDER=resources/webpages
 MIME_FOLDER=resources/MIME
+HTTP_STRICT_TRANSPORT_SECURITY=true

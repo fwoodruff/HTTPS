@@ -21,6 +21,7 @@ using ustring = std::basic_string<uint8_t>;
 extern const std::string config_file;
 
 std::string get_option(std::string option);
+std::vector<std::string> get_multi_option(std::string option);
 
 template<typename T>
 [[nodiscard]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {

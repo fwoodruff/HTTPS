@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -O2 -Wall -Wno-psabi -flto
+CXXFLAGS := -std=c++20 -O2 -Wall -Wno-psabi -flto -MMD -MP
 LDFLAGS :=
 
 ifeq ($(shell uname -s),Linux)
@@ -34,9 +34,11 @@ $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 # Compile source files into object files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(HEADERS)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(OBJ_SUBDIRS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+-include $(patsubst %.o,%.d,$(OBJ))
 
 # Clean rule
 clean:

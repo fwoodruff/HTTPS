@@ -59,12 +59,14 @@ std::optional<tls_record> try_extract_record(ustring& input);
         if(!record) {
             co_return false;
         }
+        if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
+            record = cipher_context->decrypt(std::move(*record));
+        }
         switch ( static_cast<ContentType> (record->get_type()) ) {
             case ContentType::Handshake:
             case ContentType::ChangeCipherSpec:
                 throw ssl_error("handshake already done", AlertLevel::fatal, AlertDescription::unexpected_message);
             case ContentType::Application:
-                record = cipher_context->decrypt(std::move(*record));
                 data.append(std::move(record->m_contents));
                 co_return true;
             case ContentType::Alert:
@@ -132,12 +134,11 @@ task<bool> TLS::perform_handshake(std::optional<milliseconds> timeout) {
             if(!record) {
                 co_return false;
             }
-            
+            if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
+                record = cipher_context->decrypt(std::move(*record));
+            }
             switch ( static_cast<ContentType>(record->get_type()) ) {
                 case ContentType::Handshake:
-                    if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
-                        record = cipher_context->decrypt(std::move(*record));
-                    }
                     co_await client_handshake_record(std::move(*record), timeout);
                     if(m_expected_record == HandshakeStage::application_data) {
                         co_return true;
@@ -205,12 +206,13 @@ task<void> TLS::write_record(tls_record record, std::optional<milliseconds> time
 
 task<void> TLS::client_handshake_record(tls_record record, std::optional<milliseconds> timeout) {
     ustring handshake_record = record.m_contents;
+    bool can_heartbeat;
     switch (handshake_record.at(0)) {
         case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("hello_request not supported", AlertLevel::fatal, AlertDescription::handshake_failure);
         case static_cast<uint8_t>(HandshakeType::client_hello):
-            client_hello(std::move(record));
-            co_await server_hello(timeout);
+            can_heartbeat = client_hello(std::move(record));
+            co_await server_hello(timeout, can_heartbeat);
             co_await server_certificate(timeout);
             co_await server_key_exchange(timeout);
             co_await server_hello_done(timeout);
@@ -280,7 +282,7 @@ bool check_SNI(ustring servernames) {
 }
 
  
-void TLS::client_hello(tls_record record) {
+bool TLS::client_hello(tls_record record) {
     if(m_expected_record != HandshakeStage::client_hello) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -317,6 +319,7 @@ void TLS::client_hello(tls_record record) {
     // extensions
     ssize_t extensions_len = try_bigend_read(hello,idx,2);
 
+    bool can_heartbeat = false;
     idx += 2;
     while(extensions_len > 0) {
         size_t extension_type = try_bigend_read(hello, idx, 2);
@@ -329,6 +332,14 @@ void TLS::client_hello(tls_record record) {
                 if(!check_SNI(extension)) {
                     throw ssl_error("bad SNI", AlertLevel::fatal, AlertDescription::handshake_failure);
                 }
+                break;
+            case 0x000f:
+                if (extension == ustring {0x00, 0x01, 0x00} or extension == ustring {0x00, 0x01, 0x01}) {
+                    can_heartbeat = true;
+                } else {
+                    throw ssl_error("invalid heartbeat extension", AlertLevel::fatal, AlertDescription::handshake_failure);
+                }
+                break;
             default:
                 break;
         }
@@ -342,9 +353,10 @@ void TLS::client_hello(tls_record record) {
 
     handshake_hasher->update(hello);
     m_expected_record = HandshakeStage::server_hello;
+    return can_heartbeat;
 }
 
-task<void> TLS::server_hello(std::optional<milliseconds> timeout) {
+task<void> TLS::server_hello(std::optional<milliseconds> timeout, bool can_heartbeat) {
     assert(m_expected_record == HandshakeStage::server_hello);
     auto hello_record = tls_record(ContentType::Handshake);
     
@@ -370,11 +382,7 @@ task<void> TLS::server_hello(std::optional<milliseconds> timeout) {
     checked_bigend_write(alpn_protocol_data.size() - 6, alpn_protocol_data, 4, 2);
     checked_bigend_write(alpn_protocol_data.size() - 4, alpn_protocol_data, 2, 2);
 
-    ustring extensions { 0x00, 0x00 };
-    extensions.append(handshake_reneg);
-    extensions.append(alpn_protocol_data);
-    checked_bigend_write(extensions.size() - 2, extensions, 0, 2);
-
+    ustring extensions = hello_extensions(can_heartbeat);
     hello_record.m_contents.append(extensions);
 
     assert(hello_record.m_contents.size() >= 4);
@@ -385,6 +393,33 @@ task<void> TLS::server_hello(std::optional<milliseconds> timeout) {
     
     co_await write_record(hello_record, timeout);
     m_expected_record = HandshakeStage::server_certificate;
+}
+
+ustring TLS::hello_extensions(bool can_heartbeat) {
+     // announces no support for vulnerable handshake renegotiation attacks
+    const ustring handshake_reneg = { 0xff, 0x01, 0x00, 0x01, 0x00 };
+
+    // announces application layer will use http/1.1
+    ustring alpn_protocol_data { 0x00, 0x10, 0x00, 0x00, 0x00, 0x00 }; 
+    auto http11 = to_unsigned("http/1.1");
+    auto lenhttp11 = static_cast<uint8_t>(http11.size());
+    alpn_protocol_data.push_back(lenhttp11);
+    alpn_protocol_data.append(http11);
+    checked_bigend_write(alpn_protocol_data.size() - 6, alpn_protocol_data, 4, 2);
+    checked_bigend_write(alpn_protocol_data.size() - 4, alpn_protocol_data, 2, 2);
+
+    // announces willingness to accept heartbeat records
+    ustring heartbeat = { 0x00, 0x0f, 0x00, 0x01, 0x00 };
+
+    ustring extensions { 0x00, 0x00 };
+    extensions.append(alpn_protocol_data);
+    extensions.append(handshake_reneg);
+    if (can_heartbeat) {
+        extensions.append(heartbeat);
+    }
+    checked_bigend_write(extensions.size() - 2, extensions, 0, 2);
+
+    return extensions;
 }
 
 task<void> TLS::server_certificate(std::optional<milliseconds> timeout) {
@@ -648,12 +683,23 @@ void TLS::client_alert(tls_record record) {
 
 task<void> TLS::client_heartbeat(tls_record record, std::optional<milliseconds> timeout) {
     auto heartbeat_message = record.m_contents;
-    // fix me
-    if(heartbeat_message.size() != 1 or heartbeat_message[0] != 0x01) {
-        throw ssl_error("heartbleed", AlertLevel::fatal, AlertDescription::access_denied);
+
+    if (heartbeat_message.size() < 1 or heartbeat_message[0] != 0x01 ) {
+        throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
+
+    auto payload_length = try_bigend_read(heartbeat_message, 1, 2);
+    if (payload_length >  heartbeat_message.size() - 3) {
+        co_await m_client->write(to_unsigned("heartbleed?"));
+        throw ssl_error("bad heartbeat payload length", AlertLevel::fatal, AlertDescription::access_denied);
+    }
+
+    auto length_and_payload = heartbeat_message.substr(1, payload_length + 2);
+
     tls_record heartbeat_record( ContentType::Heartbeat);
-    heartbeat_record.m_contents = {2};
+    heartbeat_record.m_contents = { 0x02 };
+    heartbeat_record.m_contents.append( length_and_payload );
+    heartbeat_record = cipher_context->encrypt(std::move(heartbeat_record));
     co_await write_record(heartbeat_record, timeout);
 }
 

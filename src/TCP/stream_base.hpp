@@ -21,7 +21,7 @@
 namespace fbw {
 using namespace std::chrono_literals;
 using namespace std::chrono;
-constexpr milliseconds STANDARD_TIMEOUT = 5500ms;
+constexpr milliseconds STANDARD_TIMEOUT = 66s;
 
 class stream_error : public std::runtime_error {
     using std::runtime_error::runtime_error;

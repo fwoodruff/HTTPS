@@ -220,7 +220,7 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
         << "Content-Type: " << MIME << (MIME.substr(0,4)=="text" ? "; charset=UTF-8" : "") << "\r\n"
         << "Content-Length: " << file_size << "\r\n"
         << "Connection: Keep-Alive\r\n"
-        << "Keep-Alive: timeout=5, max=1000\r\n"
+        << "Keep-Alive: timeout=50, max=1000\r\n"
         << "Server: " << make_server_name() << "\r\n";
 
     if(get_option("HTTP_STRICT_TRANSPORT_SECURITY") == "true") {
@@ -230,8 +230,10 @@ task<void> HTTP::file_to_http(const std::string& rootdir, std::string filename) 
 
     co_await m_stream->write(to_unsigned(oss.str()));
     
-    ustring buffer (980, '\0');
+    const int buffer_size = 980;
+    ustring buffer;
     while(!t.eof()) {
+        buffer.resize(buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         ssize_t s = t.gcount();
         buffer.resize(s);

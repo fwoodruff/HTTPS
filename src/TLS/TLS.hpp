@@ -62,16 +62,18 @@ private:
     task<void> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     
     void client_change_cipher_spec(tls_record);
-    void client_hello(tls_record);
+    bool client_hello(tls_record);
     void client_key_exchange(tls_record key_exchange);
     void client_handshake_finished(tls_record finish);
     
     task<void> server_change_cipher_spec(std::optional<milliseconds> timeout);
-    task<void> server_hello(std::optional<milliseconds> timeout);
+    task<void> server_hello(std::optional<milliseconds> timeout, bool can_heartbeat);
     task<void> server_certificate(std::optional<milliseconds> timeout);
     task<void> server_key_exchange(std::optional<milliseconds> timeout);
     task<void> server_hello_done(std::optional<milliseconds> timeout);
     task<void> server_handshake_finished(std::optional<milliseconds> timeout);
+
+    static ustring hello_extensions(bool can_heartbeat);
     
     void tls_notify_close();
     

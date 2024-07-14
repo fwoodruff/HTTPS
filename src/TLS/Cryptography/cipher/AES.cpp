@@ -30,10 +30,6 @@ void MixColumns(aes_block&) noexcept;
 void ShiftRows(aes_block&) noexcept;
 void SubBytes(aes_block&) noexcept;
 
-[[nodiscard]] roundkey key_expansion(const aeskey& AESkey);
-[[nodiscard]] aes_block cipher(aes_block plaintext, const roundkey&) noexcept;
-[[nodiscard]] aes_block InvCipher(aes_block ciphertext, const roundkey& roundkeys) noexcept;
-
 // rotates left the bits of a byte e.g.  10001001 -> 00010011
 // this is one of the steps in AES
 constexpr uint8_t ROTL8(uint8_t x, int shift) {

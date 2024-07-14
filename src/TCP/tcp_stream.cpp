@@ -13,23 +13,26 @@
 
 namespace fbw {
 
-// true = open, false, closed
-task<bool> tcp_stream::read_append(ustring& abuffer, std::optional<milliseconds> timeout) {
+task<stream_result> tcp_stream::read_append(ustring& abuffer, std::optional<milliseconds> timeout) {
     std::array<uint8_t, 1600> readbuff;
     std::span<uint8_t> remaining_buffer = { readbuff.data(), readbuff.size() };
-    auto bytes_read = co_await read(remaining_buffer, timeout);
-    if(bytes_read.empty()) {
-        co_return false;
+    auto [bytes_read, status] = co_await read(remaining_buffer, timeout);
+    if (status == stream_result::ok) {
+        abuffer.append(bytes_read.begin(), bytes_read.end());
     }
-    abuffer.append(bytes_read.begin(), bytes_read.end());
-    co_return true;
+    stream_result res = status;
+    co_return std::move(res);
 }
 
-task<void> tcp_stream::write(ustring abuffer, std::optional<milliseconds> timeout) {
+task<stream_result> tcp_stream::write(ustring abuffer, std::optional<milliseconds> timeout) {
     std::span<const uint8_t> remaining_buffer = {abuffer.data(), abuffer.size()};
     while(remaining_buffer.size() != 0) {
-        co_await write_some(remaining_buffer, timeout);
+        auto [_, status] = co_await write_some(remaining_buffer, timeout);
+        if (status != stream_result::ok) {
+            co_return std::move(status);
+        }
     }
+    co_return stream_result::ok;
 }
 
 tcp_stream::tcp_stream(int fd) : stream(), m_fd(fd) { }
@@ -49,7 +52,7 @@ tcp_stream::~tcp_stream() {
     } // moved from otherwise
 }
 
-task<void> tcp_stream::close_notify(std::optional<milliseconds> timeout) {
+task<void> tcp_stream::close_notify() {
     if(m_fd != -1) {
         int err = ::close(m_fd);
         assert(err == 0);

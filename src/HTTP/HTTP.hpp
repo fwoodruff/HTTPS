@@ -22,20 +22,19 @@ class HTTP {
     static constexpr long max_bytes_queued = 1000000;
     static std::optional<ustring> try_extract_header(ustring& m_buffer);
 
-    
-
-    task<std::optional<http_frame>> try_read_http_request();
-    task<void> respond(const std::string& rootdirectory, http_frame http_request);
-    task<void> redirect(http_frame header, std::string domain);
-    task<void> file_to_http(const std::string& rootdirectory, std::string filename);
+    [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
+    [[nodiscard]]  task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);
+    [[nodiscard]] task<void> redirect(http_frame header, std::string domain);
+    [[nodiscard]] task<stream_result> file_to_http(const std::filesystem::path& rootdirectory, std::filesystem::path filename);
     void handle_POST(http_frame request);
+    [[nodiscard]] task<void> send_error(http_error e);
     
     std::string m_folder;
     bool m_redirect;
     std::unique_ptr<stream> m_stream;
     ustring m_buffer;
 public:
-    task<void> client();
+    [[nodiscard]] task<void> client();
     HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect);
 };
 

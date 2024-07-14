@@ -200,7 +200,7 @@ std::array<unsigned char,32> multiply(const std::array<unsigned char,32>& secret
     auto clamped_secret = clamp(ct_u256(secret));
     auto curve_point_x = ct_u256(serial_point);
     auto out_point = point_multiply(clamped_secret, curve_point_x);
-    return out_point.serialise();
+    return out_point.serialise_le();
 }
 
 // point multiplies the base point by secret.

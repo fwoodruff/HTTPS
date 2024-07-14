@@ -29,10 +29,7 @@ namespace std {
 #endif
 
 
-
-
-
-// peared down from Lewis Baker's cppcoro
+// pared down from Lewis Baker's cppcoro
 template<class T> class task;
 
 class task_promise_base {
@@ -62,6 +59,7 @@ class task_promise final : public task_promise_base {
 public:
     // copy elision does not occur in co_return statements
     void return_value(T&& value) noexcept {
+        //::new (static_cast<void*>(std::addressof(m_value))) T(std::forward<T>(value));
         m_value = std::forward<T>(value);
     }
     T& result() {

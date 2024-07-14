@@ -111,8 +111,7 @@ std::array<uint8_t,32> deserialise(ustring asn1) {
     return privkey;
 }
 
-
-std::array<uint8_t,32> privkey_from_file(std::string filename) {
+std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
     std::ifstream t(filename);
     std::stringstream buffer;
     buffer << t.rdbuf();
@@ -136,7 +135,7 @@ std::array<uint8_t,32> privkey_from_file(std::string filename) {
     return key;
 }
 
-std::vector<ustring> der_cert_from_file(std::string filename) {
+std::vector<ustring> der_cert_from_file(std::filesystem::path filename) {
     std::ifstream t(filename);
     std::stringstream buffer;
     buffer << t.rdbuf();

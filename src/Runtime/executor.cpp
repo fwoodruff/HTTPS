@@ -18,8 +18,6 @@ static size_t NUM_THREADS = std::thread::hardware_concurrency();
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-
-
 void executor::thread_function() {
     for(;;) {
         std::coroutine_handle<> task;

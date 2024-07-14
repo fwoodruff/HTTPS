@@ -33,13 +33,13 @@ public:
     tcp_stream(tcp_stream&& other);
     tcp_stream& operator=(tcp_stream&& other);
     
-    [[nodiscard]] task<bool> read_append(ustring&, std::optional<milliseconds> timeout = STANDARD_TIMEOUT) override;
-    [[nodiscard]] task<void> write(ustring, std::optional<milliseconds> timeout = STANDARD_TIMEOUT) override;
-    [[nodiscard]] task<void> close_notify(std::optional<milliseconds> timeout = STANDARD_TIMEOUT) override;
+    [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<void> close_notify() override;
 private:
     int m_fd;
-    [[nodiscard]] readable read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout = STANDARD_TIMEOUT);
-    [[nodiscard]] writeable write_some(std::span<const uint8_t>& bytes, std::optional<milliseconds> timeout = STANDARD_TIMEOUT);
+    [[nodiscard]] readable read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout);
+    [[nodiscard]] writeable write_some(std::span<const uint8_t>& bytes, std::optional<milliseconds> timeout);
     
 };
 

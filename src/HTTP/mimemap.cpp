@@ -8,7 +8,6 @@
 #include "mimemap.hpp"
 #include "string_utils.hpp"
 
-
 #include <dirent.h>
 
 #include <unordered_map>
@@ -20,14 +19,13 @@
 
 namespace fbw {
 
-
-decltype(MIMES("")) MIMEmap;
+decltype(MIMES("/")) MIMEmap;
 bool init = false;
 
 // responding to an HTTP request, we need to specify the Content-Type of the file we are sending in the HTTP response
 // this depends on the extension of the file that was requested.
 // we therefore need to map from extension to Content-Type.
-std::unordered_map<std::string,std::string> MIME_csv_to_map(std::string filename) {
+std::unordered_map<std::string,std::string> MIME_csv_to_map(const std::filesystem::path& filename) {
     std::ifstream file (filename);
     std::string line;
     std::unordered_map<std::string,std::string> MIME_types;
@@ -48,23 +46,23 @@ std::unordered_map<std::string,std::string> MIME_csv_to_map(std::string filename
 
 // I found some files together containing all the possible content types and the associated
 // extensions, so this function builds that extension -> content-type map
-std::unordered_map<std::string,std::string> MIMES(std::string directory_name) {
+std::unordered_map<std::string,std::string> MIMES(const std::filesystem::path& directory_name) {
     std::unordered_map<std::string,std::string> map;
     DIR *dir;
     struct dirent *ent;
 
-    if ((dir = opendir (directory_name.c_str())) != nullptr) {
+    if ((dir = opendir(directory_name.c_str())) != nullptr) {
         std::unordered_map<std::string,std::string> mimes;
         while ((ent = ::readdir (dir)) != nullptr) {
-            const auto filen = std::string(ent->d_name);
+            const auto filen = std::filesystem::path(ent->d_name);
             if (filen=="." or filen=="..") {
                 continue;
             }
-            std::string filenn = directory_name + "/" + filen;
+            std::filesystem::path filenn = directory_name / filen;
             auto map = MIME_csv_to_map(filenn);
             mimes.insert(map.cbegin(),map.cend());
         }
-        closedir (dir);
+        closedir(dir);
         return mimes;
     } else {
         throw std::runtime_error("MIME csv folder not found\n");
@@ -74,15 +72,10 @@ std::unordered_map<std::string,std::string> MIMES(std::string directory_name) {
 // The file in the get request header, e.g. /footballscores.html has an extension .html
 // This is not always trivial to extract for all MIME types since some extensions have multiple '.' tokens
 // and the body of the request could also have one
-std::string extension_from_path(std::string path) {
+std::string extension_from_path(const std::filesystem::path& path) {
     std::string filename;
     const std::string slash = "/";
-    const auto last = path.find_last_of(slash);
-    if(last!=std::string::npos) {
-        filename = path.substr(last + slash.size());
-    } else {
-        filename = path;
-    }
+    filename = path.filename();
     const std::string delimiter = ".";
     if(filename.size() < delimiter.size()) return "";
     if(filename.substr(filename.size() - delimiter.size()) == delimiter) {return "";}
@@ -106,7 +99,7 @@ std::string extension_from_path(std::string path) {
 // This is used in the header of the GET response
 std::string get_MIME(std::string extension) {
     static std::once_flag init_MIME {};
-    std::call_once(init_MIME, [&](){MIMEmap = MIMES(absolute_directory(get_option("MIME_FOLDER")));});
+    std::call_once(init_MIME, [&](){ MIMEmap = MIMES(option_singleton().mime_folder); });
     try {
         return MIMEmap.at(extension);
     } catch(const std::logic_error& e) {
@@ -118,7 +111,7 @@ std::string get_MIME(std::string extension) {
 
 // that icon at the top of the browser tab has media type image/webp
 // otherwise we look up the MIME type
-std::string Mime_from_file(const std::string &filename) {
+std::string Mime_from_file(const std::filesystem::path &filename) {
     if(filename == "/favicon.ico") {
         return "image/webp";
     } else {

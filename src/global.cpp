@@ -16,54 +16,12 @@
 #include <vector>
 #include <limits.h>
 #include <sstream>
+#include <filesystem>
 
-const std::string fbw::config_file = fbw::absolute_directory("config.txt");
+namespace fbw {
 
 void strip(std::string& str) {
     str.erase(std::remove_if(str.begin(), str.end(), isspace), str.end());
-}
-
-std::unordered_map<std::string, std::string> get_options(std::string filename) {
-    auto file = std::ifstream(filename);
-    if(! file.good()) {
-        throw std::runtime_error("no config file at " + filename);
-    }
-    std::unordered_map<std::string, std::string> options;
-    std::pair<std::string, std::string> option;
-    while(  std::getline(file, option.first, '=') && std::getline(file, option.second)) {
-        strip(option.first);
-        strip(option.second);
-        options.insert(option);
-    }
-    return options;
-}
-
-std::string fbw::absolute_directory(std::string directory) {
-    if(directory.empty()) {
-        std::cerr << "failed to get current working directory" << std::endl;
-        std::terminate();
-    }
-    if(directory[0] == '/') {
-        return directory; // directory is absolute
-    }
-    std::vector<char> absolute_working;
-    absolute_working.resize(PATH_MAX);
-    void* res = getcwd(absolute_working.data(), PATH_MAX);
-    if (res == nullptr) {
-        std::cerr << "failed to get current working directory" << std::endl;
-        std::terminate();
-    }
-    std::string base_dir(absolute_working.data());
-    
-    return base_dir + "/" + directory;
-}
-
-std::once_flag onceFlag;
-
-std::string fbw::get_option(std::string option) {
-    static std::unordered_map<std::string, std::string> options = get_options(fbw::config_file);
-    std::call_once ( onceFlag, [&]{ options = get_options(fbw::config_file); } );
-    return options.at(option);
 }
 
 void remove_whitespace(std::string& str) {
@@ -82,7 +40,58 @@ std::vector<std::string> split_string(const std::string& input) {
     return tokens;
 }
 
-std::vector<std::string> fbw::get_multi_option(std::string option) {
-    auto opt = fbw::get_option(option);
-    return split_string(opt);
+const options& option_singleton() {
+    const std::filesystem::path config_file = "config.txt";
+    static options project_options;
+    static std::once_flag flag;
+    std::call_once(flag, [&] {
+        auto file = std::ifstream(config_file);
+        if(! file.good()) {
+            throw std::runtime_error("no config file at " + config_file.string());
+        }
+        std::string key;
+        std::string value;
+        std::unordered_map<std::string, std::string> option_map;
+        while(  std::getline(file, key, '=') && std::getline(file, value)) {
+            strip(key);
+            strip(value);
+            option_map.insert({key, value});
+        }
+        project_options.redirect_port = option_map.at("REDIRECT_PORT");
+        project_options.server_port = option_map.at("SERVER_PORT");
+        project_options.domain_names = split_string(option_map.at("DOMAIN_NAMES"));
+        project_options.certificate_file = option_map.at("CERTIFICATE_FILE");
+        project_options.key_file = option_map.at("KEY_FILE");
+        project_options.webpage_folder = option_map.at("WEBPAGE_FOLDER");
+        project_options.mime_folder = option_map.at("MIME_FOLDER");
+        project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
+    });
+
+    using namespace std::chrono_literals;
+    // static configurables
+    project_options.session_timeout = 3600s;
+    project_options.keep_alive = 5s;
+    project_options.error_timeout = 2s;
+
+    return project_options;
+}
+
+
+std::unordered_map<std::string, std::string> get_options(std::filesystem::path filename) {
+    auto file = std::ifstream(filename);
+    if(! file.good()) {
+        throw std::runtime_error("no config file at " + filename.string());
+    }
+    std::unordered_map<std::string, std::string> options;
+    std::pair<std::string, std::string> option;
+    while(  std::getline(file, option.first, '=') && std::getline(file, option.second)) {
+        strip(option.first);
+        strip(option.second);
+        options.insert(option);
+    }
+    return options;
+}
+
+
+
 }

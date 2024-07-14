@@ -95,6 +95,17 @@ public:
         std::reverse(out.begin(),out.end()); // to bigendian
         return out;
     }
+    constexpr std::array<unsigned char, INTBYTES> serialise_le() const noexcept { // bigendian
+        std::array<unsigned char,INTBYTES> out {0};
+        constexpr int sr = sizeof(radix);
+        for(size_t i = 0; i < v.size(); i++) {
+            for(int j = 0; j < sr; j++) {
+                out[i*sr +j] = v[i] >> (j*CHAR_BIT);
+            }
+        }
+        return out;
+    }
+
     constexpr uVar() noexcept :v ({0}) {}
     constexpr uVar(std::string_view s) noexcept {
         assert(s.size() >= 2);

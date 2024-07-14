@@ -80,6 +80,7 @@ enum class AlertDescription : uint8_t {
     protocol_version = 70,
     insufficient_security = 71,
     internal_error = 80,
+    inappropriate_fallback = 86,
     user_canceled = 90,
     no_renegotiation = 100,
     unsupported_extension = 110
@@ -131,7 +132,8 @@ enum class cipher_suites : uint16_t {
     TLS_RSA_WITH_AES_128_CBC_SHA = 0x002f,
     TLS_RSA_WITH_AES_256_CBC_SHA = 0x0035,
     TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA = 0xc012,
-    TLS_RSA_WITH_3DES_EDE_CBC_SHA = 0x000a
+    TLS_RSA_WITH_3DES_EDE_CBC_SHA = 0x000a,
+    TLS_FALLBACK_SCSV = 0x0056
 };
 
 
@@ -153,14 +155,13 @@ private:
     uint8_t m_major_version;
     uint8_t m_minor_version;
 public:
-    //tls_record() = default; // remove this line then fix task.hpp
+    tls_record() = default; // remove this line then fix task.hpp
     ustring m_contents;
     
     inline uint8_t get_type() const { return m_type; }
     inline uint8_t get_major_version() const { return m_major_version; }
     inline uint8_t get_minor_version() const { return m_minor_version; }
-    
-    
+
     inline tls_record(ContentType type, uint8_t major_version = 3, uint8_t minor_version = 3) :
         m_type(static_cast<uint8_t>(type)),
         m_major_version(major_version),

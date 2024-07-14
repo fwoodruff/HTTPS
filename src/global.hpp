@@ -14,14 +14,29 @@
 #include <iostream>
 #include <fstream>
 #include <cstdint>
+#include <optional>
+#include <vector>
+#include <filesystem>
 
 namespace fbw {
 
 using ustring = std::basic_string<uint8_t>;
-extern const std::string config_file;
 
-std::string get_option(std::string option);
-std::vector<std::string> get_multi_option(std::string option);
+struct options {
+    std::string redirect_port;
+    std::string server_port;
+    std::vector<std::string> domain_names;
+    std::string certificate_file;
+    std::string key_file;
+    std::filesystem::path webpage_folder;
+    std::filesystem::path mime_folder;
+    bool http_strict_transport_security;
+    std::chrono::milliseconds session_timeout;
+    std::chrono::milliseconds keep_alive;
+    std::chrono::milliseconds error_timeout;
+};
+
+const options& option_singleton();
 
 template<typename T>
 [[nodiscard]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {
@@ -57,9 +72,6 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     out.append(s.cbegin(), s.cend());
     return out;
 }
-
-
-std::string absolute_directory(std::string relative_directory);
 
 } // namespace fbw
 

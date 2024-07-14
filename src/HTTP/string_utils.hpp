@@ -33,11 +33,6 @@ struct http_frame {
 // A pretty timestamp for response headers
 [[nodiscard]] std::string timestring(time_t t);
 
-// Gets the date the file was created
-time_t get_file_date(std::FILE* file);
-
-bool file_exists (const ustring& name);
-
 // returns n bytes FIFO from an HTTP stream, and removes those bytes from the stream
 // Note that this returns an empty string if there are fewer than n bytes in the stream
 // O(N) in the current length of the stream
@@ -62,6 +57,7 @@ ustring extract(ustring& bytes, std::string delimiter);
 [[nodiscard]] std::pair<std::string, size_t> body_size(const ustring& header);
 
 // adds "index", ".html" as necessary and moves to lowercase
+// to convert an HTTP request file to a filesystem file name
 std::string fix_filename(std::string filename);
 
 std::string make_server_name();

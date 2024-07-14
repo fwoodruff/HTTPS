@@ -90,8 +90,6 @@ std::pair<std::string, size_t> body_size(const ustring& header) {
                 return {std::string(), std::stoi(arg) };
             } catch(const std::invalid_argument& e) {
                 throw http_error("400 Bad Request");
-            } catch(...) {
-                assert(false);
             }
         } else if (content.size() > multipart.size() and content.substr(0, multipart.size()) == multipart) {
             const auto n = content.find("\r\n");
@@ -176,7 +174,6 @@ std::string fix_filename(std::string filename) {
     }
     return filename;
 }
-
 
 void shuffle(std::array<uint8_t, 32>& state) {
     for(int i = 0; i < 3; i++) {

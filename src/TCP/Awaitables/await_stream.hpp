@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <span>
+#include <utility>
 
 #include <chrono>
 #include <optional>
@@ -37,14 +38,13 @@ public:
     readable(int fd, std::span<uint8_t>& buffer, std::optional<milliseconds> millis);
     bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaitingCoroutine);
-    std::span<uint8_t> await_resume();
+    std::pair<std::span<uint8_t>, stream_result> await_resume();
 private:
-    ssize_t receive_or_park(std::coroutine_handle<> handle);
     
     int m_fd;
-    ssize_t m_succ;
-    std::span<uint8_t>* m_buffer;  // scoped to callee
+    stream_result m_res;
     std::span<uint8_t> m_bytes_read;  // scoped to await_resume and await_suspend
+    std::span<uint8_t>* m_buffer; // scoped to caller
     std::optional<milliseconds> m_millis;
 };
 
@@ -54,12 +54,11 @@ public:
     writeable(int fd, std::span<const uint8_t>& bytes, std::optional<milliseconds> millis);
     bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaitingCoroutine);
-    std::span<const uint8_t> await_resume();
+    std::pair<std::span<const uint8_t>, stream_result> await_resume();
 private:
-    ssize_t send_or_park(std::coroutine_handle<> handle);
     
     int m_fd;
-    ssize_t m_succ;
+    stream_result m_res;
     std::span<const uint8_t>* m_buffer;
     std::span<const uint8_t> m_bytes_written; // scoped to await_resume and await_suspend
     std::optional<milliseconds> m_millis;

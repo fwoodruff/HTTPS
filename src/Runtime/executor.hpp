@@ -45,7 +45,6 @@ private:
     int num_tasks;
     bool can_poll_wait = true;
     
-    void set_task(task<void> main_task);
     void run();
     void spawn(task<void> subtask);
     void thread_function();

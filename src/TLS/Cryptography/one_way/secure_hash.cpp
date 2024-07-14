@@ -349,7 +349,7 @@ ustring sha1::hash() && {
         sha1_transform(m_state,m_data);
     }
     checked_bigend_write(datalen * 8, m_data, 56, 8);
-    sha1_transform(m_state,m_data);
+    sha1_transform(m_state, m_data);
     ustring hash;
     hash.resize(20);
     for(int i = 0; i < 5; i ++) {
@@ -366,7 +366,7 @@ std::unique_ptr<hash_base> sha1::clone() const {
     return std::make_unique<sha1>(*this);
 }
 
-[[nodiscard]] size_t hmac::get_block_size() const noexcept {
+size_t hmac::get_block_size() const noexcept {
     return m_hasher->get_block_size();
 }
 

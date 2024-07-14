@@ -17,7 +17,7 @@
 #include "TLS_enums.hpp"
 #include "../TCP/tcp_stream.hpp"
 #include "../Runtime/task.hpp"
-#include "../TCP/stream_base.hpp" // rename me
+#include "../TCP/stream_base.hpp"
 
 #include <array>
 #include <string>
@@ -26,16 +26,14 @@
 #include <atomic>
 
 
-
-
 namespace fbw {
-
 
 constexpr size_t TLS_RECORD_SIZE = (1u << 14) - 5;
 
 
-std::optional<tls_record> extract_record(std::span<uint8_t>& input);
-
+class TLS_handshake {
+    
+};
 
 class TLS : public stream {
 public:
@@ -43,39 +41,43 @@ public:
     TLS(std::unique_ptr<stream> output_stream);
     ~TLS() = default;
     
-    [[nodiscard]] task<bool> read_append(ustring&, std::optional<milliseconds> timeout = STANDARD_TIMEOUT) override;
-    [[nodiscard]] task<void> write(ustring, std::optional<milliseconds> timeout = STANDARD_TIMEOUT) override;
-    [[nodiscard]] task<void> close_notify(std::optional<milliseconds> timeout = STANDARD_TIMEOUT) override;
+    [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override; // todo: ssl_errors shouldn't leak here
+    [[nodiscard]] task<void> close_notify() override;
 private:
-    task<bool> perform_handshake(std::optional<milliseconds> timeout);
-    
+    [[nodiscard]] task<bool> perform_handshake(std::optional<milliseconds> timeout);
+    std::optional<tls_record> m_buffered_record;
      
     std::unique_ptr<stream> m_client;
     ustring m_buffer;
-    task<std::optional<tls_record>> try_read_record(std::optional<milliseconds> timeout);
-    task<void> write_record(tls_record record, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<bool> buffer_read_record();
+    [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> check_write_record(tls_record record, std::optional<milliseconds> timeout);
     
     HandshakeStage m_expected_record = HandshakeStage::client_hello;
     
-    task<void> client_handshake_record(tls_record, std::optional<milliseconds> timeout);
-    void client_alert(tls_record);
-    task<void> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> client_handshake_record(tls_record, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     
     void client_change_cipher_spec(tls_record);
     bool client_hello(tls_record);
     void client_key_exchange(tls_record key_exchange);
     void client_handshake_finished(tls_record finish);
     
-    task<void> server_change_cipher_spec(std::optional<milliseconds> timeout);
-    task<void> server_hello(std::optional<milliseconds> timeout, bool can_heartbeat);
-    task<void> server_certificate(std::optional<milliseconds> timeout);
-    task<void> server_key_exchange(std::optional<milliseconds> timeout);
-    task<void> server_hello_done(std::optional<milliseconds> timeout);
-    task<void> server_handshake_finished(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> server_hello_request(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> server_change_cipher_spec(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> server_hello(std::optional<milliseconds> timeout, bool can_heartbeat);
+    [[nodiscard]] task<stream_result> server_certificate(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> server_key_exchange(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> server_hello_done(std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> server_handshake_finished(std::optional<milliseconds> timeout);
+
+    [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
 
     static ustring hello_extensions(bool can_heartbeat);
     
-    void tls_notify_close();
     
     std::unique_ptr<hash_base> handshake_hasher = nullptr;
     std::unique_ptr<cipher_base> cipher_context = nullptr;
@@ -91,10 +93,10 @@ private:
     std::array<uint8_t,48> master_secret {};
 
     [[nodiscard]] static std::array<uint8_t,48> make_master_secret(const std::unique_ptr<const hash_base>& hasher,
-                                                            std::array<uint8_t,32> server_private,
-                                              std::array<uint8_t,32> client_public,
-                                              std::array<uint8_t,32> server_random,
-                                              std::array<uint8_t,32> client_random);
+                                              const std::array<uint8_t,32>& server_private,
+                                              const std::array<uint8_t,32>& client_public,
+                                              const std::array<uint8_t,32>& server_random,
+                                              const std::array<uint8_t,32>& client_random);
     
     [[nodiscard]] ustring expand_master(const std::array<unsigned char,48>& master,
                           const std::array<unsigned char,32>& server_random,

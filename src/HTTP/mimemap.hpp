@@ -26,6 +26,8 @@ namespace fbw {
 [[nodiscard]] std::string extension_from_path(const std::filesystem::path& path);
 std::string Mime_from_file(const std::filesystem::path &filename);
 
+extern decltype(MIMES("/")) MIMEmap;
+
 } // namespace fbw
 
 #endif // mimemap_hpp

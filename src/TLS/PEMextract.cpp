@@ -34,51 +34,7 @@ uint8_t letter_to_num(uint8_t byt) {
     if(byt == '/') {
         return 63;
     }
-    assert(false);
-}
-
-uint8_t num_to_letter(uint8_t bits) {
-    assert(bits < 64 and bits >=0);
-    if (bits <= 25) {
-        return bits + 'A';
-    }
-    if(bits>=26 and bits <= 51) {
-        return bits + 'a' - 26;
-    }
-    if(bits >=52 and bits <= 61) {
-        return bits + '0' - 52;
-    }
-    if(bits == 62) {
-        return '+';
-    }
-    if(bits == 63) {
-        return '/';
-    }
-    
-    assert(false);
-}
-
-
-ustring encode64(ustring data) {
-    ustring out;
-    uint16_t buffer = 0;
-    int j = 0;
-    for(size_t i = 0; i < data.size(); i++) {
-        if (data[i] == '\n') {
-            continue;
-        }
-        if (data[i] == '=') {
-            continue;
-        }
-        buffer <<= 8;
-        buffer |= data[i];
-        j += 8;
-        while(j >= 6) {
-            j -= 6;
-            out.append({num_to_letter((buffer>>j) & 0x3f)});
-        }
-    }
-    return out;
+    throw ssl_error("unexpected character; could not parse PEM", AlertLevel::fatal, AlertDescription::bad_certificate);
 }
 
 ustring decode64(std::string data) {
@@ -104,8 +60,16 @@ ustring decode64(std::string data) {
 }
 
 std::array<uint8_t,32> deserialise(ustring asn1) {
-    assert(asn1.size() >= 68);
-    // currently this ignores everything and assumes the file is secp256r1
+    if (asn1.size() < 68) {
+        throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
+    const ustring eckey_id = { 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
+    const ustring secp256k1_id = { 0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
+
+    if (eckey_id != asn1.substr(8, 9) or secp256k1_id != asn1.substr(17, 10)) {
+        throw ssl_error("unsupported certificate private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
+
     std::array<unsigned char, 32> privkey;
     std::copy(&asn1[36], &asn1[36 + 32], privkey.begin());
     return privkey;
@@ -113,6 +77,9 @@ std::array<uint8_t,32> deserialise(ustring asn1) {
 
 std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
     std::ifstream t(filename);
+    if (t.fail()) {
+        throw ssl_error("no private key found", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
     std::stringstream buffer;
     buffer << t.rdbuf();
     std::string file = buffer.str();
@@ -120,14 +87,15 @@ std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
     std::string end = "-----END PRIVATE KEY-----\n";
     size_t start_idx = file.find(begin);
     if(start_idx == std::string::npos) {
-        std::cerr << "Bad server private key" << std::endl;
-        std::terminate();
+        throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     start_idx += begin.size();
     size_t end_idx = file.find(end);
     if(end_idx == std::string::npos) {
-        std::cerr << "Bad server private key" << std::endl;
-        std::terminate();
+        throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
+    if (end_idx < start_idx) {
+        throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     std::string data = file.substr(start_idx,end_idx-start_idx);
     ustring DER = decode64(data);
@@ -155,15 +123,17 @@ std::vector<ustring> der_cert_from_file(std::filesystem::path filename) {
             }
         }
         start_idx += begin.size();
-        end_idx = file.find(end,end_idx);
+        end_idx = file.find(end, end_idx);
         if(end_idx == std::string::npos) {
             throw ssl_error("bad certificate", AlertLevel::fatal, AlertDescription::bad_certificate);
         }
-        std::string data = file.substr(start_idx,end_idx-start_idx);
-        end_idx+=end.size();
+        if (end_idx < start_idx) {
+            throw ssl_error("bad certificate", AlertLevel::fatal, AlertDescription::bad_certificate);
+        }
+        std::string data = file.substr(start_idx, end_idx - start_idx);
+        end_idx += end.size();
         const ustring DER = decode64(data);
         output.push_back(DER);
-        
     }
     return output;
 }

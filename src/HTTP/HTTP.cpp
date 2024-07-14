@@ -99,8 +99,6 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
     co_return http_frame { *header, *body };
 }
 
-// if the request handler fails with an HTTP error, the error response is reported to the client here
-// for example this is where 404 Not Found messages are constructed and sent to clients
 task<void> HTTP::send_error(http_error http_err) {
     auto error_message = std::string(http_err.what());
     std::ostringstream oss;
@@ -154,6 +152,8 @@ task<void> HTTP::client() {
         assert(false);
     }
 ERROR:
+    // if the request handler fails with an HTTP error, the error response is reported to the client here
+    // for example this is where 404 Not Found messages are constructed and sent to clients
     if(http_err) {
         co_await send_error(*http_err);
     }
@@ -170,12 +170,11 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
         throw http_error("505 HTTP Version Not Supported");
     }
     if(method[0] == "GET") {
-        auto res = co_await file_to_http(rootdirectory, filename);
-        co_return std::move(res);
+        co_return co_await file_to_http(rootdirectory, filename);
+
     } else if(method[0] == "POST") {
         handle_POST(std::move( http_request));
-        auto res = co_await file_to_http(rootdirectory, filename);
-        co_return std::move(res);
+        co_return co_await file_to_http(rootdirectory, filename);
     } else {
         throw http_error("405 Method Not Allowed\r\n");
     }
@@ -237,7 +236,7 @@ task<stream_result> HTTP::file_to_http(const std::filesystem::path& rootdir, std
 
     auto res = co_await m_stream->write(to_unsigned(oss.str()), option_singleton().session_timeout);
     if(res != stream_result::ok) {
-        co_return std::move(res);
+        co_return res;
     }
     
     const int buffer_size = 980;
@@ -249,7 +248,7 @@ task<stream_result> HTTP::file_to_http(const std::filesystem::path& rootdir, std
         buffer.resize(s);
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
         if(res != stream_result::ok) {
-            co_return std::move(res);
+            co_return res;
         }
     }
     co_return stream_result::ok;

@@ -34,6 +34,9 @@ void executor::thread_function() {
             } else if(!m_ready.empty()) {
                 task = m_ready.front();
                 m_ready.pop();
+                if(!m_ready.empty()) {
+                    m_cond.notify_one();
+                }
             } else {
                 assert(can_poll_wait);
                 this_thread_does_poll_wait = std::exchange(can_poll_wait, false);

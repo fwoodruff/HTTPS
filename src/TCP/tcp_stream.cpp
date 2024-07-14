@@ -20,8 +20,7 @@ task<stream_result> tcp_stream::read_append(ustring& abuffer, std::optional<mill
     if (status == stream_result::ok) {
         abuffer.append(bytes_read.begin(), bytes_read.end());
     }
-    stream_result res = status;
-    co_return std::move(res);
+    co_return status;
 }
 
 task<stream_result> tcp_stream::write(ustring abuffer, std::optional<milliseconds> timeout) {

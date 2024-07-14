@@ -54,13 +54,14 @@ int get_listener_socket(std::string service) {
     }
     // loop through all the results and bind to the first we can
     struct addrinfo *p;
+    int sockopt = 0;
     for(p = servinfo; p != nullptr; p = p->ai_next) {
         if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
             continue;
         }
         int yes = 1;
-        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-            throw std::runtime_error("setsockopt");
+        if (sockopt = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)); sockopt == -1) {
+            break;
         }
         if (::bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
@@ -69,6 +70,9 @@ int get_listener_socket(std::string service) {
         break;
     }
     freeaddrinfo(servinfo);
+    if(sockopt == -1) {
+        throw std::runtime_error("setsockopt failed");
+    }
     if (p == nullptr)  {
         throw std::runtime_error("server: failed to bind\n");
     }

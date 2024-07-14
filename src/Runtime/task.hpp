@@ -57,10 +57,18 @@ private:
 template<typename T>
 class task_promise final : public task_promise_base {
 public:
-    // copy elision does not occur in co_return statements
-    void return_value(T&& value) noexcept {
-        //::new (static_cast<void*>(std::addressof(m_value))) T(std::forward<T>(value));
-        m_value = std::forward<T>(value);
+    task_promise() noexcept {};
+    ~task_promise() noexcept {
+        if (init) {
+            m_value.~T();
+        }
+    };
+
+    template<typename U = T>
+    void return_value(U&& value) noexcept {
+        // copy elision does not occur in co_return statements
+        ::new (static_cast<void*>(std::addressof(m_value))) T(std::forward<U>(value));
+        init = true;
     }
     T& result() {
         if (m_exception) {
@@ -70,7 +78,10 @@ public:
     }
     task<T> get_return_object() noexcept;
 private:
-    T m_value;
+    union {
+        T m_value;
+    };
+    bool init = false;
 };
 
 template<>

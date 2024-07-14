@@ -26,8 +26,8 @@ struct options {
     std::string redirect_port;
     std::string server_port;
     std::vector<std::string> domain_names;
-    std::string certificate_file;
-    std::string key_file;
+    std::filesystem::path certificate_file;
+    std::filesystem::path key_file;
     std::filesystem::path webpage_folder;
     std::filesystem::path mime_folder;
     bool http_strict_transport_security;

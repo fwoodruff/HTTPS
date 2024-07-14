@@ -34,6 +34,7 @@ struct options {
     std::chrono::milliseconds session_timeout;
     std::chrono::milliseconds keep_alive;
     std::chrono::milliseconds error_timeout;
+    std::chrono::milliseconds handshake_timeout;
 };
 
 const options& option_singleton();

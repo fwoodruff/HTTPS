@@ -70,6 +70,7 @@ const options& option_singleton() {
     using namespace std::chrono_literals;
     // static configurables
     project_options.session_timeout = 3600s;
+    project_options.handshake_timeout = 180s;
     project_options.keep_alive = 5s;
     project_options.error_timeout = 2s;
 

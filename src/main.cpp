@@ -32,6 +32,7 @@ task<void> https_server() {
         std::clog << ss.str() << std::flush;
         for(;;) {
             if(auto client = co_await listener.accept()) {
+                // todo: check the client's IP and potentially shut connection
                 std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
                 std::unique_ptr<fbw::stream> tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
                 async_spawn(http_client(std::move(tls_stream), false));

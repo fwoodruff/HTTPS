@@ -12,6 +12,7 @@
 #include <span>
 #include <chrono>
 #include <optional>
+#include <string>
 
 #include "../global.hpp"
 #include "stream_base.hpp"
@@ -26,7 +27,7 @@ class writeable;
 
 class tcp_stream : public stream {
 public:
-    tcp_stream(int fd);
+    tcp_stream(int fd, std::string ip, uint16_t port);
     ~tcp_stream();
     tcp_stream(const tcp_stream& other) = delete;
     tcp_stream& operator=(const tcp_stream& other) = delete;
@@ -36,6 +37,8 @@ public:
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
+    std::string m_ip;
+    uint16_t m_port;
 private:
     int m_fd;
     [[nodiscard]] readable read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout);

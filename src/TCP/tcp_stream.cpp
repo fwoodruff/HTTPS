@@ -34,7 +34,7 @@ task<stream_result> tcp_stream::write(ustring abuffer, std::optional<millisecond
     co_return stream_result::ok;
 }
 
-tcp_stream::tcp_stream(int fd) : stream(), m_fd(fd) { }
+tcp_stream::tcp_stream(int fd, std::string ip, uint16_t port) : stream(), m_ip(ip), m_port(port), m_fd(fd) { }
 
 readable tcp_stream::read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout) {
     return readable { m_fd, bytes, timeout };
@@ -60,11 +60,12 @@ task<void> tcp_stream::close_notify() {
     co_return;
 }
 
-tcp_stream::tcp_stream(tcp_stream&& other) : m_fd(std::exchange(other.m_fd, -1)) {
-}
+tcp_stream::tcp_stream(tcp_stream&& other) : m_ip(std::move(other.m_ip)), m_port(std::move(other.m_port)), m_fd(std::exchange(other.m_fd, -1)) { }
 
 tcp_stream& tcp_stream::operator=(tcp_stream&& other) {
     this->m_fd = std::exchange(other.m_fd, -1);
+    this->m_ip = std::move(other.m_ip);
+    this->m_port = std::move(other.m_port);
     return *this;
 }
 

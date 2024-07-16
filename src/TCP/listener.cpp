@@ -61,7 +61,7 @@ int get_listener_socket(std::string service) {
         }
         int yes = 1;
         if (sockopt = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)); sockopt == -1) {
-            break;
+            continue;
         }
         if (::bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
@@ -79,9 +79,70 @@ int get_listener_socket(std::string service) {
     if (listen(sockfd, 10) == -1) {
         throw std::runtime_error("listen");
     }
+
     ::fcntl(sockfd, F_SETFL, O_NONBLOCK);
     return sockfd;
 }
+/*
+
+int get_listener_socket(const std::string &service) {
+    int sockfd = -1;
+    int port = std::stoi(service); // Convert service (port) to integer
+
+    struct sockaddr_in6 server_addr {}; // IPv6 address structure
+
+    if (port < 0 || port > 65535) {
+        throw std::runtime_error("Invalid port number");
+    }
+
+    // Create an IPv6 socket
+    sockfd = socket(AF_INET6, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        throw std::runtime_error("socket: failed to create socket");
+    }
+
+    // Allow both IPv4 and IPv6 connections
+    
+    int no = 0;
+    if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&no, sizeof(no)) == -1) {
+        close(sockfd);
+        throw std::runtime_error("setsockopt: failed to set IPV6_V6ONLY");
+    }
+    
+
+    // Set socket options
+    int yes = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+        close(sockfd);
+        throw std::runtime_error("setsockopt: failed");
+    }
+
+    // Configure the sockaddr_in6 structure for IPv6
+    server_addr.sin6_family = AF_INET6;
+    server_addr.sin6_addr = in6addr_any; // Bind to all available interfaces
+    server_addr.sin6_port = htons(port);
+
+    // Bind socket to port
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        close(sockfd);
+        throw std::runtime_error("bind: failed to bind socket");
+    }
+
+    // Listen on the socket
+    if (listen(sockfd, 10) == -1) {
+        close(sockfd);
+        throw std::runtime_error("listen: failed");
+    }
+
+    // Set socket to non-blocking mode
+    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
+        close(sockfd);
+        throw std::runtime_error("fcntl: failed to set non-blocking");
+    }
+
+    return sockfd;
+}
+*/
 
 tcplistener tcplistener::bind(std::string service) {
     int sockfd = get_listener_socket(service);

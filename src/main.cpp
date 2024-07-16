@@ -12,21 +12,34 @@
 #include <string>
 #include <sstream>
 #include <filesystem>
+#include <unordered_map>
+
+using ip_map = std::unordered_map<std::string, int>;
+
+std::mutex connections_mut;
+constexpr int max_ip_connections = 100;
 
 // after a connection is accepted, this is the per-client entry point
-task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect) {
+task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, ip_map& ip_connections, std::string ip) {
     try {
         fbw::HTTP http_handler { std::move(client_stream), fbw::option_singleton().webpage_folder, redirect };
         co_await http_handler.client();
     } catch(const std::exception& e) {
         std::cerr << e.what();
     }
+    std::scoped_lock lk {connections_mut};
+    // todo: find largest object files and remove outsized dependencies
+
+    ip_connections[ip]--;
+    if(ip_connections[ip] == 0) {
+        ip_connections.erase(ip);
+    }
 }
 
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
-task<void> https_server() {
+task<void> https_server(std::shared_ptr<ip_map> ip_connections) {
     try {
         auto port = fbw::option_singleton().server_port;
         auto listener = fbw::tcplistener::bind(port);
@@ -35,10 +48,17 @@ task<void> https_server() {
         std::clog << ss.str() << std::flush;
         for(;;) {
             if(auto client = co_await listener.accept()) {
-                // todo: check the client's IP and potentially shut connection
+                auto ip = client->m_ip;
+                {
+                    std::scoped_lock lk {connections_mut};
+                    if((*ip_connections)[ip] >= max_ip_connections) {
+                        continue;
+                    }
+                    (*ip_connections)[ip]++;
+                }
                 std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
                 std::unique_ptr<fbw::stream> tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
-                async_spawn(http_client(std::move(tls_stream), false));
+                async_spawn(http_client(std::move(tls_stream), false, *ip_connections, ip));
             }
         }
     } catch(const std::exception& e) {
@@ -46,8 +66,9 @@ task<void> https_server() {
     }
 }
 
-task<void> redirect_server() {
+task<void> redirect_server(std::shared_ptr<ip_map> ip_connections) {
     try {
+        // todo: have a folder for HTTP connections so we can implement HTTP-01 acme challenges
         auto port = fbw::option_singleton().redirect_port ;
         auto listener = fbw::tcplistener::bind(port);
         std::stringstream ss;
@@ -55,8 +76,16 @@ task<void> redirect_server() {
         std::clog << ss.str() << std::flush;
         for(;;) {
             if(auto client = co_await listener.accept()) {
+                auto ip = client->m_ip;
+                {
+                    std::scoped_lock lk {connections_mut};
+                    if((*ip_connections)[ip] >= max_ip_connections) {
+                        continue;
+                    }
+                    (*ip_connections)[ip]++;
+                }
                 std::unique_ptr<fbw::stream> client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
-                async_spawn(http_client(std::move(client_tcp_stream), true));
+                async_spawn(http_client(std::move(client_tcp_stream), true, *ip_connections, ip));
             }
         }
     } catch(const std::exception& e ) {
@@ -77,8 +106,9 @@ task<void> async_main(int argc, const char * argv[]) {
         std::cerr << "Certificate file: " << std::filesystem::absolute(fbw::option_singleton().certificate_file) << std::endl;
         co_return;
     }
-    async_spawn(https_server());
-    async_spawn(redirect_server());
+    auto ip_connections = std::make_shared<ip_map>(); // todo: integrate
+    async_spawn(https_server(ip_connections));
+    async_spawn(redirect_server(ip_connections));
     co_return;
 }
 

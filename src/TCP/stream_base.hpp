@@ -46,9 +46,9 @@ public:
     [[nodiscard]] virtual task<void> close_notify() = 0;
     virtual ~stream() noexcept = default;
     stream(const stream& other) = delete;
-    stream(stream&& other) noexcept = delete;
+    stream(stream&& other) noexcept = default;
     stream& operator=(const stream& other) = delete;
-    stream& operator=(stream&& other) noexcept = delete;
+    stream& operator=(stream&& other) noexcept = default;
     
 };
 

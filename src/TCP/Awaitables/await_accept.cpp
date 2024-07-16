@@ -14,6 +14,9 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <sys/types.h> 
+#include <arpa/inet.h>
+#include <optional>
 
 #ifdef __cpp_impl_coroutine
 #include <coroutine>
@@ -26,6 +29,21 @@ namespace std {
 #endif
 
 
+std::pair<std::string, uint16_t> get_ip_port(const struct sockaddr& sa) {
+    char ipstr[INET6_ADDRSTRLEN];
+    uint16_t port = 0;
+    if (sa.sa_family == AF_INET) {
+        struct sockaddr_in& sin = (struct sockaddr_in&)sa;
+        inet_ntop(AF_INET, &sin.sin_addr, ipstr, INET_ADDRSTRLEN);
+        port = ntohs(sin.sin_port);
+    } else if (sa.sa_family == AF_INET6) {
+        struct sockaddr_in6& sin6 = (struct sockaddr_in6& )sa;
+        inet_ntop(AF_INET6, &sin6.sin6_addr, ipstr, INET6_ADDRSTRLEN);
+        port = ntohs(sin6.sin6_port);
+    }
+    return {ipstr, port};
+}
+
 namespace fbw {
 
 std::optional<tcp_stream> acceptable::await_resume() {
@@ -35,8 +53,11 @@ std::optional<tcp_stream> acceptable::await_resume() {
     if(client_fd == -1) {
         return std::nullopt;
     }
-    ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
-    return client_fd;
+    auto [ip, port] = get_ip_port((struct sockaddr &)client_address);
+    std::string stip = ip;
+    int res = ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
+    assert(res == 0);
+    return {{client_fd, ip, port}};
 }
 
 acceptable::acceptable(int sfd) : m_server_fd(sfd) {}

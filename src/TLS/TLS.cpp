@@ -160,6 +160,7 @@ task<stream_result> TLS::server_hello_request() {
 }
 
 task<bool> TLS::perform_handshake() {
+    // todo: TLS 1.3
     handshake_material handshake;
     bool hello_request_sent = false;
     for(;;) {

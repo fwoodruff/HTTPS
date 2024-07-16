@@ -16,7 +16,6 @@
 #include <optional>
 #include <fstream>
 #include <string>
-#include <regex>
 
 
 namespace fbw {
@@ -180,16 +179,25 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
     }
 }
 
+std::string replace_all(std::string str, const std::string& from, const std::string& to) {
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.size(), to);
+        start_pos += to.size();
+    }
+    return str;
+};
+
 // POST requests need some server-dependent program logic
 // Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
 void HTTP::handle_POST(http_frame frame) {
     auto body = to_signed(std::move(frame.body));
     std::ofstream fout(option_singleton().webpage_folder/"final.html", std::ios_base::app);
-    body = std::regex_replace(body, std::regex("username="), "username: ");
-    body = std::regex_replace(body, std::regex("&password="), ", password: ");
-    body = std::regex_replace(body, std::regex("&confirm="), ", confirmed: ");
-    body = std::regex_replace(body, std::regex("<"), "&lt;");
-    body = std::regex_replace(body, std::regex(">"), "&gt;");
+    body = replace_all(std::move(body), "username=", "username: ");
+    body = replace_all(std::move(body), "&password=", ", password: ");
+    body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
+    body = replace_all(std::move(body), "<", "&lt;");
+    body = replace_all(std::move(body), ">", "&gt;");
     body.append("</p>");
     body.insert(0,"<p>");
     fout << body << std::endl;

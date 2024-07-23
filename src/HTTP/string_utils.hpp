@@ -62,5 +62,7 @@ std::string fix_filename(std::string filename);
 
 std::string make_server_name();
 
+[[nodiscard]] std::optional<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header);
+
 } // namespace fbw
 #endif // string_utils_hpp

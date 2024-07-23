@@ -121,8 +121,8 @@ public:
             v[x/rchars] += mod;
         }
     }
-    constexpr uVar(std::array<unsigned char,INTBYTES> s) noexcept {
-        std::reverse(s.begin(),s.end());
+    constexpr uVar(std::array<unsigned char, INTBYTES> s) noexcept {
+        std::reverse(s.begin(), s.end());
         for(size_t i = 0; i < v.size(); i++) {
             for(size_t j = 0; j < sizeof(radix); j++) {
                 radix x = s[i*sizeof(radix) +j];

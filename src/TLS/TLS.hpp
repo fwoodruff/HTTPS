@@ -31,15 +31,16 @@ namespace fbw {
 constexpr size_t TLS_RECORD_SIZE = (1u << 14) - 5;
 
 
+// todo: modify PRF to use templates and thus write data to stack better
 struct handshake_material {  
     std::unique_ptr<hash_base> handshake_hasher = nullptr;
-    std::array<uint8_t,32> m_client_random {};
-    std::array<uint8_t,32> m_server_random {};
+    ustring m_client_random {};
+    ustring m_server_random {};
     unsigned short cipher {};
-    std::unique_ptr<const hash_base> hasher_factory = nullptr;
+    std::unique_ptr<const hash_base> hash_ctor = nullptr;
     std::array<uint8_t,32> server_private_key_ephem {};
     std::array<uint8_t,32> client_public_key {};
-    std::array<uint8_t,48> master_secret {};
+    ustring master_secret {};
 };
 
 class TLS : public stream {
@@ -58,6 +59,10 @@ private:
     HandshakeStage m_expected_record = HandshakeStage::client_hello;
     ustring m_buffer;
     bool can_heartbeat = false;
+    bool tls13_available = false;
+    bool use_tls13 = false;
+    std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
+    std::optional<std::array<uint8_t, 32>> client_session_id;
 
     [[nodiscard]] task<bool> perform_handshake();
     
@@ -69,32 +74,23 @@ private:
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     
     void client_change_cipher_spec(tls_record);
-    bool client_hello(handshake_material& handshake, tls_record);
+    void client_hello(handshake_material& handshake, tls_record);
     void client_key_exchange(handshake_material&, tls_record key_exchange);
     void client_handshake_finished(handshake_material& handshake, tls_record finish);
     
     [[nodiscard]] task<stream_result> server_hello_request();
     [[nodiscard]] task<stream_result> server_change_cipher_spec();
-    [[nodiscard]] task<stream_result> server_hello(handshake_material&, bool can_heartbeat);
+    [[nodiscard]] task<stream_result> server_hello(handshake_material&);
     [[nodiscard]] task<stream_result> server_certificate(hash_base&);
     [[nodiscard]] task<stream_result> server_key_exchange(handshake_material&);
     [[nodiscard]] task<stream_result> server_hello_done(hash_base&);
     [[nodiscard]] task<stream_result> server_handshake_finished(const handshake_material&);
 
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
-    static ustring hello_extensions(bool can_heartbeat);
+    ustring hello_extensions(handshake_material& handshake);
     unsigned short cipher_choice(handshake_material& handshake, const ustring& s);
     
-    [[nodiscard]] static std::array<uint8_t,48> make_master_secret(const hash_base& hasher, 
-                                              const std::array<uint8_t,32>& server_private,
-                                              const std::array<uint8_t,32>& client_public,
-                                              const std::array<uint8_t,32>& server_random,
-                                              const std::array<uint8_t,32>& client_random);
-    
-    [[nodiscard]] ustring expand_master(const hash_base& hasher_factory, const std::array<unsigned char,48>& master,
-                          const std::array<unsigned char,32>& server_random,
-                          const std::array<unsigned char,32>& client_random, size_t len) const;
- 
+
 };
 
 } // namespace

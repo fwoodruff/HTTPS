@@ -218,8 +218,8 @@ std::vector<std::string> operating_systems {
 };
 
 std::string make_server_name() {
-    uint8_t random_bytes[2];
-    randomgen.randgen(random_bytes, 2);
+    std::array<uint8_t, 2> random_bytes;
+    randomgen.randgen(random_bytes);
     std::string server_name = "FredPi/0.1 " ;
     if(random_bytes[0] > 22) {
         server_name+= "(Unix) (Raspbian/Linux)";
@@ -227,6 +227,29 @@ std::string make_server_name() {
         server_name += operating_systems[random_bytes[1] % operating_systems.size()];
     }
     return server_name;
+}
+
+// todo: make pretty
+std::optional<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header) {
+    const std::string prefix = "bytes=";
+    if (range_header.substr(0, prefix.size()) != prefix) {
+        return std::nullopt;
+    }
+
+    size_t dash_pos = range_header.find('-', prefix.size());
+    if (dash_pos == std::string::npos) {
+        return std::nullopt;
+    }
+
+    try {
+        int start = std::stoi(range_header.substr(prefix.size(), dash_pos - prefix.size()));
+        int end = std::stoi(range_header.substr(dash_pos + 1));
+        return {{start, end}};
+    } catch (const std::invalid_argument& e) {
+        return std::nullopt;
+    } catch (const std::out_of_range& e) {
+        return std::nullopt;
+    }
 }
 
 

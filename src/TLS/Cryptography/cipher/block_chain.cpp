@@ -73,7 +73,7 @@ ustring pad_message(ustring message) {
 
 
 tls_record AES_CBC_SHA::encrypt(tls_record record) noexcept {
-    auto ctx = hmac(std::make_unique<sha1>(), server_MAC_key );
+    auto ctx = hmac(sha1(), server_MAC_key );
     std::array<uint8_t,13> sequence {};
     checked_bigend_write(seqno_server, sequence, 0, 8);
     seqno_server++;
@@ -86,7 +86,7 @@ tls_record AES_CBC_SHA::encrypt(tls_record record) noexcept {
     auto machash = std::move(ctx).hash();
     record.m_contents.append(machash);
     std::array<uint8_t, 16> record_IV {};
-    randomgen.randgen(&record_IV[0], record_IV.size());
+    randomgen.randgen(record_IV);
     record.m_contents = pad_message(std::move(record.m_contents));
     ustring out;
     out.append(record_IV.cbegin(),record_IV.cend());
@@ -156,7 +156,7 @@ tls_record AES_CBC_SHA::decrypt(tls_record record) {
     assert(plaintext.size() >= mac_calc.size());
     plaintext.resize(plaintext.size() - mac_calc.size());
 
-    auto ctx = hmac(std::make_unique<sha1>(), client_MAC_key);
+    auto ctx = hmac(sha1(), client_MAC_key);
     std::array<uint8_t,13> mac_hash_header {};
     checked_bigend_write(seqno_client, mac_hash_header, 0, 8);
     mac_hash_header[8] = record.get_type();

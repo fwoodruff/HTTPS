@@ -25,8 +25,9 @@ class HTTP {
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
     [[nodiscard]]  task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);
     [[nodiscard]] task<void> redirect(http_frame header, std::string domain);
-    [[nodiscard]] task<stream_result> file_to_http(const std::filesystem::path& rootdirectory, std::filesystem::path filename);
-    void handle_POST(http_frame request);
+    [[nodiscard]] task<stream_result> send_file(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::optional<std::pair<ssize_t, ssize_t>> range = std::nullopt);
+   
+    void write_body(ustring request);
     [[nodiscard]] task<void> send_error(http_error e);
     
     std::string m_folder;

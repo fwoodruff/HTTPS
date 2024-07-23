@@ -19,6 +19,18 @@ using ip_map = std::unordered_map<std::string, int>;
 std::mutex connections_mut;
 constexpr int max_ip_connections = 100;
 
+// todo:
+// secp256k1 and x25519, get the point at infinity behaviour right
+// implement TLS 1.3
+// Make encryption concurrent (depends on TLS 1.3 interface)
+// Implement a map between HTTP 'host' header and webroot (with default)
+// Implement an HTTP webroot (with 301 not 404) - this is so we can use HTTP ACME challenges
+// Implement a map between SNI host and TLS certificate (with default)
+// SHA-384 and AES-256
+// memory allocators on a per IP basis
+// add a health check to the docker image
+// Add ranges for large HTTP requests
+
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, ip_map& ip_connections, std::string ip) {
     try {
@@ -28,7 +40,6 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
         std::cerr << e.what();
     }
     std::scoped_lock lk {connections_mut};
-    // todo: find largest object files and remove outsized dependencies
 
     ip_connections[ip]--;
     if(ip_connections[ip] == 0) {
@@ -56,6 +67,7 @@ task<void> https_server(std::shared_ptr<ip_map> ip_connections) {
                     }
                     (*ip_connections)[ip]++;
                 }
+                // todo: perform the handshake first, and then assign the application layer based on asn1
                 std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
                 std::unique_ptr<fbw::stream> tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
                 async_spawn(http_client(std::move(tls_stream), false, *ip_connections, ip));

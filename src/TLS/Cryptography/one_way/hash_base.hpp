@@ -35,6 +35,7 @@ public:
     [[nodiscard]] virtual ustring hash() && = 0;
 
     [[nodiscard]] virtual size_t get_block_size() const noexcept = 0;
+    [[nodiscard]] virtual size_t get_hash_size() const noexcept = 0;
 };
 
 inline ustring hash_base::hash() const & {

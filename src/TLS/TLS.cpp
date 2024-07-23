@@ -19,6 +19,7 @@
 #include "Cryptography/cipher/chacha20poly1305.hpp"
 #include "../Runtime/task.hpp"
 #include "../TCP/tcp_stream.hpp"
+#include "TLS_helpers.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -245,10 +246,11 @@ task<stream_result> TLS::client_handshake_record(handshake_material& handshake, 
         case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("hello_request not supported", AlertLevel::fatal, AlertDescription::handshake_failure);
         case static_cast<uint8_t>(HandshakeType::client_hello):
-            can_heartbeat = client_hello(handshake, std::move(record));
-            if(auto result = co_await server_hello(handshake, can_heartbeat); result != stream_result::ok) {
+            client_hello(handshake, std::move(record));
+            if(auto result = co_await server_hello(handshake); result != stream_result::ok) {
                 co_return std::move(result);
             }
+            //co_return stream_result::ok;
             if(auto result = co_await server_certificate(*handshake.handshake_hasher); result != stream_result::ok) {
                 co_return std::move(result);
             }
@@ -327,8 +329,43 @@ bool check_SNI(ustring servernames) {
     return false;
 }
 
+std::array<uint8_t, 32> extract_x25519_key(ustring extension) {
+    size_t ext_len = try_bigend_read(extension, 0, 2); // todo, less copying, more indexing
+    if(ext_len + 2 != extension.size()) {
+        throw ssl_error("malformed TLS version extension", AlertLevel::fatal, AlertDescription::decode_error);
+    }
+    extension = extension.substr(2);
+    while(!extension.empty()) { // todo: check max iterations for any while(true)
+        ustring key_type = extension.substr(0, 2);
+        size_t len = try_bigend_read(extension, 2, 2);
+        ustring key_value = extension.substr(4, len);
+        if(key_type == ustring{ 0x00, 0x1d } and key_value.size() == 32) {
+            std::array<uint8_t, 32> out;
+            std::copy(key_value.begin(), key_value.end(), out.begin());
+            return out;
+        }
+        extension = extension.substr(len + 2);
+        // todo: size sanity check
+        // todo: extract other keys
+    }
+    return {};
+}
+
+bool is_tls13_supported(ustring extension) {
+    size_t versions = extension.at(0);
+    if(versions + 1 != extension.size() or versions % 2 != 0) {
+        throw ssl_error("malformed TLS version extension", AlertLevel::fatal, AlertDescription::decode_error);
+    }
+    for(int i = 1; i < extension.size(); i += 2) {
+        if(extension[i] == 0x03 and extension[i+1] == 0x04) {
+            std::cout << "tls 13 supported" << std::endl;
+        }
+        return true;
+    }
+    return false;
+}
  
-bool TLS::client_hello(handshake_material& handshake, tls_record record) {
+void TLS::client_hello(handshake_material& handshake, tls_record record) {
     if(m_expected_record != HandshakeStage::client_hello) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -343,14 +380,22 @@ bool TLS::client_hello(handshake_material& handshake, tls_record record) {
         throw ssl_error("record length overflows", AlertLevel::fatal, AlertDescription::decode_error);
     }
     // client random
+    handshake.m_client_random.resize(32);
     std::copy(&hello.at(6), &hello.at(38), handshake.m_client_random.begin());
     // session ID
     size_t idx = 38;
-    idx += try_bigend_read(hello, idx, 1) + 1;
+    size_t session_id_len = try_bigend_read(hello, idx, 1);
+    if(session_id_len == 32) {
+        client_session_id = std::array<uint8_t, 32>{};
+        std::copy(&hello.at(idx+1), &hello.at(idx+33), client_session_id->begin());
+    }
+
+    idx += (session_id_len + 1);
     // cipher suites
     size_t ciphers_len = try_bigend_read(hello, idx, 2);
     static_cast<void>(hello.at(idx+ ciphers_len + 2));
     handshake.cipher = cipher_choice(handshake, hello.substr(idx + 2, ciphers_len));
+    std::cout << "cipher choice: " << std::hex << handshake.cipher << std::endl;
     if(handshake.cipher == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) {
         throw ssl_error("unnecessary TLS 1.1 fallback", AlertLevel::fatal, AlertDescription::inappropriate_fallback);
     }
@@ -360,7 +405,7 @@ bool TLS::client_hello(handshake_material& handshake, tls_record record) {
         throw ssl_error("unsupported version handshake", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     assert(cipher_context);
-    assert(handshake.hasher_factory);
+    assert(handshake.hash_ctor);
     assert(handshake.handshake_hasher);
 
     idx += ciphers_len + 2;
@@ -372,9 +417,7 @@ bool TLS::client_hello(handshake_material& handshake, tls_record record) {
     }
     idx += (compression_methods_lengths + 1);
     // extensions
-    size_t extensions_len = try_bigend_read(hello, idx, 2);
-
-    bool can_heartbeat = false;
+    ssize_t extensions_len = try_bigend_read(hello, idx, 2);
     idx += 2;
     while(extensions_len > 0) {
         size_t extension_type = try_bigend_read(hello, idx, 2);
@@ -387,17 +430,23 @@ bool TLS::client_hello(handshake_material& handshake, tls_record record) {
         switch(extension_type) {
             case 0x000a:
                 break;
-            case 0x0000:
+            case 0x0000: // SNI
                 if(!check_SNI(extension)) {
                     throw ssl_error("unexpected SNI", AlertLevel::fatal, AlertDescription::handshake_failure);
                 }
                 break;
-            case 0x000f:
-                if (extension == ustring {0x00, 0x01, 0x00} or extension == ustring {0x00, 0x01, 0x01}) {
+            case 0x000f: // Heartbeat
+                if(extension == ustring {0x00, 0x01, 0x00} or extension == ustring {0x00, 0x01, 0x01}) { // todo: check actual values here
                     can_heartbeat = true;
                 } else {
                     throw ssl_error("invalid heartbeat extension", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
+                break;
+            case 0x002b: // TLS 1.3
+                tls13_available = is_tls13_supported(extension);
+                break;
+            case 0x0033: // key share
+                handshake.client_public_key = extract_x25519_key(extension);
                 break;
             default:
                 break;
@@ -407,36 +456,68 @@ bool TLS::client_hello(handshake_material& handshake, tls_record record) {
 
     handshake.handshake_hasher->update(hello);
     m_expected_record = HandshakeStage::server_hello;
-    return can_heartbeat;
 }
 
-task<stream_result> TLS::server_hello(handshake_material& handshake, bool can_heartbeat) {
+
+
+
+symmetric_keys tls13_key_calc(handshake_material& handshake) {
+    symmetric_keys keys;
+    
+    auto shared_secret = fbw::curve25519::multiply(handshake.server_private_key_ephem, handshake.client_public_key);
+    auto hash_all_messages = handshake.handshake_hasher->hash();
+
+    auto zero_hash = do_hash(*handshake.hash_ctor, ustring{});
+
+    auto early_secret = hkdf_extract(*handshake.hash_ctor, ustring{}, ustring(32, 0) );
+    auto derived_secret = hkdf_expand_label(*handshake.hash_ctor, early_secret, "derived", zero_hash, 48);
+    auto handshake_secret = hkdf_extract(*handshake.hash_ctor, derived_secret, shared_secret);
+
+    auto client_secret = hkdf_expand_label(*handshake.hash_ctor, handshake_secret, "c hs traffic", hash_all_messages, 48);
+    auto server_secret = hkdf_expand_label(*handshake.hash_ctor, handshake_secret, "s hs traffic", hash_all_messages, 48);
+
+    keys.client_handshake_key = hkdf_expand_label(*handshake.hash_ctor, client_secret, "key", ustring(), 32);
+    keys.server_handshake_key = hkdf_expand_label(*handshake.hash_ctor, server_secret, "key", ustring(), 32); // todo: make length depend on cipher
+
+    keys.client_handshake_iv = hkdf_expand_label(*handshake.hash_ctor, client_secret, "iv", ustring(), 12);
+    keys.server_handshake_iv = hkdf_expand_label(*handshake.hash_ctor, server_secret, "iv", ustring(), 12);
+
+    keys.client_data_key = hkdf_expand_label(*handshake.hash_ctor, keys.client_handshake_key, "key", ustring(), 32);
+    keys.server_data_key = hkdf_expand_label(*handshake.hash_ctor, keys.server_handshake_key, "key", ustring(), 32);
+    
+    return keys;
+}
+
+task<stream_result> TLS::server_hello(handshake_material& handshake) {
     assert(m_expected_record == HandshakeStage::server_hello);
+
+    // record header
     auto hello_record = tls_record(ContentType::Handshake);
     
-    hello_record.m_contents.reserve(49);
+    // handshake header and server version
+    hello_record.m_contents.reserve(49); // fix me
     hello_record.m_contents = {static_cast<uint8_t>(HandshakeType::server_hello), 0x00, 0x00, 0x00, 0x03, 0x03};
     
-    randomgen.randgen(handshake.m_server_random.data(), 32);
+    // server random
+    handshake.m_server_random.resize(32);
+    randomgen.randgen(handshake.m_server_random);
     hello_record.m_contents.append(handshake.m_server_random.cbegin(), handshake.m_server_random.cend());
-    hello_record.m_contents.append({0}); // session ID
+
+    // session_id
+    if(use_tls13 and client_session_id.has_value()) {
+        hello_record.m_contents.push_back(32);
+        hello_record.m_contents.append(client_session_id->begin(), client_session_id->end()); // session ID
+    } else {
+        hello_record.m_contents.append({0}); // session ID
+    }
+    
     ustring ciph;
     ciph.resize(2);
     checked_bigend_write(handshake.cipher, ciph, 0, 2);
     hello_record.m_contents.append(ciph);
     hello_record.m_contents.append({0}); // no compression
 
-    const ustring handshake_reneg = { 0xff, 0x01, 0x00, 0x01, 0x00 }; // announces no support for vulnerable handshake renegotiation attacks
-
-    ustring alpn_protocol_data { 0x00, 0x10, 0x00, 0x00, 0x00, 0x00 };  // announces application layer will use http/1.1
-    auto http11 = to_unsigned("http/1.1");
-    auto lenhttp11 = static_cast<uint8_t>(http11.size());
-    alpn_protocol_data.push_back(lenhttp11);
-    alpn_protocol_data.append(http11);
-    checked_bigend_write(alpn_protocol_data.size() - 6, alpn_protocol_data, 4, 2);
-    checked_bigend_write(alpn_protocol_data.size() - 4, alpn_protocol_data, 2, 2);
-
-    ustring extensions = hello_extensions(can_heartbeat);
+    ustring extensions = hello_extensions(handshake); // todo: store each of the extensions sent by the client in a map, and then only return those
     hello_record.m_contents.append(extensions);
 
     assert(hello_record.m_contents.size() >= 4);
@@ -447,10 +528,16 @@ task<stream_result> TLS::server_hello(handshake_material& handshake, bool can_he
     
     auto result = co_await write_record(hello_record, option_singleton().handshake_timeout);
     m_expected_record = HandshakeStage::server_certificate;
+
+    // todo: move into separate function
+    symmetric_keys keys = tls13_key_calc(handshake);
+
+    // todo: save the keys
+
     co_return std::move(result);
 }
 
-ustring TLS::hello_extensions(bool can_heartbeat) {
+ustring TLS::hello_extensions(handshake_material& handshake) {
      // announces no support for vulnerable handshake renegotiation attacks
     const ustring handshake_reneg = { 0xff, 0x01, 0x00, 0x01, 0x00 };
 
@@ -466,9 +553,27 @@ ustring TLS::hello_extensions(bool can_heartbeat) {
     // announces willingness to accept heartbeat records
     ustring heartbeat = { 0x00, 0x0f, 0x00, 0x01, 0x00 };
 
+    // announces we will use TLS 1.3
+    ustring tls13_ext = { 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04 };
+
+
+    ustring key_share_ext = { 0x00, 0x33, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20};
+    if(use_tls13) {
+        // compute x25519 keypair 
+        randomgen.randgen(handshake.server_private_key_ephem);
+        std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(handshake.server_private_key_ephem);
+        key_share_ext.append(pubkey_ephem.begin(), pubkey_ephem.end());
+    }
+
     ustring extensions { 0x00, 0x00 };
     extensions.append(alpn_protocol_data);
     extensions.append(handshake_reneg);
+
+    if(use_tls13) {
+        std::cout << "appending tls13 exts" << std::endl;
+        extensions.append(tls13_ext);
+        extensions.append(key_share_ext);
+    }
     if (can_heartbeat) {
         extensions.append(heartbeat);
     }
@@ -507,24 +612,28 @@ task<stream_result> TLS::server_certificate(hash_base& handshake_hasher) {
 }
 
 task<stream_result> TLS::server_key_exchange(handshake_material& handshake) {
-    randomgen.randgen(handshake.server_private_key_ephem.begin(), handshake.server_private_key_ephem.size());
+    randomgen.randgen(handshake.server_private_key_ephem);
     std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(handshake.server_private_key_ephem);
 
+    // Record Header
     tls_record record(ContentType::Handshake);
 
+    // Handshake Header
     record.m_contents.reserve(116);
     record.m_contents = { static_cast<uint8_t>(HandshakeType::server_key_exchange), 0x00, 0x00, 0x00 };
+
+    // Curve Info
     std::array<uint8_t,3> curve_info({static_cast<uint8_t>(ECCurveType::named_curve), 0x00, 0x00});
-    
     checked_bigend_write(static_cast<size_t>(NamedCurve::x25519), curve_info, 1, 2);
     
+    // Public Key
     ustring signed_empheral_key;
     signed_empheral_key.append(curve_info.cbegin(), curve_info.cend());
     signed_empheral_key.append({static_cast<uint8_t>(pubkey_ephem.size())});
     signed_empheral_key.append(pubkey_ephem.crbegin(), pubkey_ephem.crend());
 
-    assert(handshake.hasher_factory != nullptr);
-    auto hashctx = handshake.hasher_factory->clone();
+    assert(handshake.hash_ctor != nullptr);
+    auto hashctx = handshake.hash_ctor->clone();
     
     hashctx->update(handshake.m_client_random);
     hashctx->update(handshake.m_server_random);
@@ -537,10 +646,11 @@ task<stream_result> TLS::server_key_exchange(handshake_material& handshake) {
     
     auto certificate_private = privkey_from_file(option_singleton().key_file);
 
+    // Signature
     std::array<uint8_t, 32> csrn;
-    randomgen.randgen( csrn.begin(), csrn.size());
+    randomgen.randgen(csrn);
     ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
-    ustring sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256),
+    ustring sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
         static_cast<uint8_t>(SignatureAlgorithm::ecdsa), 0x00, 0x00});
     
     checked_bigend_write(signature.size(), sig_header, 2, 2);
@@ -584,11 +694,12 @@ void TLS::client_key_exchange(handshake_material& handshake, tls_record record) 
         throw ssl_error("bad public key", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     std::reverse_copy(&key_exchange[5], &key_exchange[37], handshake.client_public_key.begin());
-    handshake.master_secret = make_master_secret(*handshake.hasher_factory, handshake.server_private_key_ephem, handshake.client_public_key, handshake.m_server_random, handshake.m_client_random);
-    
+    auto premaster_secret = fbw::curve25519::multiply(handshake.server_private_key_ephem, handshake.client_public_key);
+    handshake.master_secret = prf(*handshake.hash_ctor, premaster_secret, "master secret", handshake.m_client_random + handshake.m_server_random, 48);
+
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes
-    ustring key_material = expand_master(*handshake.hasher_factory, handshake.master_secret, handshake.m_server_random, handshake.m_client_random, 128);
-    
+    auto key_material = prf(*handshake.hash_ctor,  handshake.master_secret, "key expansion", handshake.m_server_random + handshake.m_client_random, 128);
+
     cipher_context->set_key_material(key_material);
     handshake.handshake_hasher->update(key_exchange);
     m_expected_record = HandshakeStage::client_change_cipher_spec;
@@ -606,47 +717,28 @@ void TLS::client_change_cipher_spec(tls_record record) {
 }
 
 void TLS::client_handshake_finished(handshake_material& handshake, tls_record record) {
-    auto finish = record.m_contents;
     if(m_expected_record != HandshakeStage::client_handshake_finished) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    static_cast<void>(finish.at(0));
-    assert(finish[0] == static_cast<uint8_t>(HandshakeType::finished));
+    static_cast<void>(record.m_contents.at(0));
+    if(record.m_contents[0] != static_cast<uint8_t>(HandshakeType::finished)) {
+        throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
+    }
     
-    const size_t len = try_bigend_read(finish, 1, 3);
+    const size_t len = try_bigend_read(record.m_contents, 1, 3);
     if(len != 12) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    const std::string seed_signed = "client finished";
-    ustring seed;
-    seed.append(seed_signed.cbegin(), seed_signed.cend());
-    assert(handshake.handshake_hasher);
-    auto local_hasher = handshake.handshake_hasher->clone();
-    auto handshake_hash = local_hasher->hash();
-    seed.append(handshake_hash.cbegin(), handshake_hash.cend());
 
-    const auto ctx = hmac(handshake.hasher_factory->clone(), handshake.master_secret);
-    
-    auto ctx2 = ctx;
-    auto a1 = ctx2
-        .update(seed)
-        .hash();
-    auto p1 = (ctx2 = ctx)
-        .update(a1)
-        .update(seed)
-        .hash();
-    
-    bool eq = true;
-    for(int i = 0; i < 12; i ++) {
-        if(finish.at(i+4) != p1.at(i)) {
-            eq = false;
-        }
-    }
-    if(eq == false) {
+    auto finish = record.m_contents.substr(4);
+    auto handshake_hash = handshake.handshake_hasher->hash();
+    ustring expected_finished = prf(*handshake.hash_ctor, handshake.master_secret, "client finished", handshake_hash, 12);
+
+    if(expected_finished != finish) {
         throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    
-    handshake.handshake_hasher->update(finish);
+
+    handshake.handshake_hasher->update(record.m_contents);
     m_expected_record = HandshakeStage::server_change_cipher_spec;
 }
 
@@ -664,32 +756,13 @@ task<stream_result> TLS::server_handshake_finished(const handshake_material& han
     tls_record out(ContentType::Handshake);
     out.m_contents = { static_cast<uint8_t>(HandshakeType::finished), 0x00, 0x00, 0x0c };
     
-    const std::string SERVER_HANDSHAKE_SEED = "server finished";
-    ustring seed;
-    seed.append(SERVER_HANDSHAKE_SEED.cbegin(),SERVER_HANDSHAKE_SEED.cend());
-    
-    if(!handshake.handshake_hasher) {
-        throw ssl_error("hello not done", AlertLevel::fatal, AlertDescription::internal_error);
-    }
-    auto local_hasher = handshake.handshake_hasher->clone(); // the others?
-    auto handshake_hash = local_hasher->hash();
+    assert(handshake.handshake_hasher);
+    auto handshake_hash = handshake.handshake_hasher->hash(); // the others?
     assert(handshake_hash.size() == 32);
-    seed.append(handshake_hash.begin(), handshake_hash.end());
-
-    const auto ctx = hmac(handshake.hasher_factory->clone(), handshake.master_secret);
-    auto ctx2 = ctx;
     
-    auto a1 = (ctx2 = ctx)
-        .update(seed)
-        .hash();
-
-    auto p1 = (ctx2 = ctx)
-        .update(a1)
-        .update(seed)
-        .hash();
+    ustring server_finished = prf(*handshake.hash_ctor, handshake.master_secret, "server finished", handshake_hash, 12);
     
-    assert(p1.size() >= 12);
-    out.m_contents.append(&p1[0], &p1[12]);
+    out.m_contents.append(server_finished);
     if(m_expected_record <= HandshakeStage::server_change_cipher_spec) {
         throw ssl_error("Unwilling to respond on unencrypted channel", AlertLevel::fatal, AlertDescription::insufficient_security);
     }
@@ -746,60 +819,38 @@ task<stream_result> TLS::client_heartbeat(tls_record record, std::optional<milli
     co_return co_await write_record(heartbeat_record, timeout);
 }
 
-std::array<uint8_t,48> TLS::make_master_secret(const hash_base& hash_factory,
-                                                const std::array<uint8_t, 32>& server_private,
-                                                const std::array<uint8_t, 32>& client_public,
-                                                const std::array<uint8_t, 32>& server_random,
-                                                const std::array<uint8_t, 32>& client_random) {
-    auto premaster_secret = fbw::curve25519::multiply(server_private, client_public);
-    const std::string seedsi = "master secret";
-    ustring seed;
-    seed.append(seedsi.cbegin(),seedsi.cend());
-    seed.append(client_random.cbegin(), client_random.cend());
-    seed.append(server_random.cbegin(), server_random.cend());
-    
-    const auto ctx = hmac(hash_factory.clone(), premaster_secret);
-    auto ctx2 = ctx;
-    auto a1 = (ctx2 = ctx)
-                    .update(seed)
-                    .hash();
-    assert(a1.size() == 32);
-    auto a2 = (ctx2 = ctx)
-                    .update(a1)
-                    .hash();
-    auto p1 = (ctx2 = ctx)
-                    .update(a1)
-                    .update(seed)
-                    .hash();
-    auto p2 = (ctx2 = ctx)
-                    .update(a2)
-                    .update(seed)
-                    .hash();
-
-    std::array<uint8_t,48> master_secret;
-    assert(p2.size() >= 16);
-    std::copy(p1.cbegin(), p1.cend(), master_secret.begin());
-    std::copy(p2.begin(), p2.begin() + 16, &master_secret[32]);
-    
-    return master_secret;
-}
-
 // once client sends over their supported ciphers
 // if client supports ChaCha20 we enforce that
 // otherwise if client supports AES-GCM/AES-CBC, we pick whichever their preference is
 unsigned short TLS::cipher_choice(handshake_material& handshake, const ustring& s) {
+    if(tls13_available and false) {
+        for(size_t i = 0; i < s.size(); i += 2) {
+            uint16_t x = try_bigend_read(s, i, 2);
+            if(x == static_cast<uint16_t>(cipher_suites::TLS_CHACHA20_POLY1305_SHA256)) {
+                use_tls13 = true;
+                cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
+                handshake.hash_ctor = std::make_unique<sha256>();
+                handshake.handshake_hasher = handshake.hash_ctor->clone();
+                return x;
+            }
+        }
+    }
+
+    /*
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);
         if(x == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) {
             return x;
         }
     }
+    */
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);
         if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256)) {
+            std::cout << "chose CHACHA" << std::endl;
             cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
-            handshake.hasher_factory = std::make_unique<sha256>();
-            handshake.handshake_hasher = handshake.hasher_factory->clone();
+            handshake.hash_ctor = std::make_unique<sha256>();
+            handshake.handshake_hasher = handshake.hash_ctor->clone();
             return x;
         }
     }
@@ -807,49 +858,20 @@ unsigned short TLS::cipher_choice(handshake_material& handshake, const ustring& 
         uint16_t x = try_bigend_read(s, i, 2);
         if(x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)) {
             cipher_context = std::make_unique<aes::AES_128_GCM_SHA256>();
-            handshake.hasher_factory = std::make_unique<sha256>();
-            handshake.handshake_hasher = handshake.hasher_factory->clone();
+            handshake.hash_ctor = std::make_unique<sha256>();
+            handshake.handshake_hasher = handshake.hash_ctor->clone();
             return x;
         }
         if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA)) {
             cipher_context = std::make_unique<aes::AES_CBC_SHA>();
-            handshake.hasher_factory = std::make_unique<sha256>();
-            handshake.handshake_hasher = handshake.hasher_factory->clone();
+            handshake.hash_ctor = std::make_unique<sha256>();
+            handshake.handshake_hasher = handshake.hash_ctor->clone();
             return x;
         }
 
     }
     throw ssl_error("no supported ciphers", AlertLevel::fatal, AlertDescription::handshake_failure );
     return 0;
-}
-
-ustring TLS::expand_master(const hash_base& hasher_factory, const std::array<unsigned char,48>& master,
-                          const std::array<unsigned char,32>& server_random,
-                          const std::array<unsigned char,32>& client_random, size_t len) const {
-    ustring output;
-    const std::string seed = "key expansion";
-    ustring useed;
-    useed.append(seed.cbegin(), seed.cend());
-    useed.append(server_random.cbegin(), server_random.cend());
-    useed.append(client_random.cbegin(), client_random.cend());
-    auto a = useed;
-
-    const auto ctx = hmac(hasher_factory.clone(), master);
-    auto ctx2 = ctx;
-    while(output.size() < len) {
-        ctx2 = ctx;
-        ctx2.update(a);
-        auto ou = ctx2.hash();
-        a.clear();
-        a.append(ou);
-        ctx2 = ctx;
-        ctx2.update(a)
-            .update(useed);
-        ou = ctx2.hash();
-        output.append(ou);
-    }
-    output.resize(len);
-    return output;
 }
 
 }// namespace fbw

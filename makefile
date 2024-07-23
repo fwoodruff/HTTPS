@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wno-psabi -MMD -MP -Os
+CXXFLAGS := -std=c++20 -Wall -Wno-psabi -MMD -MP # -Os
 LDFLAGS :=
 
 ifeq ($(shell uname -s),Linux)
@@ -8,7 +8,7 @@ ifeq ($(shell uname -s),Linux)
 	CXXFLAGS += -static -flto=6
     LDFLAGS += -static-libstdc++ -static-libgcc
 else
- 	CXXFLAGS += -flto
+ 	CXXFLAGS +=# -flto
 endif
 
 # Directories

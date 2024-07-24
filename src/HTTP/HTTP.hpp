@@ -29,6 +29,8 @@ class HTTP {
     [[nodiscard]] task<stream_result> send_range(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range);
     [[nodiscard]] task<stream_result> send_multi_ranges(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges);
    
+    [[nodiscard]] task<stream_result> send_body_slice(std::ifstream& t, ssize_t begin, ssize_t end);
+
     void write_body(ustring request);
     [[nodiscard]] task<void> send_error(http_error e);
     

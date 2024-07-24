@@ -259,24 +259,30 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
     if(res != stream_result::ok) {
         co_return res;
     }
-    
-    ustring buffer;
-    while(!t.eof() and file_size != t.tellg()) {
-        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(file_size - t.tellg()));
-        buffer.resize(next_buffer_size);
-        t.read((char*)buffer.data(), buffer.size());
-        auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
-        if(res != stream_result::ok) {
-            co_return res;
-        }
-    }
-    co_return stream_result::ok;
+
+    co_return co_await send_body_slice(t, 0, file_size);
 }
 
 
 task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges) {
     // formally valid
     co_return co_await send_file(rootdir, filename);
+}
+
+task<stream_result> HTTP::send_body_slice(std::ifstream& t, ssize_t begin, ssize_t end) {
+    ustring buffer;
+    t.seekg(begin);
+    while(t.tellg() != end && !t.eof()) {
+        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
+        buffer.resize(next_buffer_size);
+        t.read((char*)buffer.data(), buffer.size());
+        auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
+        if(res != stream_result::ok) {
+            co_return res;
+        }
+        assert(t.tellg() <= end);
+    }
+    co_return stream_result::ok;
 }
 
 task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range) {
@@ -339,20 +345,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
         co_return res;
     }
     
-    ustring buffer;
-    t.seekg(begin);
-    while(t.tellg() != end && !t.eof()) {
-        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
-        buffer.resize(next_buffer_size);
-        t.read((char*)buffer.data(), buffer.size());
-        auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
-        if(res != stream_result::ok) {
-            co_return res;
-        }
-        assert(t.tellg() <= end);
-    }
-
-    co_return stream_result::ok;
+    co_return co_await send_body_slice(t, begin, end);
 }
 
 // if a client connects over http:// we need to form a response redirecting them to https://

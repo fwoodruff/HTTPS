@@ -237,7 +237,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
         }
         status_code = "206 Partial Content";
         begin = range->first;
-        end = range->second;
+        end = range->second + 1;
     }
     ssize_t content_length = end - begin;
 
@@ -256,7 +256,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
     }
 
     if(range != std::nullopt) {
-        oss << "Content-Range: bytes " << begin << "-" << end << "/" << file_size << "\r\n";
+        oss << "Content-Range: bytes " << range->first << "-" << range->second << "/" << file_size << "\r\n";
     } else if( file_size > 1000000) {
         std::cout << "large file" << std::endl;
         //oss << "Accept-Ranges: bytes\r\n";
@@ -276,7 +276,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
 
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
-        auto next_buffer_size = std::min(buffer_size, ssize_t(end + 1 - t.tellg()));
+        auto next_buffer_size = std::min(buffer_size, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);

@@ -344,7 +344,7 @@ std::array<uint8_t, 32> extract_x25519_key(ustring extension) {
             std::copy(key_value.begin(), key_value.end(), out.begin());
             return out;
         }
-        extension = extension.substr(len + 2);
+        extension = extension.substr(len + 4);
         // todo: size sanity check
         // todo: extract other keys
     }
@@ -419,6 +419,8 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
     // extensions
     ssize_t extensions_len = try_bigend_read(hello, idx, 2);
     idx += 2;
+
+    std::cout << "entering extensions" << std::endl;
     while(extensions_len > 0) {
         size_t extension_type = try_bigend_read(hello, idx, 2);
         size_t extension_len = try_bigend_read(hello, idx + 2, 2);
@@ -431,11 +433,14 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
             case 0x000a:
                 break;
             case 0x0000: // SNI
+                std::cout << "handling SNI ext" << std::endl;
                 if(!check_SNI(extension)) {
+                    std::cout << "error in SNI" << std::endl;
                     throw ssl_error("unexpected SNI", AlertLevel::fatal, AlertDescription::handshake_failure);
                 }
                 break;
             case 0x000f: // Heartbeat
+                std::cout << "heartbeat" << std::endl;
                 if(extension == ustring {0x00, 0x01, 0x00} or extension == ustring {0x00, 0x01, 0x01}) { // todo: check actual values here
                     can_heartbeat = true;
                 } else {
@@ -443,16 +448,20 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
                 }
                 break;
             case 0x002b: // TLS 1.3
+                std::cout << "is tl1 supported" << std::endl;
                 tls13_available = is_tls13_supported(extension);
                 break;
             case 0x0033: // key share
+                std::cout << "got key a" << std::endl;
                 handshake.client_public_key = extract_x25519_key(extension);
+                std::cout << "got key end" << std::endl;
                 break;
             default:
                 break;
         }
         idx += extension_len + 4;
     }
+    std::cout << "reached end of extensions" << std::endl;
 
     handshake.handshake_hasher->update(hello);
     m_expected_record = HandshakeStage::server_hello;

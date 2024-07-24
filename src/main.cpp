@@ -32,7 +32,7 @@ constexpr int max_ip_connections = 100;
 // add a health check to the docker image
 // Add ranges for large HTTP requests
 // HTTP compression encodings
-// HTTP header parsing is a bit stringy and doesn't differentiate between empty values and missing keys
+// HTTP header parsing is a bit stringy and doesn't differentiate between empty values and missing keys, generalise for sake of http/2
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, ip_map& ip_connections, std::string ip) {

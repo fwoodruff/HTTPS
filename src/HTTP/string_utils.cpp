@@ -9,6 +9,7 @@
 #include "../TLS/Cryptography/one_way/keccak.hpp"
 
 #include <sys/stat.h>
+#include "../global.hpp"
 
 #include <string>
 #include <ctime>
@@ -29,7 +30,7 @@ std::string timestring(time_t t) {
     std::tm* tm_ptr = std::gmtime(&t);
     assert(tm_ptr != nullptr);
     const std::tm tm = *tm_ptr;
-    auto err = std::strftime(buf, sizeof buf, "%a, %d %b %Y %H:%M:%S %Z", &tm);
+    auto err = std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm);
     assert(err != 0);
     const std::string out(buf);
     return out;
@@ -237,9 +238,9 @@ std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& r
     ssize_t pos = prefix.size();
     std::vector<std::pair<ssize_t, ssize_t>> out;
     while(true) {
-        std::string delim = ", ";
-        ssize_t end = range_header.find(delim, pos);
+        ssize_t end = range_header.find(',', pos);
         std::string range = range_header.substr(pos, end - pos);
+        remove_whitespace(range);
         ssize_t mid = range.find("-");
         auto first = range.substr(0, mid);
         auto second = range.substr(mid + 1);
@@ -250,9 +251,54 @@ std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& r
         if(end == std::string::npos) {
             break;
         }
-        pos = end + delim.size();
+        pos = end + 1;
     }
     return out;
+}
+
+ustring make_header(std::string status, std::unordered_map<std::string, std::string> header) {
+    std::ostringstream oss;
+    oss << "HTTP/1.1 " << status << "\r\n";
+
+    for(auto [k, v] : header) {
+        oss << k << ": " << v << "\r\n";
+    }
+    oss << "\r\n";
+    return to_unsigned(oss.str());
+}
+
+std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_t, ssize_t>& range) {
+    ssize_t begin;
+    ssize_t end;
+    if(range.first == -1) {
+        begin = file_size - range.second;
+        end = file_size;
+        range.first = begin;
+        range.second = end - 1;
+    } else if(range.second == -1) {
+        begin = range.first;
+        end = std::min(ssize_t(file_size), range.first + RANGE_SUGGESTED_SIZE);
+        range.second = end - 1;
+    } else {
+        begin = range.first;
+        end = range.second + 1;
+    }
+
+    if (range.first > range.second or range.second >= file_size) {
+        throw http_error("416 Requested Range Not Satisfiable");
+    }
+    assert(end > begin);
+    return {begin, end};
+}
+
+std::string error_to_html(std::string error) {
+    std::ostringstream oss;
+    oss << "<!DOCTYPE html>\n"
+        << "<html>\n"
+        << "<head><title>\n" << error << "</title></head>\n"
+        << "\t<body><h1>\n" << error << "</h1></body>\n" 
+        << "</html>";
+    return oss.str();
 }
 
 

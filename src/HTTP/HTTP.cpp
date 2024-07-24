@@ -9,6 +9,7 @@
 #include "string_utils.hpp"
 #include "../global.hpp"
 #include "mimemap.hpp"
+#include "../TLS/Cryptography/one_way/keccak.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -21,7 +22,7 @@
 namespace fbw {
 
 constexpr ssize_t FILE_READ_SIZE = 980; // bytes read from file before being sent to the presentation layer
-constexpr ssize_t RANGE_SUGGESTED_SIZE = 0x20d1ac;
+
 
 // an HTTP handler streams data in, gets a file from a folder and streams it back
 // or it might redirect unencrypted HTTP traffic
@@ -103,14 +104,15 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
 
 task<void> HTTP::send_error(http_error http_err) {
     auto error_message = std::string(http_err.what());
+    auto error_html = error_to_html(error_message);
     std::ostringstream oss;
     oss << "HTTP/1.1 " << error_message << "\r\n"
     << "Connection: close\r\n"
     << "Content-Type: text/html; charset=UTF-8\r\n"
-    << "Content-Length: " << error_message.size() << "\r\n"
+    << "Content-Length: " << error_html.size() << "\r\n"
     << "Server: FredPi/0.1 (Unix) (Raspbian/Linux)\r\n"
     << "\r\n"
-    << error_message;
+    << error_html;
     ustring output = to_unsigned(oss.str());
     auto res = co_await m_stream->write(output, option_singleton().session_timeout);
     if(res != stream_result::ok) {
@@ -132,7 +134,7 @@ task<void> HTTP::client() {
             if(m_redirect) {
                 auto& domains = option_singleton().domain_names;
                 if(domains.empty()) {
-                    // could extract domain names from SSL certificate?
+                    // todo: could extract domain names from SSL certificate?
                     throw std::runtime_error("no configured domain names");
                 }
                 co_await redirect(std::move(*http_request), domains[0]);
@@ -176,7 +178,7 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
         if(range_str == "") {
             co_return co_await send_file(rootdirectory, filename);
         }
-        
+
         auto ranges = parse_range_header(range_str);
         if(ranges.empty()) {
             throw http_error("400 Bad Request");
@@ -219,57 +221,143 @@ void HTTP::write_body(ustring frame) {
     fout << body << std::endl;
 }
 
-// todo: maybe separate out the range response
-// our HTTP client has sent an HTTP request. We send over the response header, then stream the file
-// contents back to them. If sending would block, we park this coroutine for polling
-task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::filesystem::path filename) {
-    constexpr time_t day = 24*60*60;
-    filename = fix_filename(std::move(filename));
-    std::string MIME = Mime_from_file(filename);
-    std::ifstream t(rootdir/filename.relative_path(), std::ifstream::ate | std::ifstream::binary);
+ssize_t get_file_size(std::filesystem::path filename) {
+    std::ifstream t(filename, std::ifstream::ate | std::ifstream::binary);
     if(t.fail()) {
         throw http_error("404 Not Found");
     }
-    size_t file_size = t.tellg();
-    t.seekg(0);
+    return t.tellg();
+}
+
+std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string filename) {
     auto time = std::time(0);
     if(static_cast<std::time_t>(-1) == time) {
         throw http_error("500 Internal Server Error");
     }
-
-    std::ostringstream oss;
-    oss << "HTTP/1.1 200 OK \r\n"
-        << "Date: " << timestring(time) << "\r\n"
-        << "Expires: " << timestring(time + day) << "\r\n"
-        << "Content-Type: " << MIME << (MIME.substr(0,4)=="text" ? "; charset=UTF-8" : "") << "\r\n"
-        << "Content-Length: " << file_size << "\r\n"
-        << "Connection: Keep-Alive\r\n"
-        << "Keep-Alive: timeout=" << option_singleton().keep_alive.count() << "\r\n"
-        << "Server: " << make_server_name() << "\r\n";
-
+    constexpr time_t day = 24*60*60;
+    std::unordered_map<std::string, std::string> headers {
+        {"Date", timestring(time)},
+        {"Expires", timestring(time + day)},
+        {"Content-Type", MIME + (MIME.substr(0, 4) == "text" ? "; charset=UTF-8" : "")},
+        {"Content-Length", std::to_string(file_size)},
+        {"Connection", "Keep-Alive"},
+        {"Keep-Alive", "timeout=" + std::to_string(option_singleton().keep_alive.count())},
+        {"Server", make_server_name()},
+    };
     if(option_singleton().http_strict_transport_security) {
-        oss << "Strict-Transport-Security: max-age=31536000\r\n";
+        headers.insert({"Strict-Transport-Security", "max-age=31536000"});
     }
-    if( file_size > RANGE_SUGGESTED_SIZE) {
-        oss << "Accept-Ranges: bytes\r\n";
-    }
-    oss << "\r\n";
+    return headers;
+}
 
-    auto res = co_await m_stream->write(to_unsigned(oss.str()), option_singleton().session_timeout);
+// our HTTP client has sent an HTTP request. We send over the response header, then stream the file
+// contents back to them. If sending would block, we park this coroutine for polling
+task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::filesystem::path filename) {
+    filename = fix_filename(std::move(filename));
+    auto file_path = rootdir/filename.relative_path();
+    std::string MIME = Mime_from_file(filename);
+    ssize_t file_size = get_file_size(file_path);
+    auto headers = prepare_headers(file_size, MIME, file_path);
+    if(file_size > RANGE_SUGGESTED_SIZE) {
+        headers.insert({"Accept-Ranges", "bytes"});
+    }
+    ustring header_str = make_header("200 OK", headers);
+    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
-
-    co_return co_await send_body_slice(t, 0, file_size);
+    co_return co_await send_body_slice(file_path, 0, file_size);
 }
 
+
+
+task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range) {
+    assert(range.first != -1 or range.second != -1);
+    filename = fix_filename(std::move(filename));
+    auto file_path = rootdir/filename.relative_path();
+    size_t file_size = get_file_size(file_path);
+    std::string MIME = Mime_from_file(filename);
+    
+    auto [begin, end] = get_range_bounds(file_size, range);
+    if(begin == 0 and end == file_size) {
+        co_return co_await send_file(rootdir, filename);
+    }
+
+    auto headers = prepare_headers(end - begin, MIME, file_path);
+    headers.insert({"Accept-Ranges", "bytes"});
+    headers.insert({"Content-Range", "bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size)});
+
+    ustring header_str = make_header("206 Partial Content", headers);
+    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
+    if(res != stream_result::ok) {
+        co_return res;
+    }
+    
+    co_return co_await send_body_slice(file_path, begin, end);
+}
+
+
+std::string range_header(std::pair<ssize_t, ssize_t> range, ssize_t file_size) {
+    return "Content-Range: bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size) + "\r\n\r\n";
+}
 
 task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges) {
-    // formally valid
-    co_return co_await send_file(rootdir, filename);
+
+    filename = fix_filename(std::move(filename));
+    auto file_path = rootdir/filename.relative_path();
+    size_t file_size = get_file_size(file_path);
+    std::string MIME = Mime_from_file(filename);
+
+    std::array<uint8_t, 28> entropy;
+    randomgen.randgen(entropy);
+    std::string boundary_string;
+    for(unsigned c : entropy) {
+        boundary_string.push_back('A' + c % 26);
+    }
+    std::string mid_bound = "--" + boundary_string + "\r\n";
+    std::string end_bound = "--" + boundary_string + "--\r\n";
+
+    auto content_size = 0;
+    for(auto& range : ranges) {
+        auto [begin, end] = get_range_bounds(file_size, range);
+        content_size += mid_bound.size();
+        content_size += range_header(range, file_size).size();
+        content_size += (end - begin);
+        content_size += std::string("\r\n").size();
+    }
+    content_size += end_bound.size();
+    auto headers = prepare_headers(content_size, MIME, file_path);
+    headers["Content-Type"] = "multipart/byteranges; boundary=" + boundary_string;
+    
+    ustring header_str = make_header("206 Partial Content", headers);
+    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
+    if(res != stream_result::ok) {
+        co_return res;
+    }
+    for(auto& range : ranges) {
+        auto [begin, end] = get_range_bounds(file_size, range);
+        auto delimi = mid_bound + range_header(range, file_size);
+        auto result = co_await m_stream->write(to_unsigned(delimi), option_singleton().session_timeout);
+        if(result != stream_result::ok) {
+            co_return result;
+        }
+        result = co_await send_body_slice(file_path, begin, end);
+        if(result != stream_result::ok) {
+            co_return result;
+        }
+        result = co_await m_stream->write(to_unsigned("\r\n"), option_singleton().session_timeout);
+        if(result != stream_result::ok) {
+            co_return result;
+        }
+    }
+    co_return co_await m_stream->write(to_unsigned(end_bound), option_singleton().session_timeout);
 }
 
-task<stream_result> HTTP::send_body_slice(std::ifstream& t, ssize_t begin, ssize_t end) {
+task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end) {
+    std::ifstream t(file_path, std::ifstream::binary);
+    if(t.fail()) {
+        throw http_error("404 Not Found");
+    }
     ustring buffer;
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
@@ -285,68 +373,7 @@ task<stream_result> HTTP::send_body_slice(std::ifstream& t, ssize_t begin, ssize
     co_return stream_result::ok;
 }
 
-task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range) {
-    assert(range.first != -1 or range.second != -1);
 
-    constexpr time_t day = 24*60*60;
-    filename = fix_filename(std::move(filename));
-    std::string MIME = Mime_from_file(filename);
-    std::ifstream t(rootdir/filename.relative_path(), std::ifstream::ate | std::ifstream::binary);
-    if(t.fail()) {
-        throw http_error("404 Not Found");
-    }
-    size_t file_size = t.tellg();
-    t.seekg(0);
-    auto time = std::time(0);
-    if(static_cast<std::time_t>(-1) == time) {
-        throw http_error("500 Internal Server Error");
-    }
-
-    ssize_t begin;
-    ssize_t end;
-    if(range.first == -1) {
-        begin = file_size - range.first;
-        end = file_size;
-    } else if(range.second == -1) {
-        begin = range.first;
-        end = std::min(ssize_t(file_size), range.first + RANGE_SUGGESTED_SIZE);
-        if(begin == 0 and end == file_size) {
-            co_return co_await send_file(rootdir, filename);
-        }
-        range.second = end - 1;
-    } else {
-        if (range.first > range.second or range.second >= file_size) {
-            throw http_error("416 Requested Range Not Satisfiable");
-        }
-        begin = range.first;
-        end = range.second + 1;
-    }
-    ssize_t content_length = end - begin;
-
-    std::ostringstream oss;
-    oss << "HTTP/1.1 206 Partial Content\r\n"
-        << "Date: " << timestring(time) << "\r\n"
-        << "Expires: " << timestring(time + day) << "\r\n"
-        << "Content-Type: " << MIME << (MIME.substr(0,4)=="text" ? "; charset=UTF-8" : "") << "\r\n"
-        << "Content-Length: " << content_length << "\r\n"
-        << "Connection: Keep-Alive\r\n"
-        << "Keep-Alive: timeout=" << option_singleton().keep_alive.count() << "\r\n"
-        << "Server: " << make_server_name() << "\r\n"
-        << "Content-Range: bytes " << range.first << "-" << range.second << "/" << file_size << "\r\n"
-        << "Accept-Ranges: bytes\r\n";
-
-    if(option_singleton().http_strict_transport_security) {
-        oss << "Strict-Transport-Security: max-age=31536000\r\n";
-    }
-    oss << "\r\n";
-
-    auto res = co_await m_stream->write(to_unsigned(oss.str()), option_singleton().session_timeout);
-    if(res != stream_result::ok) {
-        co_return res;
-    }
-    
-    co_return co_await send_body_slice(t, begin, end);
-}
 
 // if a client connects over http:// we need to form a response redirecting them to https://
 task<void> HTTP::redirect(http_frame request, std::string domain) {

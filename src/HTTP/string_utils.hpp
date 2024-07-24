@@ -19,6 +19,7 @@
 
 namespace fbw {
 
+constexpr ssize_t RANGE_SUGGESTED_SIZE = 0x20d1ac;
 // throw HTTP error status codes
 class http_error : public std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -64,6 +65,12 @@ std::string make_server_name();
 
 [[nodiscard]] std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header);
 
+
+[[nodiscard]] ustring make_header(std::string status, std::unordered_map<std::string, std::string> header);
+
+[[nodiscard]] std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_t, ssize_t>& range);
+
+[[nodiscard]] std::string error_to_html(std::string error);
 
 } // namespace fbw
 #endif // string_utils_hpp

@@ -34,7 +34,7 @@ TARGET := $(TARGET_DIR)/codeymccodeface
 $(TARGET): $(OBJ)
 	@mkdir -p $(TARGET_DIR)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
-	strip $(TARGET)
+#	strip $(TARGET)
 
 # Compile source files into object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp

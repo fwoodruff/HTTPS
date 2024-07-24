@@ -20,10 +20,6 @@
 
 namespace fbw {
 
-void strip(std::string& str) {
-    str.erase(std::remove_if(str.begin(), str.end(), isspace), str.end());
-}
-
 void remove_whitespace(std::string& str) {
     str.erase(std::remove_if(str.begin(), str.end(), ::isspace), str.end());
 }
@@ -53,8 +49,8 @@ const options& option_singleton() {
         std::string value;
         std::unordered_map<std::string, std::string> option_map;
         while(  std::getline(file, key, '=') && std::getline(file, value)) {
-            strip(key);
-            strip(value);
+            remove_whitespace(key);
+            remove_whitespace(value);
             option_map.insert({key, value});
         }
         project_options.redirect_port = option_map.at("REDIRECT_PORT");
@@ -86,8 +82,8 @@ std::unordered_map<std::string, std::string> get_options(std::filesystem::path f
     std::unordered_map<std::string, std::string> options;
     std::pair<std::string, std::string> option;
     while(  std::getline(file, option.first, '=') && std::getline(file, option.second)) {
-        strip(option.first);
-        strip(option.second);
+        remove_whitespace(option.first);
+        remove_whitespace(option.second);
         options.insert(option);
     }
     return options;

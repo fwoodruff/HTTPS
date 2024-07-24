@@ -74,6 +74,8 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     return out;
 }
 
+void remove_whitespace(std::string& str);
+
 } // namespace fbw
 
 #endif // global_hpp

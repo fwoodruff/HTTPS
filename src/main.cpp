@@ -50,6 +50,14 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
     }
 }
 
+task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, ip_map& ip_connections, std::string ip) {
+    bool success = co_await client_stream->perform_handshake();
+    if(!success) {
+        co_return;
+    }
+    co_await http_client(std::move(client_stream), false, ip_connections, ip);
+}
+
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
@@ -71,9 +79,10 @@ task<void> https_server(std::shared_ptr<ip_map> ip_connections) {
                     (*ip_connections)[ip]++;
                 }
                 // todo: perform the handshake first, and then assign the application layer based on asn1
-                std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
-                std::unique_ptr<fbw::stream> tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
-                async_spawn(http_client(std::move(tls_stream), false, *ip_connections, ip));
+                auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
+                auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
+                
+                async_spawn(tls_client(std::move(tls_stream), *ip_connections, ip));
             }
         }
     } catch(const std::exception& e) {
@@ -99,7 +108,7 @@ task<void> redirect_server(std::shared_ptr<ip_map> ip_connections) {
                     }
                     (*ip_connections)[ip]++;
                 }
-                std::unique_ptr<fbw::stream> client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
+                auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
                 async_spawn(http_client(std::move(client_tcp_stream), true, *ip_connections, ip));
             }
         }

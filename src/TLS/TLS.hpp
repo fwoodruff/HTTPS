@@ -52,6 +52,8 @@ public:
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
+
+    [[nodiscard]] task<bool> perform_handshake();
 private:
     std::optional<tls_record> m_buffered_record;
     std::unique_ptr<stream> m_client;
@@ -64,7 +66,7 @@ private:
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
     std::optional<std::array<uint8_t, 32>> client_session_id;
 
-    [[nodiscard]] task<bool> perform_handshake();
+    
     
     [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);

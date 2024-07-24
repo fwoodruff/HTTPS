@@ -358,7 +358,7 @@ bool is_tls13_supported(ustring extension) {
     }
     for(int i = 1; i < extension.size(); i += 2) {
         if(extension[i] == 0x03 and extension[i+1] == 0x04) {
-            std::cout << "tls 13 supported" << std::endl;
+            // tls 1.3 supported // todo: check logic
         }
         return true;
     }
@@ -395,7 +395,6 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
     size_t ciphers_len = try_bigend_read(hello, idx, 2);
     static_cast<void>(hello.at(idx+ ciphers_len + 2));
     handshake.cipher = cipher_choice(handshake, hello.substr(idx + 2, ciphers_len));
-    std::cout << "cipher choice: " << std::hex << handshake.cipher << std::endl;
     if(handshake.cipher == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) {
         throw ssl_error("unnecessary TLS 1.1 fallback", AlertLevel::fatal, AlertDescription::inappropriate_fallback);
     }
@@ -420,7 +419,6 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
     ssize_t extensions_len = try_bigend_read(hello, idx, 2);
     idx += 2;
 
-    std::cout << "entering extensions" << std::endl;
     while(extensions_len > 0) {
         size_t extension_type = try_bigend_read(hello, idx, 2);
         size_t extension_len = try_bigend_read(hello, idx + 2, 2);
@@ -433,14 +431,11 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
             case 0x000a:
                 break;
             case 0x0000: // SNI
-                std::cout << "handling SNI ext" << std::endl;
                 if(!check_SNI(extension)) {
-                    std::cout << "error in SNI" << std::endl;
                     throw ssl_error("unexpected SNI", AlertLevel::fatal, AlertDescription::handshake_failure);
                 }
                 break;
             case 0x000f: // Heartbeat
-                std::cout << "heartbeat" << std::endl;
                 if(extension == ustring {0x00, 0x01, 0x00} or extension == ustring {0x00, 0x01, 0x01}) { // todo: check actual values here
                     can_heartbeat = true;
                 } else {
@@ -448,20 +443,16 @@ void TLS::client_hello(handshake_material& handshake, tls_record record) {
                 }
                 break;
             case 0x002b: // TLS 1.3
-                std::cout << "is tl1 supported" << std::endl;
                 tls13_available = is_tls13_supported(extension);
                 break;
             case 0x0033: // key share
-                std::cout << "got key a" << std::endl;
                 handshake.client_public_key = extract_x25519_key(extension);
-                std::cout << "got key end" << std::endl;
                 break;
             default:
                 break;
         }
         idx += extension_len + 4;
     }
-    std::cout << "reached end of extensions" << std::endl;
 
     handshake.handshake_hasher->update(hello);
     m_expected_record = HandshakeStage::server_hello;
@@ -579,7 +570,6 @@ ustring TLS::hello_extensions(handshake_material& handshake) {
     extensions.append(handshake_reneg);
 
     if(use_tls13) {
-        std::cout << "appending tls13 exts" << std::endl;
         extensions.append(tls13_ext);
         extensions.append(key_share_ext);
     }
@@ -856,7 +846,6 @@ unsigned short TLS::cipher_choice(handshake_material& handshake, const ustring& 
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);
         if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256)) {
-            std::cout << "chose CHACHA" << std::endl;
             cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
             handshake.hash_ctor = std::make_unique<sha256>();
             handshake.handshake_hasher = handshake.hash_ctor->clone();

@@ -169,10 +169,20 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
         throw http_error("505 HTTP Version Not Supported");
     }
     if(method[0] == "GET") {
-        //std::cout << "Request header: " << to_signed(http_request.header) << std::endl;;
-        //auto range = parse_range_header(get_argument(http_request.header, "Range"));
-
-        co_return co_await send_file(rootdirectory, filename);
+        auto range_str = get_argument(http_request.header, "Range");
+        if(range_str == "") {
+            co_return co_await send_file(rootdirectory, filename);
+        }
+        
+        auto ranges = parse_range_header(range_str);
+        if(ranges.empty()) {
+            throw http_error("400 Bad Request");
+        }
+        if(ranges.size() == 1) {
+            co_return co_await send_range(rootdirectory, filename, ranges[0]);
+        }
+        co_return co_await send_multi_ranges(rootdirectory, filename, ranges);
+        
 
     } else if(method[0] == "POST") {
         write_body(std::move( http_request.body));
@@ -209,7 +219,7 @@ void HTTP::write_body(ustring frame) {
 // todo: maybe separate out the range response
 // our HTTP client has sent an HTTP request. We send over the response header, then stream the file
 // contents back to them. If sending would block, we park this coroutine for polling
-task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::filesystem::path filename, std::optional<std::pair<ssize_t, ssize_t>> range) {
+task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::filesystem::path filename) {
     constexpr time_t day = 24*60*60;
     filename = fix_filename(std::move(filename));
     std::string MIME = Mime_from_file(filename);
@@ -224,29 +234,12 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
         throw http_error("500 Internal Server Error");
     }
 
-    std::string status_code;
-    ssize_t begin;
-    ssize_t end;
-    if(range == std::nullopt) {
-        begin = 0;
-        end = file_size;
-        status_code = "200 OK";
-    } else {
-        if (range->first > range->second) {
-            throw http_error("400 Bad Request");
-        }
-        status_code = "206 Partial Content";
-        begin = range->first;
-        end = range->second + 1;
-    }
-    ssize_t content_length = end - begin;
-
     std::ostringstream oss;
-    oss << "HTTP/1.1 " << status_code << "\r\n"
+    oss << "HTTP/1.1 200 OK \r\n"
         << "Date: " << timestring(time) << "\r\n"
         << "Expires: " << timestring(time + day) << "\r\n"
         << "Content-Type: " << MIME << (MIME.substr(0,4)=="text" ? "; charset=UTF-8" : "") << "\r\n"
-        << "Content-Length: " << content_length << "\r\n"
+        << "Content-Length: " << file_size << "\r\n"
         << "Connection: Keep-Alive\r\n"
         << "Keep-Alive: timeout=" << option_singleton().keep_alive.count() << "\r\n"
         << "Server: " << make_server_name() << "\r\n";
@@ -254,17 +247,91 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
     if(option_singleton().http_strict_transport_security) {
         oss << "Strict-Transport-Security: max-age=31536000\r\n";
     }
-
-    if(range != std::nullopt) {
-        oss << "Content-Range: bytes " << range->first << "-" << range->second << "/" << file_size << "\r\n";
-    } else if( file_size > 1000000) {
-        std::cout << "large file" << std::endl;
-        //oss << "Accept-Ranges: bytes\r\n";
+    if( file_size > 1000000) {
+        oss << "Accept-Ranges: bytes\r\n";
     }
-
     oss << "\r\n";
 
-    std::cout << "response header: \n" << oss.str() << std::endl;
+    auto res = co_await m_stream->write(to_unsigned(oss.str()), option_singleton().session_timeout);
+    if(res != stream_result::ok) {
+        co_return res;
+    }
+    
+    
+    const ssize_t buffer_size = 980;
+    ustring buffer;
+    while(!t.eof() and file_size != t.tellg()) {
+        auto next_buffer_size = std::min(buffer_size, ssize_t(file_size - t.tellg()));
+        buffer.resize(next_buffer_size);
+        t.read((char*)buffer.data(), buffer.size());
+        auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
+        if(res != stream_result::ok) {
+            co_return res;
+        }
+    }
+    co_return stream_result::ok;
+}
+
+
+task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges) {
+    // formally valid
+    co_return co_await send_file(rootdir, filename);
+}
+
+task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range) {
+    assert(range.first != -1 or range.second != -1);
+
+    constexpr time_t day = 24*60*60;
+    filename = fix_filename(std::move(filename));
+    std::string MIME = Mime_from_file(filename);
+    std::ifstream t(rootdir/filename.relative_path(), std::ifstream::ate | std::ifstream::binary);
+    if(t.fail()) {
+        throw http_error("404 Not Found");
+    }
+    size_t file_size = t.tellg();
+    t.seekg(0);
+    auto time = std::time(0);
+    if(static_cast<std::time_t>(-1) == time) {
+        throw http_error("500 Internal Server Error");
+    }
+
+    ssize_t begin;
+    ssize_t end;
+    if(range.first == -1) {
+        begin = file_size - range.first;
+        end = file_size;
+    } else if(range.second == -1) {
+        begin = range.first;
+        end = std::min(ssize_t(file_size), range.first + 4000000);
+        if(begin == 0 and end == file_size) {
+            co_return co_await send_file(rootdir, filename);
+        }
+        range.second = end - 1;
+    } else {
+        if (range.first > range.second or range.second >= file_size) {
+            throw http_error("416 Requested Range Not Satisfiable");
+        }
+        begin = range.first;
+        end = range.second + 1;
+    }
+    ssize_t content_length = end - begin;
+
+    std::ostringstream oss;
+    oss << "HTTP/1.1 206 Partial Content\r\n"
+        << "Date: " << timestring(time) << "\r\n"
+        << "Expires: " << timestring(time + day) << "\r\n"
+        << "Content-Type: " << MIME << (MIME.substr(0,4)=="text" ? "; charset=UTF-8" : "") << "\r\n"
+        << "Content-Length: " << content_length << "\r\n"
+        << "Connection: Keep-Alive\r\n"
+        << "Keep-Alive: timeout=" << option_singleton().keep_alive.count() << "\r\n"
+        << "Server: " << make_server_name() << "\r\n"
+        << "Content-Range: bytes " << range.first << "-" << range.second << "/" << file_size << "\r\n"
+        << "Accept-Ranges: bytes\r\n";
+
+    if(option_singleton().http_strict_transport_security) {
+        oss << "Strict-Transport-Security: max-age=31536000\r\n";
+    }
+    oss << "\r\n";
 
     auto res = co_await m_stream->write(to_unsigned(oss.str()), option_singleton().session_timeout);
     if(res != stream_result::ok) {
@@ -276,7 +343,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
 
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
-        auto next_buffer_size = std::min(buffer_size, ssize_t(end - t.tellg()));
+        auto next_buffer_size = std::max(buffer_size, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);

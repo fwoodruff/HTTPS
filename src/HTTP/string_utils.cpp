@@ -229,27 +229,30 @@ std::string make_server_name() {
     return server_name;
 }
 
-// todo: make pretty
-std::optional<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header) {
-    const std::string prefix = "bytes=";
-    if (range_header.substr(0, prefix.size()) != prefix) {
-        return std::nullopt;
+std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header) {
+    std::string prefix = "bytes=";
+    if(range_header.substr(0, prefix.size()) != prefix) {
+        return {};
     }
-
-    size_t dash_pos = range_header.find('-', prefix.size());
-    if (dash_pos == std::string::npos) {
-        return std::nullopt;
+    ssize_t pos = prefix.size();
+    std::vector<std::pair<ssize_t, ssize_t>> out;
+    while(true) {
+        std::string delim = ", ";
+        ssize_t end = range_header.find(delim, pos);
+        std::string range = range_header.substr(pos, end - pos);
+        ssize_t mid = range.find("-");
+        auto first = range.substr(0, mid);
+        auto second = range.substr(mid + 1);
+        if(first == "" and second == "") {
+            return {};
+        }
+        out.push_back({first == "" ? -1 : std::stoi(first), second == "" ? -1 : std::stoi(second)});
+        if(end == std::string::npos) {
+            break;
+        }
+        pos = end + delim.size();
     }
-
-    try {
-        int start = std::stoi(range_header.substr(prefix.size(), dash_pos - prefix.size()));
-        int end = std::stoi(range_header.substr(dash_pos + 1));
-        return {{start, end}};
-    } catch (const std::invalid_argument& e) {
-        return std::nullopt;
-    } catch (const std::out_of_range& e) {
-        return std::nullopt;
-    }
+    return out;
 }
 
 

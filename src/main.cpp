@@ -6,6 +6,7 @@
 #include "global.hpp"
 #include "HTTP/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
+#include "HTTP/string_utils.hpp"
 
 #include <memory>
 #include <fstream>
@@ -30,6 +31,8 @@ constexpr int max_ip_connections = 100;
 // memory allocators on a per IP basis
 // add a health check to the docker image
 // Add ranges for large HTTP requests
+// HTTP compression encodings
+// HTTP header parsing is a bit stringy and doesn't differentiate between empty values and missing keys
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, ip_map& ip_connections, std::string ip) {
@@ -125,6 +128,8 @@ task<void> async_main(int argc, const char * argv[]) {
 }
 
 int main(int argc, const char * argv[]) {
+    //fbw::parse_range_header("bytes=200-999, 2000-2499, -100, 9500-");
+    //return 0;
     run(async_main(argc, argv));
     return 0;
 }

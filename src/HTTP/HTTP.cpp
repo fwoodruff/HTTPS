@@ -20,6 +20,9 @@
 
 namespace fbw {
 
+constexpr ssize_t FILE_READ_SIZE = 980; // bytes read from file before being sent to the presentation layer
+constexpr ssize_t RANGE_SUGGESTED_SIZE = 0x20d1ac;
+
 // an HTTP handler streams data in, gets a file from a folder and streams it back
 // or it might redirect unencrypted HTTP traffic
 HTTP::HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect) :
@@ -247,7 +250,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
     if(option_singleton().http_strict_transport_security) {
         oss << "Strict-Transport-Security: max-age=31536000\r\n";
     }
-    if( file_size > 1000000) {
+    if( file_size > RANGE_SUGGESTED_SIZE) {
         oss << "Accept-Ranges: bytes\r\n";
     }
     oss << "\r\n";
@@ -257,11 +260,9 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
         co_return res;
     }
     
-    
-    const ssize_t buffer_size = 980;
     ustring buffer;
     while(!t.eof() and file_size != t.tellg()) {
-        auto next_buffer_size = std::min(buffer_size, ssize_t(file_size - t.tellg()));
+        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(file_size - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
@@ -302,7 +303,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
         end = file_size;
     } else if(range.second == -1) {
         begin = range.first;
-        end = std::min(ssize_t(file_size), range.first + 4000000);
+        end = std::min(ssize_t(file_size), range.first + RANGE_SUGGESTED_SIZE);
         if(begin == 0 and end == file_size) {
             co_return co_await send_file(rootdir, filename);
         }
@@ -338,12 +339,10 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
         co_return res;
     }
     
-    const ssize_t buffer_size = 980;
     ustring buffer;
-
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
-        auto next_buffer_size = std::max(buffer_size, ssize_t(end - t.tellg()));
+        auto next_buffer_size = std::max(FILE_READ_SIZE, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);

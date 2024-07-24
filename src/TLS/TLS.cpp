@@ -57,11 +57,7 @@ task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
 task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl {};
     try {
-        if(m_expected_record != HandshakeStage::application_data) {
-            if(!co_await perform_handshake()) {
-                co_return stream_result::closed;
-            }
-        }
+        assert(m_expected_record == HandshakeStage::application_data);
 
         auto [record, result] = co_await try_read_record(timeout);
         if(result != stream_result::ok) {
@@ -102,11 +98,6 @@ END2:
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     try {
-        if(m_expected_record != HandshakeStage::application_data) {
-            if(!co_await perform_handshake()) {
-                co_return stream_result::closed;
-            }
-        }
         constexpr size_t RECORD_SIZE = 1300;
         size_t idx = 0;
         while(idx < data.size()) {

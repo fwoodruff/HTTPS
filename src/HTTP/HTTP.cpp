@@ -342,7 +342,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
     ustring buffer;
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
-        auto next_buffer_size = std::max(FILE_READ_SIZE, ssize_t(end - t.tellg()));
+        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
@@ -351,7 +351,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
         }
         assert(t.tellg() <= end);
     }
-    
+
     co_return stream_result::ok;
 }
 

@@ -151,14 +151,14 @@ task<stream_result> TLS::server_hello_request() {
     co_return stream_result::closed;
 }
 
-task<bool> TLS::perform_handshake() {
+task<std::string> TLS::perform_handshake() {
     // todo: TLS 1.3
     handshake_material handshake;
     bool hello_request_sent = false;
     for(;;) {
         auto [record, result] = co_await try_read_record(option_singleton().handshake_timeout);
         if(result == stream_result::closed) {
-            co_return false;
+            co_return "";
         }
         if(result == stream_result::timeout) {
             if(!hello_request_sent) {
@@ -168,7 +168,7 @@ task<bool> TLS::perform_handshake() {
                     continue;
                 }
             }
-            co_return false;
+            co_return "";
         }
         if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
             record = cipher_context->decrypt(std::move(record));
@@ -176,10 +176,10 @@ task<bool> TLS::perform_handshake() {
         switch ( static_cast<ContentType>(record.get_type()) ) {
             case ContentType::Handshake:
                 if(co_await client_handshake_record(handshake, std::move(record)) != stream_result::ok) {
-                    co_return false;
+                    co_return "";
                 }
                 if(m_expected_record == HandshakeStage::application_data) {
-                    co_return true;
+                    co_return handshake.alpn;
                 }
                 break;
             case ContentType::ChangeCipherSpec:
@@ -189,11 +189,11 @@ task<bool> TLS::perform_handshake() {
                 throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::unexpected_message);
             case ContentType::Alert:
                 co_await client_alert(std::move(record), option_singleton().handshake_timeout);
-                co_return false;
+                co_return "";
             case ContentType::Heartbeat:
                 auto res = co_await client_heartbeat(std::move(record), option_singleton().handshake_timeout);
                 if(res != stream_result::ok) {
-                    co_return false;
+                    co_return "";
                 }
                 break;
         }
@@ -535,6 +535,8 @@ ustring TLS::hello_extensions(handshake_material& handshake) {
     // announces application layer will use http/1.1
     ustring alpn_protocol_data { 0x00, 0x10, 0x00, 0x00, 0x00, 0x00 }; 
     auto http11 = to_unsigned("http/1.1");
+    handshake.alpn = "http/1.1";
+
     auto lenhttp11 = static_cast<uint8_t>(http11.size());
     alpn_protocol_data.push_back(lenhttp11);
     alpn_protocol_data.append(http11);

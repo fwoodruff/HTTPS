@@ -41,6 +41,7 @@ struct handshake_material {
     std::array<uint8_t,32> server_private_key_ephem {};
     std::array<uint8_t,32> client_public_key {};
     ustring master_secret {};
+    std::string alpn;
 };
 
 class TLS : public stream {
@@ -53,7 +54,7 @@ public:
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
 
-    [[nodiscard]] task<bool> perform_handshake();
+    [[nodiscard]] task<std::string> perform_handshake();
 private:
     std::optional<tls_record> m_buffered_record;
     std::unique_ptr<stream> m_client;

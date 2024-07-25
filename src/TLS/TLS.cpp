@@ -59,9 +59,13 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
     try {
         assert(m_expected_record == HandshakeStage::application_data);
 
+        auto res = co_await flush();
+        if(res != stream_result::ok) {
+            co_return res;
+        }
         auto [record, result] = co_await try_read_record(timeout);
         if(result != stream_result::ok) {
-            co_return std::move(result);
+            co_return result;
         }
         if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
             record = cipher_context->decrypt(std::move(record));
@@ -98,16 +102,21 @@ END2:
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     try {
-        constexpr size_t RECORD_SIZE = 1300;
         size_t idx = 0;
         while(idx < data.size()) {
-            ustring contents = data.substr(idx, RECORD_SIZE);
-            idx += RECORD_SIZE;
-            tls_record rec(ContentType::Application);
-            rec.m_contents = std::move(contents);
-            auto res = co_await write_record(std::move(rec), timeout);
-            if (res != stream_result::ok) {
-                co_return res;
+            size_t write_size = std::min(WRITE_RECORD_SIZE - m_write_buffer_idx, data.size() - idx);
+            std::copy_n(data.data() + idx, write_size, m_write_buffer.data() + m_write_buffer_idx);
+            m_write_buffer_idx += write_size;
+            idx += write_size;
+
+            if (m_write_buffer_idx == WRITE_RECORD_SIZE) {
+                tls_record rec(ContentType::Application);
+                rec.m_contents = ustring(m_write_buffer.data(), m_write_buffer.data() + WRITE_RECORD_SIZE);
+                auto res = co_await write_record(std::move(rec), timeout);
+                if (res != stream_result::ok) {
+                    co_return res;
+                }
+                m_write_buffer_idx = 0;
             }
         }
         co_return stream_result::ok;
@@ -125,9 +134,20 @@ END2:
     co_return stream_result::closed;
 }
 
+task<stream_result> TLS::flush() {
+    if (m_write_buffer_idx > 0) {
+        tls_record rec(ContentType::Application);
+        rec.m_contents = ustring(m_write_buffer.data(), m_write_buffer.data() + m_write_buffer_idx);
+        auto res = co_await write_record(std::move(rec), option_singleton().session_timeout);
+        m_write_buffer_idx = 0;
+       co_return res;
+    }
+    co_return stream_result::ok;
+}
 
 task<void> TLS::close_notify() {
     try {
+        co_await flush();
         co_await server_alert(AlertLevel::warning, AlertDescription::close_notify);
         auto [record, result] = co_await try_read_record(option_singleton().error_timeout);
         if(result != stream_result::ok) {
@@ -157,10 +177,7 @@ task<std::string> TLS::perform_handshake() {
     bool hello_request_sent = false;
     for(;;) {
         auto [record, result] = co_await try_read_record(option_singleton().handshake_timeout);
-        if(result == stream_result::closed) {
-            co_return "";
-        }
-        if(result == stream_result::timeout) {
+        if(result == stream_result::read_timeout) {
             if(!hello_request_sent) {
                 auto res = co_await server_hello_request();
                 if(res == stream_result::ok) {
@@ -168,6 +185,9 @@ task<std::string> TLS::perform_handshake() {
                     continue;
                 }
             }
+            co_return "";
+        }
+        if(result != stream_result::ok) {
             co_return "";
         }
         if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
@@ -201,11 +221,6 @@ task<std::string> TLS::perform_handshake() {
 }
 
 task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<milliseconds> timeout) {
-    if (m_buffered_record) {
-        auto record = *m_buffered_record;
-        m_buffered_record = std::nullopt;
-        co_return {record, stream_result::ok};
-    }
     for(;;) {
         if (m_buffer.size() > TLS_RECORD_SIZE + 6) {
             throw ssl_error("oversized record", AlertLevel::fatal, AlertDescription::record_overflow);

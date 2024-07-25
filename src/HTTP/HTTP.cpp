@@ -78,11 +78,11 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         }
         assert(m_stream != nullptr);
         stream_result connection_alive = co_await m_stream->read_append(m_buffer, option_singleton().keep_alive);
-        if (connection_alive == stream_result::timeout) {
+        if (connection_alive == stream_result::read_timeout) {
             co_await m_stream->close_notify();
             co_return std::nullopt;
         }
-        if(connection_alive == stream_result::closed) {
+        if(connection_alive != stream_result::ok) {
             co_return std::nullopt;
         }
     }
@@ -115,7 +115,7 @@ task<void> HTTP::send_error(http_error http_err) {
     << error_html;
     ustring output = to_unsigned(oss.str());
     auto res = co_await m_stream->write(output, option_singleton().session_timeout);
-    if(res != stream_result::ok) {
+    if(res == stream_result::ok) {
         co_await m_stream->close_notify();
     }
     co_return;
@@ -141,6 +141,10 @@ task<void> HTTP::client() {
                 co_return;
             } else {
                 auto res = co_await respond(m_folder, std::move(*http_request));
+                if (res != stream_result::ok) {
+                    co_return;
+                }
+                res = co_await m_stream->flush();
                 if (res != stream_result::ok) {
                     co_return;
                 }

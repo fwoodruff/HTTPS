@@ -29,9 +29,8 @@
 namespace fbw {
 
 constexpr size_t TLS_RECORD_SIZE = (1u << 14) - 5;
+constexpr size_t WRITE_RECORD_SIZE = 1300;
 
-
-// todo: modify PRF to use templates and thus write data to stack better
 struct handshake_material {  
     std::unique_ptr<hash_base> handshake_hasher = nullptr;
     ustring m_client_random {};
@@ -55,17 +54,21 @@ public:
     [[nodiscard]] task<void> close_notify() override;
 
     [[nodiscard]] task<std::string> perform_handshake();
+    [[nodiscard]] task<stream_result> flush() override;
 private:
-    std::optional<tls_record> m_buffered_record;
     std::unique_ptr<stream> m_client;
     std::unique_ptr<cipher_base> cipher_context = nullptr;
     HandshakeStage m_expected_record = HandshakeStage::client_hello;
     ustring m_buffer;
+   
     bool can_heartbeat = false;
     bool tls13_available = false;
     bool use_tls13 = false;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
     std::optional<std::array<uint8_t, 32>> client_session_id;
+
+    std::array<uint8_t, WRITE_RECORD_SIZE> m_write_buffer {};
+    size_t m_write_buffer_idx = 0;
 
     
     

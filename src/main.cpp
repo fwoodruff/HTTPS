@@ -57,8 +57,9 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, ip_map& ip_connec
     }
     if(alpn == "http/1.1") {
         co_await http_client(std::move(client_stream), false, ip_connections, ip);
-    } else {
-        assert(false);
+    } if(alpn == "h2") {
+        // currently unreachable
+        co_return;
     }
 }
 

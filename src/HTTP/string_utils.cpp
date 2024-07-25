@@ -259,12 +259,20 @@ std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& r
 ustring make_header(std::string status, std::unordered_map<std::string, std::string> header) {
     std::ostringstream oss;
     oss << "HTTP/1.1 " << status << "\r\n";
-
+    size_t content_size = 0;
     for(auto [k, v] : header) {
+        if(k == "Content-Length") {
+            content_size = std::stol(v);
+        }
         oss << k << ": " << v << "\r\n";
     }
-    oss << "\r\n";
-    return to_unsigned(oss.str());
+    std::string head = oss.str();
+    const std::string pad = "paddingpadding";
+    size_t padding_length = ((content_size + head.size()) % (pad.size() - 1)) + 1;
+    head += "X-Padding: " + std::string(pad.c_str(), padding_length);
+    head += "\r\n\r\n";
+
+    return to_unsigned(head);
 }
 
 std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_t, ssize_t>& range) {

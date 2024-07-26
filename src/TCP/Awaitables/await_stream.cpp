@@ -61,7 +61,7 @@ std::pair<std::span<uint8_t>, stream_result> readable::await_resume() {
     }
     if(succ < 0) {
         if(errno == EWOULDBLOCK or errno == EAGAIN) {
-            return { std::span<uint8_t>(), stream_result::timeout };
+            return { std::span<uint8_t>(), stream_result::read_timeout };
         }
         return { std::span<uint8_t>(), stream_result::closed };
     }
@@ -130,7 +130,7 @@ std::pair<std::span<const uint8_t>, stream_result> writeable::await_resume() {
     }
     if(succ < 0) {
         if(errno == EWOULDBLOCK or errno == EAGAIN) {
-            return { std::span<uint8_t>(), stream_result::timeout };
+            return { std::span<uint8_t>(), stream_result::write_timeout };
         }
         return { std::span<uint8_t>(), stream_result::closed };
     }

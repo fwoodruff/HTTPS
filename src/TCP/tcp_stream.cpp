@@ -14,7 +14,7 @@
 namespace fbw {
 
 task<stream_result> tcp_stream::read_append(ustring& abuffer, std::optional<milliseconds> timeout) {
-    std::array<uint8_t, 1600> readbuff;
+    std::array<uint8_t, 8192> readbuff;
     std::span<uint8_t> remaining_buffer = { readbuff.data(), readbuff.size() };
     auto [bytes_read, status] = co_await read(remaining_buffer, timeout);
     if (status == stream_result::ok) {
@@ -31,6 +31,10 @@ task<stream_result> tcp_stream::write(ustring abuffer, std::optional<millisecond
             co_return std::move(status);
         }
     }
+    co_return stream_result::ok;
+}
+
+[[nodiscard]] task<stream_result> tcp_stream::flush() {
     co_return stream_result::ok;
 }
 

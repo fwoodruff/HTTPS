@@ -133,7 +133,11 @@ enum class cipher_suites : uint16_t {
     TLS_RSA_WITH_AES_256_CBC_SHA = 0x0035,
     TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA = 0xc012,
     TLS_RSA_WITH_3DES_EDE_CBC_SHA = 0x000a,
-    TLS_FALLBACK_SCSV = 0x0056
+    TLS_FALLBACK_SCSV = 0x0056,
+    TLS_AES_256_GCM_SHA384 = 0x1302,
+    TLS_CHACHA20_POLY1305_SHA256 = 0x1303,
+    TLS_AES_128_GCM_SHA256 = 0x1301,
+    TLS_EMPTY_RENEGOTIATION_INFO_SCSV = 0x00ff
 };
 
 
@@ -179,6 +183,16 @@ public:
     }
 };
 
+
+struct symmetric_keys {
+    ustring client_handshake_key;
+    ustring server_handshake_key;
+    ustring client_handshake_iv; 
+    ustring server_handshake_iv;
+
+    ustring client_data_key;
+    ustring server_data_key;
+};
 
 
 } // namespace fbw

@@ -3,9 +3,11 @@
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP.hpp"
+#include "HTTP/HTTP2.hpp"
 #include "global.hpp"
 #include "HTTP/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
+#include "HTTP/string_utils.hpp"
 
 #include <memory>
 #include <fstream>
@@ -14,32 +16,102 @@
 #include <filesystem>
 #include <unordered_map>
 
-using ip_map = std::unordered_map<std::string, int>;
+class limiter;
+class connection_token {
+    limiter* lim;
+    std::string ip;
+public:
+    connection_token(limiter* lim, std::string ip) : lim(lim), ip(ip) {}
+    connection_token(connection_token&& other) : lim(std::exchange(other.lim, nullptr)), ip(std::move(other.ip)) {};
+    connection_token& operator=(connection_token&& other) {
+        std::swap(other.lim, lim);
+        return *this;
+    }
+    connection_token& operator=(const connection_token&) = delete;
+    connection_token(const connection_token&) = delete;
+    ~connection_token();
+};
+class limiter {
+    constexpr static int max_connections = 15000; // max concurrent connections
+    constexpr static int max_ip_connections = 25; // connections per IP under low load
+    constexpr static int brownout_connections = 2000;
+    constexpr static int brownout_ip_connections = 2; // connections per IP under high load
+    std::mutex connections_mut;
+    int total_connections = 0;
+    std::unordered_map<std::string, int> ip_map;
+    friend class connection_token;
+public:
+    std::optional<connection_token> add_connection(std::string ip) {
+        std::scoped_lock lk {connections_mut};
+        if(total_connections > max_connections) {
+            return std::nullopt;
+        }
+        if(total_connections > brownout_connections and ip_map[ip] >= brownout_ip_connections) {
+            return std::nullopt;
+        }
+        if(ip_map[ip] >= max_ip_connections) {
+            return std::nullopt;
+        }
+        total_connections++;
+        ip_map[ip]++;
+        return connection_token{this, ip};
+    }
+};
 
-std::mutex connections_mut;
-constexpr int max_ip_connections = 100;
+connection_token::~connection_token() {
+    if(lim != nullptr) {
+        std::scoped_lock lk {lim->connections_mut};
+        lim->ip_map[ip]--;
+        lim->total_connections--;
+        if(lim->ip_map[ip] == 0) {
+            lim->ip_map.erase(ip);
+        }
+    }
+}
+
+// todo:
+// secp256k1 and x25519, get the point at infinity behaviour right
+// implement TLS 1.3
+// Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
+// Implement a map between HTTP 'host' header and webroot (with default)
+// Implement an HTTP webroot (with 301 not 404) - this is so we can use HTTP ACME challenges
+// Implement a map between SNI host and TLS certificate (with default)
+// SHA-384 and AES-256
+// add a health check to the docker image
+// implement HTTP/1.1 compression encodings
+// review unnecessary buffer copies are ugly
+// HTTP codes should be a map code -> { title, blurb }
+// errors in server config should output to stderr
+// HTTP/2
+
 
 // after a connection is accepted, this is the per-client entry point
-task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, ip_map& ip_connections, std::string ip) {
+task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
     try {
-        fbw::HTTP http_handler { std::move(client_stream), fbw::option_singleton().webpage_folder, redirect };
-        co_await http_handler.client();
+        if(alpn == "http/1.1") {
+            fbw::HTTP http_handler { std::move(client_stream), fbw::option_singleton().webpage_folder, redirect };
+            co_await http_handler.client();
+        } if(alpn == "h2") {
+            fbw::HTTP2 http_handler { std::move(client_stream), fbw::option_singleton().webpage_folder };
+            co_await http_handler.client();
+        }
     } catch(const std::exception& e) {
         std::cerr << e.what();
     }
-    std::scoped_lock lk {connections_mut};
-    // todo: find largest object files and remove outsized dependencies
+}
 
-    ip_connections[ip]--;
-    if(ip_connections[ip] == 0) {
-        ip_connections.erase(ip);
+task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
+    std::string alpn = co_await client_stream->perform_handshake();
+    if(alpn.empty()) {
+        co_return;
     }
+    co_await http_client(std::move(client_stream), false, std::move(ip_connections), alpn);
 }
 
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
-task<void> https_server(std::shared_ptr<ip_map> ip_connections) {
+task<void> https_server(std::shared_ptr<limiter> ip_connections) {
     try {
         auto port = fbw::option_singleton().server_port;
         auto listener = fbw::tcplistener::bind(port);
@@ -48,17 +120,15 @@ task<void> https_server(std::shared_ptr<ip_map> ip_connections) {
         std::clog << ss.str() << std::flush;
         for(;;) {
             if(auto client = co_await listener.accept()) {
-                auto ip = client->m_ip;
-                {
-                    std::scoped_lock lk {connections_mut};
-                    if((*ip_connections)[ip] >= max_ip_connections) {
-                        continue;
-                    }
-                    (*ip_connections)[ip]++;
+                auto conn = ip_connections->add_connection(client->m_ip);
+                if(conn == std::nullopt) {
+                    continue;
                 }
-                std::unique_ptr<fbw::stream> tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
-                std::unique_ptr<fbw::stream> tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
-                async_spawn(http_client(std::move(tls_stream), false, *ip_connections, ip));
+
+                auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
+                auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
+                
+                async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
             }
         }
     } catch(const std::exception& e) {
@@ -66,7 +136,7 @@ task<void> https_server(std::shared_ptr<ip_map> ip_connections) {
     }
 }
 
-task<void> redirect_server(std::shared_ptr<ip_map> ip_connections) {
+task<void> redirect_server(std::shared_ptr<limiter> ip_connections) {
     try {
         // todo: have a folder for HTTP connections so we can implement HTTP-01 acme challenges
         auto port = fbw::option_singleton().redirect_port ;
@@ -76,16 +146,12 @@ task<void> redirect_server(std::shared_ptr<ip_map> ip_connections) {
         std::clog << ss.str() << std::flush;
         for(;;) {
             if(auto client = co_await listener.accept()) {
-                auto ip = client->m_ip;
-                {
-                    std::scoped_lock lk {connections_mut};
-                    if((*ip_connections)[ip] >= max_ip_connections) {
-                        continue;
-                    }
-                    (*ip_connections)[ip]++;
+                auto conn = ip_connections->add_connection(client->m_ip);
+                if(conn == std::nullopt) {
+                    continue;
                 }
-                std::unique_ptr<fbw::stream> client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
-                async_spawn(http_client(std::move(client_tcp_stream), true, *ip_connections, ip));
+                auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
+                async_spawn(http_client(std::move(client_tcp_stream), true, std::move(*conn), "http/1.1"));
             }
         }
     } catch(const std::exception& e ) {
@@ -106,7 +172,7 @@ task<void> async_main(int argc, const char * argv[]) {
         std::cerr << "Certificate file: " << std::filesystem::absolute(fbw::option_singleton().certificate_file) << std::endl;
         co_return;
     }
-    auto ip_connections = std::make_shared<ip_map>(); // todo: integrate
+    auto ip_connections = std::make_shared<limiter>();
     async_spawn(https_server(ip_connections));
     async_spawn(redirect_server(ip_connections));
     co_return;

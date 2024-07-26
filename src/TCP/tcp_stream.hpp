@@ -37,6 +37,8 @@ public:
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
+    [[nodiscard]] task<stream_result> flush() override;
+
     std::string m_ip;
     uint16_t m_port;
 private:

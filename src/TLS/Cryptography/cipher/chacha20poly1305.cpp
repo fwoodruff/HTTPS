@@ -323,6 +323,10 @@ tls_record ChaCha20_Poly1305::decrypt(tls_record record) {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     record.m_contents = plaintext;
+
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) {
+        throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
+    }
     return record;
 }
 

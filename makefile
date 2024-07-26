@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wno-psabi -MMD -MP -Os
+CXXFLAGS := -std=c++20 -Wall -Wno-psabi -MMD -MP # -Os
 LDFLAGS :=
 
 ifeq ($(shell uname -s),Linux)
@@ -8,7 +8,7 @@ ifeq ($(shell uname -s),Linux)
 	CXXFLAGS += -static -flto=6
     LDFLAGS += -static-libstdc++ -static-libgcc
 else
- 	CXXFLAGS += -flto
+ 	CXXFLAGS +=# -flto
 endif
 
 # Directories
@@ -34,7 +34,7 @@ TARGET := $(TARGET_DIR)/codeymccodeface
 $(TARGET): $(OBJ)
 	@mkdir -p $(TARGET_DIR)
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
-	strip $(TARGET)
+#	strip $(TARGET)
 
 # Compile source files into object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp

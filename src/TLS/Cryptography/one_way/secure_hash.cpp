@@ -187,6 +187,10 @@ size_t sha256::get_block_size() const noexcept {
     return block_size;
 }
 
+size_t sha256::get_hash_size() const noexcept {
+    return hash_size;
+}
+
 std::unique_ptr<hash_base> sha256::clone() const {
     return std::make_unique<sha256>(*this);
 }
@@ -233,6 +237,7 @@ sha256& sha256::update_impl(const uint8_t* const begin, size_t size) noexcept {
 
 
 ustring sha256::hash() && {
+    // todo: complex logic, should add comments and better name variables
     assert(!done);
     ustring hash;
     hash.resize(32);
@@ -362,11 +367,19 @@ size_t sha1::get_block_size() const noexcept {
     return block_size;
 }
 
+size_t sha1::get_hash_size() const noexcept {
+    return hash_size;
+}
+
 std::unique_ptr<hash_base> sha1::clone() const {
     return std::make_unique<sha1>(*this);
 }
 
 size_t hmac::get_block_size() const noexcept {
+    return m_hasher->get_block_size();
+}
+
+size_t hmac::get_hash_size() const noexcept {
     return m_hasher->get_block_size();
 }
 
@@ -411,8 +424,8 @@ hmac& hmac::update_impl(const uint8_t* data, size_t data_len) noexcept {
 }
 
 
-hmac::hmac(std::unique_ptr<hash_base> hasher, const uint8_t* key, size_t key_len) {
-    m_factory = std::move(hasher);
+hmac::hmac(const hash_base& hasher, const uint8_t* key, size_t key_len) {
+    m_factory = hasher.clone();
     m_hasher = m_factory->clone();
     KeyPrime.resize(m_factory->get_block_size());
     if(key_len > m_factory->get_block_size()) {

@@ -38,6 +38,11 @@ class cprng : keccak_sponge {
 public:
     void randgen(uint8_t* const output, size_t N);
     [[nodiscard]] uint64_t randgen64();
+
+    template<typename T>
+    void randgen(T& output) {
+        randgen(output.data(), output.size());
+    }
 };
 
 extern thread_local cprng randomgen;

@@ -276,7 +276,7 @@ ustring aes_gcm_ad(roundkey rk, ustring iv,
 
 
 
-void AES_128_GCM_SHA256::set_key_material(ustring material) {
+void AES_128_GCM_SHA256::set_key_material_12(ustring material) {
 
     std::vector<uint8_t> client_write_key;
     client_write_key.resize(16);

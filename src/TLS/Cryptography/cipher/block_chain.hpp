@@ -30,7 +30,7 @@ private:
 public:
     AES_CBC_SHA();
     
-    void set_key_material(ustring material) override;
+    void set_key_material_12(ustring material) override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };

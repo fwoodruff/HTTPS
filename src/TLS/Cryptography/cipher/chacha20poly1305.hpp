@@ -11,6 +11,7 @@
 #include <stdio.h>
 
 #include "cipher_base.hpp"
+#include "../TLS_helpers.hpp"
 
 #include <vector>
 #include <array>
@@ -32,11 +33,11 @@ private:
 public:
     ChaCha20_Poly1305() = default;
     
-    void set_key_material(ustring material) override;
+    void set_key_material_12(ustring material) override;
+    void set_key_material_13_handshake(ustring handshake_secret, ustring handshake_context_hash) override;
+    void set_key_material_13_application(ustring master_secret, ustring application_context_hash) override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
-    
-    
 };
 
 } // namespace fbw

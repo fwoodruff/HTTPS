@@ -83,6 +83,7 @@ connection_token::~connection_token() {
 // HTTP codes should be a map code -> { title, blurb }
 // errors in server config should output to stderr
 // HTTP/2
+// use master key rather than expanded key material for TLS 1.2 handshakes
 
 
 // after a connection is accepted, this is the per-client entry point

@@ -23,8 +23,6 @@ class AES_128_GCM_SHA256 : public cipher_base {
     roundkey client_write_round_keys;
     roundkey server_write_round_keys;
     
-    
-    
     ustring client_implicit_write_IV;
     ustring server_implicit_write_IV;
     
@@ -33,8 +31,7 @@ class AES_128_GCM_SHA256 : public cipher_base {
     
 public:
     AES_128_GCM_SHA256() = default;
-    
-    void set_key_material(ustring material) override;
+    void set_key_material_12(ustring material) override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 

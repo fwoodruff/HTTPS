@@ -18,7 +18,9 @@ class cipher_base {
     // A cipher is chosen in TLS Handshake Hello.
     // Ciphers share an interface
 public:
-    virtual void set_key_material(ustring material) = 0;
+    virtual void set_key_material_12(ustring material) = 0;
+    virtual void set_key_material_13_handshake(ustring handshake_secret, ustring handshake_context_hash) {};
+    virtual void set_key_material_13_application(ustring master_secret, ustring application_context_hash) {};
     virtual tls_record encrypt(tls_record record) noexcept = 0;
     virtual tls_record decrypt(tls_record record) = 0;
     virtual ~cipher_base() noexcept = default;

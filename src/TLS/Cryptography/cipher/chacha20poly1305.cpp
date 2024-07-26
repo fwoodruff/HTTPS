@@ -246,16 +246,43 @@ chacha20_aead_crypt(ustring aad, std::array<uint8_t, 32> key, std::array<uint8_t
     mac_data.append(padcipher, 0);
     mac_data.append(aad_size.begin(), aad_size.end());
     mac_data.append(cip_size.begin(), cip_size.end());
-    
 
     auto tag = poly1305_mac(mac_data, otk);
     return {xortext, tag};
 }
 
+// todo: refactor and combine
+void ChaCha20_Poly1305::set_key_material_13_handshake(ustring handshake_secret, ustring handshake_context_hash) {
+    auto client_handshake_traffic_secret = hkdf_expand_label(sha256(), handshake_secret, "c hs traffic", handshake_context_hash, 32);
+    auto server_handshake_traffic_secret = hkdf_expand_label(sha256(), handshake_secret, "s hs traffic", handshake_context_hash, 32);
+    auto client_handshake_key = hkdf_expand_label(sha256(), client_handshake_traffic_secret, "key", std::string(""), 32);
+    auto client_handshake_iv = hkdf_expand_label(sha256(), client_handshake_traffic_secret, "iv", std::string(""), 12);
+    auto server_handshake_key = hkdf_expand_label(sha256(), server_handshake_traffic_secret, "key", std::string(""), 32);
+    auto server_handshake_iv = hkdf_expand_label(sha256(), server_handshake_traffic_secret, "iv", std::string(""), 12);
+
+    std::copy(client_handshake_key.begin(), client_handshake_key.begin(), client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.begin(), server_write_key.begin());
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.begin(), client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.begin(), server_implicit_write_IV.begin());
+}
+
+void ChaCha20_Poly1305::set_key_material_13_application(ustring master_secret, ustring application_context_hash) {
+    auto client_application_traffic_secret = hkdf_expand_label(sha256(), master_secret, "c ap traffic", application_context_hash, 32);
+    auto server_application_traffic_secret = hkdf_expand_label(sha256(), master_secret, "s ap traffic", application_context_hash, 32);
+    auto client_handshake_key = hkdf_expand_label(sha256(), client_application_traffic_secret, "key", std::string(""), 32);
+    auto client_handshake_iv = hkdf_expand_label(sha256(), client_application_traffic_secret, "iv", std::string(""), 12);
+    auto server_handshake_key = hkdf_expand_label(sha256(), server_application_traffic_secret, "key", std::string(""), 32);
+    auto server_handshake_iv = hkdf_expand_label(sha256(), server_application_traffic_secret, "iv", std::string(""), 12);
+
+    std::copy(client_handshake_key.begin(), client_handshake_key.begin(), client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.begin(), server_write_key.begin());
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.begin(), client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.begin(), server_implicit_write_IV.begin());
+    // seqno not reset
+}
 
 
-
-void ChaCha20_Poly1305::set_key_material(ustring material) {
+void ChaCha20_Poly1305::set_key_material_12(ustring material) {
     
     auto it = material.begin();
     std::copy_n(it, client_write_key.size(), client_write_key.begin());

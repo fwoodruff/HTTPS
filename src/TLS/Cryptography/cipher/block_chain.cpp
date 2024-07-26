@@ -26,7 +26,7 @@ AES_CBC_SHA::AES_CBC_SHA() : server_write_round_keys({}),
                                             seqno_client(0) { }
 
 
-void AES_CBC_SHA::set_key_material(ustring expanded_master)  {
+void AES_CBC_SHA::set_key_material_12(ustring expanded_master)  {
     assert(expanded_master.size() >= 104);
 
     auto client_write_key = std::vector<uint8_t>(16,0);

@@ -153,9 +153,9 @@ public:
 };
 
 struct tls_record {
-
+public:
+    uint8_t m_type; // todo: should be a content type not a byte
 private:
-    uint8_t m_type;
     uint8_t m_major_version;
     uint8_t m_minor_version;
 public:

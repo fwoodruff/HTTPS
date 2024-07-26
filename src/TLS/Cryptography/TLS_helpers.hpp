@@ -9,8 +9,8 @@
 #ifndef TLS_helpers_hpp
 #define TLS_helpers_hpp
 
-#include "../global.hpp"
-#include "Cryptography/one_way/secure_hash.hpp"
+#include "../../global.hpp"
+#include "one_way/secure_hash.hpp"
 
 #include <stdio.h>
 #include <array>
@@ -66,8 +66,8 @@ ustring hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, siz
     return okm;
 }
 
-template<typename T>
-ustring hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::string& label, const T& context, size_t length) {
+template<typename T, typename U>
+ustring hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::string& label, const U& context, size_t length) {
     const std::string full_label = "tls13 " + label;
 
     ustring info(3, 0);
@@ -76,7 +76,7 @@ ustring hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::s
     info.append(full_label.begin(), full_label.end());
 
     info.push_back(static_cast<uint8_t>(context.size()));
-    info.append(context);
+    info.append(context.begin(), context.end());
 
     return hkdf_expand(hash_ctor, prk, info, length);
 }

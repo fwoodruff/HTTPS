@@ -22,6 +22,9 @@ namespace fbw {
 
 using ustring = std::basic_string<uint8_t>;
 
+constexpr size_t TLS_RECORD_SIZE = (1u << 14);
+constexpr size_t DECRYPTED_TLS_RECORD_GIVE = 1024;
+
 struct options {
     std::string redirect_port;
     std::string server_port;

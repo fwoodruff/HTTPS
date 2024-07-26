@@ -17,17 +17,19 @@
 #include <memory>
 
 namespace fbw {
+static constexpr long MAX_BODY_SIZE = 50000; // POST request bodies are ignored by static web servers
 
 class HTTP {
-    static constexpr long max_bytes_queued = 1000000;
-    static std::optional<ustring> try_extract_header(ustring& m_buffer);
+    static constexpr long MAX_HEADER_SIZE = 9000;
+    
+    static std::optional<http_header> try_extract_header(ustring& m_buffer);
 
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
     [[nodiscard]]  task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);
     [[nodiscard]] task<void> redirect(http_frame header, std::string domain);
-    [[nodiscard]] task<stream_result> send_file(const std::filesystem::path& rootdirectory, std::filesystem::path filename);
-    [[nodiscard]] task<stream_result> send_range(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range);
-    [[nodiscard]] task<stream_result> send_multi_ranges(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges);
+    [[nodiscard]] task<stream_result> send_file(const std::filesystem::path& rootdirectory, std::filesystem::path filename, bool send_body);
+    [[nodiscard]] task<stream_result> send_range(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range, bool send_body);
+    [[nodiscard]] task<stream_result> send_multi_ranges(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges, bool send_body);
    
     [[nodiscard]] task<stream_result> send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end);
 

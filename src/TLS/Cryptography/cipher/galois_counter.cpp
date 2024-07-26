@@ -365,7 +365,10 @@ tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
     
     ustring plain = aes_gcm_ad(client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
     record.m_contents = plain;
-     
+    
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) {
+        throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
+    }
     return record;
 }
 

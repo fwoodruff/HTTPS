@@ -180,6 +180,9 @@ tls_record AES_CBC_SHA::decrypt(tls_record record) {
     
     record.m_contents = std::move(plaintext);
 
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) {
+        throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
+    }
     return record;
 }
 

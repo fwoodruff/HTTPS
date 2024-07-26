@@ -172,69 +172,82 @@ task<stream_result> TLS::server_hello_request() {
 }
 
 task<std::string> TLS::perform_handshake() {
-    // todo: TLS 1.3
-    handshake_material handshake;
-    bool hello_request_sent = false;
-    for(;;) {
-        auto [record, result] = co_await try_read_record(option_singleton().handshake_timeout);
-        if(result == stream_result::read_timeout) {
-            if(!hello_request_sent) {
-                auto res = co_await server_hello_request();
-                if(res == stream_result::ok) {
-                    hello_request_sent = true;
-                    continue;
+    std::optional<ssl_error> error_ssl {};
+    try {
+        handshake_material handshake;
+        bool hello_request_sent = false;
+        for(;;) {
+            auto [record, result] = co_await try_read_record(option_singleton().handshake_timeout);
+            if(result == stream_result::read_timeout) {
+                if(!hello_request_sent) {
+                    auto res = co_await server_hello_request();
+                    if(res == stream_result::ok) {
+                        hello_request_sent = true;
+                        continue;
+                    }
                 }
-            }
-            co_return "";
-        }
-        if(result != stream_result::ok) {
-            co_return "";
-        }
-        if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
-            record = cipher_context->decrypt(std::move(record));
-        }
-        switch ( static_cast<ContentType>(record.get_type()) ) {
-            case ContentType::Handshake:
-                if(co_await client_handshake_record(handshake, std::move(record)) != stream_result::ok) {
-                    co_return "";
-                }
-                if(m_expected_record == HandshakeStage::application_data) {
-                    co_return handshake.alpn;
-                }
-                break;
-            case ContentType::ChangeCipherSpec:
-                client_change_cipher_spec(std::move(record));
-                break;
-            case ContentType::Application:
-                throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::unexpected_message);
-            case ContentType::Alert:
-                co_await client_alert(std::move(record), option_singleton().handshake_timeout);
                 co_return "";
-            case ContentType::Heartbeat:
-                auto res = co_await client_heartbeat(std::move(record), option_singleton().handshake_timeout);
-                if(res != stream_result::ok) {
+            }
+            if(result != stream_result::ok) {
+                co_return "";
+            }
+            if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
+                record = cipher_context->decrypt(std::move(record));
+            }
+            switch ( static_cast<ContentType>(record.get_type()) ) {
+                case ContentType::Handshake:
+                    if(co_await client_handshake_record(handshake, std::move(record)) != stream_result::ok) {
+                        co_return "";
+                    }
+                    if(m_expected_record == HandshakeStage::application_data) {
+                        co_return handshake.alpn;
+                    }
+                    break;
+                case ContentType::ChangeCipherSpec:
+                    client_change_cipher_spec(std::move(record));
+                    break;
+                case ContentType::Application:
+                    throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::unexpected_message);
+                case ContentType::Alert:
+                    co_await client_alert(std::move(record), option_singleton().handshake_timeout);
                     co_return "";
-                }
-                break;
-        }
+                case ContentType::Heartbeat:
+                    auto res = co_await client_heartbeat(std::move(record), option_singleton().handshake_timeout);
+                    if(res != stream_result::ok) {
+                        co_return "";
+                    }
+                    break;
+            }
+        } 
+    } catch(const ssl_error& e) {
+        error_ssl = e;
+        goto END; // cannot co_await inside a catch block
+    } catch(const std::exception& e) {
+        goto END2;
     }
+END:
+    co_await server_alert(error_ssl->m_l, error_ssl->m_d);
+    co_return "";
+END2:
+    co_await server_alert(AlertLevel::fatal, AlertDescription::decode_error);
+    co_return "";
 }
 
 task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<milliseconds> timeout) {
     for(;;) {
-        if (m_buffer.size() > TLS_RECORD_SIZE + 6) {
-            throw ssl_error("oversized record", AlertLevel::fatal, AlertDescription::record_overflow);
-        }
         auto record = try_extract_record(m_buffer);
         if(record) {
             if (record->get_major_version() != 3) {
                 throw ssl_error("unsupported version", AlertLevel::fatal, AlertDescription::protocol_version);
             }
-            co_return {*record, stream_result::ok};
+            co_return { *record, stream_result::ok };
+        }
+        if (m_buffer.size() > TLS_RECORD_SIZE + TLS_HEADER_SIZE + TLS_EXPANSION_MAX) {
+            throw ssl_error("oversized record", AlertLevel::fatal, AlertDescription::record_overflow);
         }
         stream_result connection_alive = co_await m_client->read_append(m_buffer, timeout);
         if(connection_alive != stream_result::ok) {
-            co_return {tls_record{}, connection_alive};
+            co_return { tls_record{}, connection_alive };
         }
     }
 }
@@ -287,17 +300,20 @@ task<stream_result> TLS::client_handshake_record(handshake_material& handshake, 
 
 
 std::optional<tls_record> try_extract_record(ustring& input) {
-    if (input.size() < 5) {
+    if (input.size() < TLS_HEADER_SIZE) {
         return std::nullopt;
     }
     tls_record out(static_cast<ContentType>(input[0]), input[1], input[2] );
 
-    size_t record_size = try_bigend_read(input,3,2);
-    if(input.size() < record_size + 5) {
+    size_t record_size = try_bigend_read(input, 3, 2);
+    if(record_size > TLS_RECORD_SIZE + TLS_EXPANSION_MAX) {
+        throw ssl_error("record header size too large", AlertLevel::fatal, AlertDescription::record_overflow);
+    }
+    if(input.size() < record_size + TLS_HEADER_SIZE) {
         return std::nullopt;
     }
-    out.m_contents = input.substr(5, record_size);
-    input = input.substr(5 + record_size);
+    out.m_contents = input.substr(TLS_HEADER_SIZE, record_size);
+    input = input.substr(TLS_HEADER_SIZE + record_size);
     return out;
 }
 

@@ -28,8 +28,9 @@
 
 namespace fbw {
 
-constexpr size_t TLS_RECORD_SIZE = (1u << 14) - 5;
-constexpr size_t WRITE_RECORD_SIZE = 1300;
+constexpr size_t TLS_EXPANSION_MAX = 2048;
+constexpr size_t TLS_HEADER_SIZE = 5;
+constexpr size_t WRITE_RECORD_SIZE = 2899;
 
 struct handshake_material {  
     std::unique_ptr<hash_base> handshake_hasher = nullptr;

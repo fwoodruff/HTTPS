@@ -29,6 +29,10 @@ constexpr size_t TLS_HEADER_SIZE = 5;
 constexpr size_t WRITE_RECORD_SIZE = 2899;
 constexpr size_t DECRYPTED_TLS_RECORD_GIVE = 1024;
 
+constexpr ssize_t FILE_READ_SIZE = 2401;
+constexpr long MAX_HEADER_SIZE = 6000;
+constexpr long MAX_BODY_SIZE = 8192;
+
 struct options {
     std::string redirect_port;
     std::string server_port;

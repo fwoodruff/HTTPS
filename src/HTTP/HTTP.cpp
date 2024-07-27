@@ -21,8 +21,8 @@
 
 namespace fbw {
 
-constexpr ssize_t FILE_READ_SIZE = 980; // bytes read from file before being sent to the presentation layer
 
+constexpr long MAX_URI_SIZE = 5000;
 
 // an HTTP handler streams data in, gets a file from a folder and streams it back
 // or it might redirect unencrypted HTTP traffic
@@ -35,7 +35,7 @@ HTTP::HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect) :
 // the full header may not be in the buffer yet
 std::optional<http_header> HTTP::try_extract_header(ustring& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
-        throw http_error("414 URI Too Long");
+        throw http_error("413 Payload Too Large");
     }
     auto header_bytes = extract(m_buffer, "\r\n\r\n");
     if(header_bytes.empty()) {
@@ -209,6 +209,9 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
     const std::filesystem::path& filename = http_request.header.resource;
     if(http_request.header.protocol != "HTTP/1.0" and http_request.header.protocol != "HTTP/1.1") {
         throw http_error("505 HTTP Version Not Supported");
+    }
+    if(http_request.header.resource.size() > MAX_URI_SIZE) {
+        throw http_error("414 URI Too Long");
     }
     if(http_request.header.verb == "GET" or http_request.header.verb == "HEAD") {
         auto it = http_request.header.headers.find("Range");

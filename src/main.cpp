@@ -8,6 +8,7 @@
 #include "HTTP/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
 #include "HTTP/string_utils.hpp"
+#include "limiter.hpp"
 
 #include <memory>
 #include <fstream>
@@ -15,59 +16,6 @@
 #include <sstream>
 #include <filesystem>
 #include <unordered_map>
-
-class limiter;
-class connection_token {
-    limiter* lim;
-    std::string ip;
-public:
-    connection_token(limiter* lim, std::string ip) : lim(lim), ip(ip) {}
-    connection_token(connection_token&& other) : lim(std::exchange(other.lim, nullptr)), ip(std::move(other.ip)) {};
-    connection_token& operator=(connection_token&& other) {
-        std::swap(other.lim, lim);
-        return *this;
-    }
-    connection_token& operator=(const connection_token&) = delete;
-    connection_token(const connection_token&) = delete;
-    ~connection_token();
-};
-class limiter {
-    constexpr static int max_connections = 15000; // max concurrent connections
-    constexpr static int max_ip_connections = 25; // connections per IP under low load
-    constexpr static int brownout_connections = 2000;
-    constexpr static int brownout_ip_connections = 2; // connections per IP under high load
-    std::mutex connections_mut;
-    int total_connections = 0;
-    std::unordered_map<std::string, int> ip_map;
-    friend class connection_token;
-public:
-    std::optional<connection_token> add_connection(std::string ip) {
-        std::scoped_lock lk {connections_mut};
-        if(total_connections > max_connections) {
-            return std::nullopt;
-        }
-        if(total_connections > brownout_connections and ip_map[ip] >= brownout_ip_connections) {
-            return std::nullopt;
-        }
-        if(ip_map[ip] >= max_ip_connections) {
-            return std::nullopt;
-        }
-        total_connections++;
-        ip_map[ip]++;
-        return connection_token{this, ip};
-    }
-};
-
-connection_token::~connection_token() {
-    if(lim != nullptr) {
-        std::scoped_lock lk {lim->connections_mut};
-        lim->ip_map[ip]--;
-        lim->total_connections--;
-        if(lim->ip_map[ip] == 0) {
-            lim->ip_map.erase(ip);
-        }
-    }
-}
 
 // todo:
 // secp256k1 and x25519, get the point at infinity behaviour right

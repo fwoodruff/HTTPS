@@ -17,10 +17,10 @@
 #include <memory>
 
 namespace fbw {
-static constexpr long MAX_BODY_SIZE = 50000; // POST request bodies are ignored by static web servers
+
 
 class HTTP {
-    static constexpr long MAX_HEADER_SIZE = 9000;
+
     
     static std::optional<http_header> try_extract_header(ustring& m_buffer);
 

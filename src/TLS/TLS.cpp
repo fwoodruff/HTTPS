@@ -668,8 +668,24 @@ task<stream_result> TLS::server_certificate(key_schedule& handshake) {
     co_return co_await write_record(certificate_record, option_singleton().handshake_timeout);
 }
 
-task<stream_result> TLS::server_certificate_verify(key_schedule&) {
-    co_return stream_result::ok;
+task<stream_result> TLS::server_certificate_verify(key_schedule& handshake) {
+    tls_record record(ContentType::Handshake);
+    record.m_contents = { static_cast<uint8_t>(HandshakeType::server_key_exchange), 0x00, 0x00, 0x00 };
+
+    auto certificate_private = privkey_from_file(option_singleton().key_file);
+
+    auto hash_verify_context = handshake.handshake_hasher->hash();
+    std::array<uint8_t, 32> signature_digest;
+    std::copy_n(hash_verify_context.begin(), signature_digest.size(), signature_digest.begin());
+
+    std::array<uint8_t, 32> csrn;
+    randomgen.randgen(csrn);
+    ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
+
+    record.m_contents.append(signature);
+    checked_bigend_write(signature.size(), record.m_contents, 1, 3);
+
+    co_return co_await write_record(record, option_singleton().handshake_timeout);
 };
 
 task<stream_result> TLS::server_key_exchange(key_schedule& handshake) {
@@ -850,6 +866,12 @@ task<stream_result> TLS::server_handshake_finished12(const key_schedule& handsha
     }
     
     m_expected_record = HandshakeStage::application_data;
+    co_return co_await write_record(out, option_singleton().handshake_timeout);
+}
+
+task<stream_result> TLS::server_encrypted_extensions() {
+    tls_record out(ContentType::Handshake);
+    out.m_contents = { 0x08, 0x00, 0x00, 0x02, 0x00, 0x00 };
     co_return co_await write_record(out, option_singleton().handshake_timeout);
 }
 

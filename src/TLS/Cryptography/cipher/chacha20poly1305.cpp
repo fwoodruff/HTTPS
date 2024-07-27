@@ -23,11 +23,11 @@ constexpr uint32_t ROT32(uint32_t x, int shift) {
     return (x << shift) | (x >> (32 - shift));
 }
 
-void chacha_quarter_round(uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d) {
-    *a += *b; *d ^= *a; *d = ROT32(*d, 16);
-    *c += *d; *b ^= *c; *b = ROT32(*b, 12);
-    *a += *b; *d ^= *a; *d = ROT32(*d, 8);
-    *c += *d; *b ^= *c; *b = ROT32(*b, 7);
+void chacha_quarter_round(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d) {
+    a += b; d ^= a; d = ROT32(d, 16);
+    c += d; b ^= c; b = ROT32(b, 12);
+    a += b; d ^= a; d = ROT32(d, 8);
+    c += d; b ^= c; b = ROT32(b, 7);
 }
 
 
@@ -47,8 +47,31 @@ inline void write32_bigend(uint32_t x, uint8_t* s) noexcept {
     return len;
 }
 
-std::array<uint8_t, 64> chacha20(const std::array<uint8_t, 32>& key, const std::array<uint8_t, 12>& nonce, uint32_t block_count) {
+std::array<uint8_t, 64> chacha20_inner(const std::array<uint32_t, 16>& state_orig, uint32_t block_count) {
+    auto state = state_orig;
+    state[12] = block_count;
     
+    for (int i = 0; i < 10; ++i) {
+        chacha_quarter_round(state[0], state[4], state[8], state[12]);
+        chacha_quarter_round(state[1], state[5], state[9], state[13]);
+        chacha_quarter_round(state[2], state[6], state[10], state[14]);
+        chacha_quarter_round(state[3], state[7], state[11], state[15]);
+
+        chacha_quarter_round(state[0], state[5], state[10], state[15]);
+        chacha_quarter_round(state[1], state[6], state[11], state[12]);
+        chacha_quarter_round(state[2], state[7], state[8], state[13]);
+        chacha_quarter_round(state[3], state[4], state[9], state[14]);
+    }
+    std::array<uint8_t, 64> out;
+    state[12] += block_count;
+    for(int i = 0; i < 16; i++) {
+        uint32_t statei = state[i] + state_orig[i];
+        write32_bigend(statei, &out[i*4]);
+    }
+    return out;
+}
+
+std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, 32>& key, const std::array<uint8_t, 12>& nonce) {
     std::array<uint32_t, 16> state {0};
     state[0] = 0x61707865;
     state[1] = 0x3320646e;
@@ -59,27 +82,15 @@ std::array<uint8_t, 64> chacha20(const std::array<uint8_t, 32>& key, const std::
         state[i+4] = asval_bigend(&key[i*4]);
     }
     
-    state[12] = block_count;
     for(int i = 0; i < 3; i++) {
         state[i+13] = asval_bigend(&nonce[i*4]);
     }
+    return state;
+}
 
-    
-    const auto state_orig = state;
-    for(int j = 0; j < 10; j++) {
-        for(int i = 0; i < 4; i++) {
-            chacha_quarter_round(&state[i], &state[i+4], &state[i+8], &state[i+12]);
-        }
-        for(int i = 0; i < 4; i++) {
-            chacha_quarter_round(&state[i], &state[4 + ((i+1) % 4)], &state[8 + ((i+2) % 4)], &state[12 + ((i+3) % 4)]);
-        }
-    }
-    std::array<uint8_t, 64> out;
-    for(int i = 0; i < 16; i++) {
-        uint32_t statei = state[i] + state_orig[i];
-        write32_bigend(statei, &out[i*4]);
-    }
-    return out;
+std::array<uint8_t, 64> chacha20(const std::array<uint8_t, 32>& key, const std::array<uint8_t, 12>& nonce, uint32_t block_count) {
+    auto state = chacha20_state(key, nonce);
+    return chacha20_inner(state, block_count);
 }
 
 ustring chacha20_xorcrypt(   const std::array<uint8_t, 32>& key,
@@ -89,11 +100,13 @@ ustring chacha20_xorcrypt(   const std::array<uint8_t, 32>& key,
     
     ustring out;
     out.resize(message.size());
+
+    auto state = chacha20_state(key, nonce);
     
     size_t k = 0;
     // massive parallelism here?
     for(size_t i = 0; i < (message.size()+63) /64; i++) {
-        std::array<uint8_t, 64> ou = chacha20(key, nonce, uint32_t(i)+blockid);
+        std::array<uint8_t, 64> ou = chacha20_inner(state, uint32_t(i)+blockid);
         for(size_t j = 0;  j < 64 and k < message.size(); j++, k++) {
             out[k] = ou[j];
         }
@@ -192,9 +205,8 @@ std::array<uint8_t, 16> poly1305_mac(const ustring& message, const std::array<ui
         
         auto siz = std::min(static_cast<size_t>(16), message.size() - i);
         
-        std::copy_n(&message[i], siz, inp.begin());
-        inp[siz] = 1;
-        std::reverse(inp.begin(), inp.end());
+        std::copy_n(&message[i], siz, inp.rbegin());
+        inp[23-siz] = 1;
 
         accumulator = add_mod(accumulator, REDCpoly(u192(inp) * poly_RRP), prime130_5);
         accumulator = REDCpoly(accumulator * rMonty);

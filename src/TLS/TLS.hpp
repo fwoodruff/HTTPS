@@ -102,7 +102,7 @@ private:
     [[nodiscard]] task<stream_result> server_handshake_finished12(const key_schedule&);
     [[nodiscard]] task<stream_result> server_handshake_finished13(key_schedule&);
 
-    [[nodiscard]] task<stream_result> server_encrypted_extensions() { co_return stream_result::ok; }
+    [[nodiscard]] task<stream_result> server_encrypted_extensions();
 
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     ustring hello_extensions(key_schedule& handshake);

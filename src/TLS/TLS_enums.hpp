@@ -183,12 +183,12 @@ public:
     void write1(T value) {
         m_contents.push_back(static_cast<uint8_t>(value));
     }
-    void write1(uint8_t value) {
+    inline void write1(uint8_t value) {
         m_contents.push_back(value);
     }
 
-    void write2(uint16_t value) {
-        m_contents.append({0 ,0 });
+    inline void write2(uint16_t value) {
+        m_contents.append({ 0, 0 });
         checked_bigend_write(value, m_contents, m_contents.size() - 2, 2);
     }
 
@@ -196,18 +196,19 @@ public:
     void write(const T& value) {
         m_contents.append(value.begin(), value.end());
     }
-    void write(const ustring& value) {
+    inline void write(const ustring& value) {
         m_contents.append(value);
     }
-    
 
-    void push_der(ssize_t bytes) {
+    // record items with variable length include a header and are sometimes nested
+    // append data and then figure out the header size
+    inline void push_der(ssize_t bytes) {
         heads.push_back({static_cast<ssize_t>(m_contents.size()), bytes});
         auto size = ustring(bytes, 0);
         m_contents.append(size);
     }
 
-    void pop_der() {
+    inline void pop_der() {
         auto [idx_start, num_bytes] = heads.back();
         heads.pop_back();
         checked_bigend_write(m_contents.size() - idx_start - num_bytes, m_contents, idx_start, num_bytes);
@@ -222,18 +223,6 @@ public:
         return out;
     }
 };
-
-
-struct symmetric_keys {
-    ustring client_handshake_key;
-    ustring server_handshake_key;
-    ustring client_handshake_iv; 
-    ustring server_handshake_iv;
-
-    ustring client_data_key;
-    ustring server_data_key;
-};
-
 
 } // namespace fbw
 

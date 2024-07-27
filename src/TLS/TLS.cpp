@@ -19,7 +19,8 @@
 #include "Cryptography/cipher/chacha20poly1305.hpp"
 #include "../Runtime/task.hpp"
 #include "../TCP/tcp_stream.hpp"
-#include "Cryptography/TLS_helpers.hpp"
+#include "Cryptography/key_derivation.hpp"
+#include "TLS_utils.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -43,9 +44,7 @@ namespace std {
 
 namespace fbw {
 
-
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
-
 
 task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
     auto r = tls_record(ContentType::Alert);
@@ -341,16 +340,11 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
     co_return stream_result::ok;
 }
 
-
-
-
 void TLS::client_hello(key_schedule& handshake, tls_record record) {
-
     if(m_expected_record != HandshakeStage::client_hello) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    client_hello_record(handshake, record, can_heartbeat);
-
+    handshake.client_hello_record(record, can_heartbeat);
     m_expected_record = HandshakeStage::server_hello;
 }
 
@@ -360,7 +354,7 @@ task<stream_result> TLS::server_hello(key_schedule& handshake) {
     // server random
     handshake.m_server_random.resize(32);
     randomgen.randgen(handshake.m_server_random);
-    auto hello_record = server_hello_record(handshake, use_tls13, client_session_id, can_heartbeat);
+    auto hello_record = handshake.server_hello_record(use_tls13, client_session_id, can_heartbeat);
     if(use_tls13) {
         randomgen.randgen(handshake.server_private_key_ephem);
     }
@@ -370,28 +364,28 @@ task<stream_result> TLS::server_hello(key_schedule& handshake) {
     
     auto result = co_await write_record(hello_record, option_singleton().handshake_timeout);
     m_expected_record = HandshakeStage::server_certificate;
-    auto [handshake_secret, handshake_context] = tls13_key_calc(handshake);
+    auto [handshake_secret, handshake_context] = handshake.tls13_key_calc();
     cipher_context->set_key_material_13_handshake(handshake_secret, handshake_context);
     co_return std::move(result);
 }
 
 task<stream_result> TLS::server_certificate(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_certificate);
-    tls_record certificate_record = server_certificate_record(handshake, use_tls13);
+    tls_record certificate_record = handshake.server_certificate_record(use_tls13);
     handshake.handshake_hasher->update(certificate_record.m_contents);
     m_expected_record = HandshakeStage::server_key_exchange;
     co_return co_await write_record(certificate_record, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_certificate_verify(key_schedule& handshake) {
-    auto record = server_certificate_verify_record(handshake);
+    auto record = handshake.server_certificate_verify_record();
     co_return co_await write_record(record, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_key_exchange(key_schedule& handshake) {
     randomgen.randgen(handshake.server_private_key_ephem);
     std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(handshake.server_private_key_ephem);
-    tls_record record = server_key_exchange_record(handshake, pubkey_ephem);
+    tls_record record = handshake.server_key_exchange_record(pubkey_ephem);
     handshake.handshake_hasher->update(record.m_contents);
     m_expected_record = HandshakeStage::server_hello_done;
     co_return co_await write_record(record, option_singleton().handshake_timeout);
@@ -399,7 +393,7 @@ task<stream_result> TLS::server_key_exchange(key_schedule& handshake) {
 
 task<stream_result> TLS::server_hello_done(hash_base& handshake_hasher) {
     assert(m_expected_record == HandshakeStage::server_hello_done);
-    auto record = server_hello_done_record();
+    auto record = key_schedule::server_hello_done_record();
     handshake_hasher.update(record.m_contents);
     m_expected_record = HandshakeStage::client_key_exchange;
     co_return co_await write_record(record, option_singleton().handshake_timeout);
@@ -409,7 +403,7 @@ void TLS::client_key_exchange(key_schedule& handshake, tls_record record) {
     if(m_expected_record != HandshakeStage::client_key_exchange) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    auto key_material = client_key_exchange_receipt(handshake, record);
+    auto key_material = handshake.client_key_exchange_receipt(record);
     cipher_context->set_key_material_12(key_material);
     handshake.handshake_hasher->update(record.m_contents);
     m_expected_record = HandshakeStage::client_change_cipher_spec;
@@ -503,7 +497,7 @@ task<stream_result> TLS::server_handshake_finished12(const key_schedule& handsha
 }
 
 task<stream_result> TLS::server_encrypted_extensions() {
-    tls_record out = server_encrypted_extensions_record();
+    tls_record out = key_schedule::server_encrypted_extensions_record();
     co_return co_await write_record(out, option_singleton().handshake_timeout);
 }
 
@@ -541,9 +535,8 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
     }
 }
 
-
 task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optional<milliseconds> timeout) {
-    auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
+    auto [heartblead, heartbeat_record] = key_schedule::client_heartbeat_record(client_record, can_heartbeat);
     if(heartblead) {
         co_await m_client->write(to_unsigned("heartbleed?"), option_singleton().error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
@@ -551,9 +544,4 @@ task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optiona
     co_return co_await write_record(heartbeat_record, timeout);
 }
 
-
-
 }// namespace fbw
-
-
-

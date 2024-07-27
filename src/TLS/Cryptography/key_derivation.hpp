@@ -1,13 +1,13 @@
 //
-//  TLS_helpers.hpp
+//  key_derivation.hpp
 //  HTTPS Server
 //
 //  Created by Frederick Benjamin Woodruff on 17/07/2024.
 //
 
 
-#ifndef TLS_helpers_hpp
-#define TLS_helpers_hpp
+#ifndef key_derivation_hpp
+#define key_derivation_hpp
 
 #include "../../global.hpp"
 #include "one_way/secure_hash.hpp"
@@ -95,4 +95,4 @@ ustring hkdf_extract(const hash_base& hash_ctor, const T& salt, const U& ikm) {
 } //namespace fbw
 
 
-#endif // TLS_helpers_hpp
+#endif // key_derivation_hpp

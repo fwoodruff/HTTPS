@@ -84,6 +84,7 @@ connection_token::~connection_token() {
 // errors in server config should output to stderr
 // HTTP/2
 // use master key rather than expanded key material for TLS 1.2 handshakes
+// mostly lock-free runtime
 
 
 // after a connection is accepted, this is the per-client entry point

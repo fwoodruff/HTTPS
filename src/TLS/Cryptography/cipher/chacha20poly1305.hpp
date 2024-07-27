@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 #include "cipher_base.hpp"
-#include "../TLS_helpers.hpp"
+#include "../key_derivation.hpp"
 
 #include <vector>
 #include <array>

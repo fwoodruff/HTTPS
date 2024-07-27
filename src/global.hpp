@@ -17,12 +17,16 @@
 #include <optional>
 #include <vector>
 #include <filesystem>
+#include <span>
 
 namespace fbw {
 
 using ustring = std::basic_string<uint8_t>;
 
 constexpr size_t TLS_RECORD_SIZE = (1u << 14);
+constexpr size_t TLS_EXPANSION_MAX = 2048;
+constexpr size_t TLS_HEADER_SIZE = 5;
+constexpr size_t WRITE_RECORD_SIZE = 2899;
 constexpr size_t DECRYPTED_TLS_RECORD_GIVE = 1024;
 
 struct options {
@@ -47,10 +51,25 @@ template<typename T>
     uint64_t len = 0;
     for(size_t i = idx; i < idx + nbytes; i ++) {
         len <<= 8;
-        len |= container.at(i);
+        if(i >= container.size()) {
+            throw std::out_of_range{"std::out_of_range: pos >= size()"};
+        }
+        len |= container[i];
     }
     return len;
 }
+
+template<typename T>
+[[nodiscard]] inline std::span<const uint8_t> der_span_read(const T& container, size_t idx, size_t nbytes) {
+    auto size = try_bigend_read(container, idx, nbytes );
+    if(container.size() <= idx + nbytes) {
+        throw std::out_of_range{"out of range"};
+    }
+    std::span<const uint8_t> a_view( container.begin() + idx + nbytes, size);
+    return  a_view;
+}
+
+
 
 template<typename T>
 inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nbytes) {

@@ -18,6 +18,7 @@
 #include "../TCP/tcp_stream.hpp"
 #include "../Runtime/task.hpp"
 #include "../TCP/stream_base.hpp"
+#include "TLS_records.hpp"
 
 #include <array>
 #include <string>
@@ -28,22 +29,6 @@
 
 namespace fbw {
 
-constexpr size_t TLS_EXPANSION_MAX = 2048;
-constexpr size_t TLS_HEADER_SIZE = 5;
-constexpr size_t WRITE_RECORD_SIZE = 2899;
-
-struct key_schedule {  
-    std::unique_ptr<hash_base> handshake_hasher = nullptr;
-    ustring m_client_random {};
-    ustring m_server_random {};
-    unsigned short cipher {};
-    std::unique_ptr<const hash_base> hash_ctor = nullptr;
-    std::array<uint8_t,32> server_private_key_ephem {};
-    std::array<uint8_t,32> client_public_key {};
-    ustring master_secret {};
-    ustring server_handshake_hash {};
-    std::string alpn;
-};
 
 class TLS : public stream {
 public:
@@ -64,10 +49,9 @@ private:
     ustring m_buffer;
    
     bool can_heartbeat = false;
-    bool tls13_available = false;
     bool use_tls13 = false;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
-    std::optional<std::array<uint8_t, 32>> client_session_id;
+    std::optional<std::array<uint8_t, 32>> client_session_id {};
 
     ustring resumption_master_secret13;
     ustring exporter_master_secret13;
@@ -96,7 +80,6 @@ private:
     [[nodiscard]] task<stream_result> server_certificate(key_schedule&);
     [[nodiscard]] task<stream_result> server_certificate_verify(key_schedule&);
 
-    [[nodiscard]] tls_record server_certificate_record(key_schedule&);
     [[nodiscard]] task<stream_result> server_key_exchange(key_schedule&);
     [[nodiscard]] task<stream_result> server_hello_done(hash_base&);
     [[nodiscard]] task<stream_result> server_handshake_finished12(const key_schedule&);
@@ -105,8 +88,6 @@ private:
     [[nodiscard]] task<stream_result> server_encrypted_extensions();
 
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
-    ustring hello_extensions(key_schedule& handshake);
-    unsigned short cipher_choice(key_schedule& handshake, const ustring& s);
     
 
 };
@@ -114,4 +95,4 @@ private:
 } // namespace
 
 
-#endif // tls_connection_hpp
+#endif // tls_hpp

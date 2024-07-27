@@ -90,6 +90,7 @@ enum class HandshakeType : uint8_t {
     hello_request = 0,
     client_hello = 1,
     server_hello = 2,
+    encrypted_extensions = 8,
     certificate = 11,
     server_key_exchange = 12,
     certificate_request = 13,
@@ -158,6 +159,11 @@ public:
 private:
     uint8_t m_major_version;
     uint8_t m_minor_version;
+    struct der_headers {
+        ssize_t idx_start;
+        ssize_t num_bytes;
+    };
+    std::vector<der_headers> heads;
 public:
     tls_record() = default; // remove this line then fix task.hpp
     ustring m_contents;
@@ -172,6 +178,40 @@ public:
         m_minor_version(minor_version),
         m_contents()
     {}
+    
+    template<typename T>
+    void write1(T value) {
+        m_contents.push_back(static_cast<uint8_t>(value));
+    }
+    void write1(uint8_t value) {
+        m_contents.push_back(value);
+    }
+
+    void write2(uint16_t value) {
+        m_contents.append({0 ,0 });
+        checked_bigend_write(value, m_contents, m_contents.size() - 2, 2);
+    }
+
+    template<typename T>
+    void write(const T& value) {
+        m_contents.append(value.begin(), value.end());
+    }
+    void write(const ustring& value) {
+        m_contents.append(value);
+    }
+    
+
+    void push_der(ssize_t bytes) {
+        heads.push_back({static_cast<ssize_t>(m_contents.size()), bytes});
+        auto size = ustring(bytes, 0);
+        m_contents.append(size);
+    }
+
+    void pop_der() {
+        auto [idx_start, num_bytes] = heads.back();
+        heads.pop_back();
+        checked_bigend_write(m_contents.size() - idx_start - num_bytes, m_contents, idx_start, num_bytes);
+    }
     
     inline ustring serialise() const {
         assert(m_contents.size() != 0);

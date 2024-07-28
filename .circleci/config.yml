@@ -1,13 +1,44 @@
 version: 2.1
+# circleci local execute --volume $(pwd):/tmp/https --config ./.circleci/config.yml run_tests
 jobs:
   test:
     docker:
       - image: cimg/base:stable
     steps:
+      - setup_remote_docker:
+          version: 26.0.0
       - checkout
       - run:
-          name: Run tests
-          command: echo 'placeholder tests' && true
+          name: Remove any
+          command: sudo docker rmi -f server && sudo docker rm -f server-container
+      - run:
+          name: Build image
+          command: sudo docker build -t server .
+      - run:
+          name: Run image
+          command: sudo docker run --init -p 80:80 -p 443:443 -d --name server-container --network=host server
+      - run:
+          name: Sleep
+          command: sleep 1
+      - run:
+          name: Logs
+          command: sudo docker logs server-container #-f 
+          #background: true
+      - run:
+          name: Check server
+          command: curl --insecure https://localhost
+      - run:
+          name: Stop container
+          command: sudo docker stop server-container
+      - run:
+          name: Remove container
+          command: sudo docker rm -f server-container
+          when: always
+      - run:
+          name: Remove image
+          command: sudo docker rmi -f server
+          when: always
+
 workflows:
   run_tests:
     jobs:

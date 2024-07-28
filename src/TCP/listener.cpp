@@ -39,7 +39,7 @@ tcplistener::~tcplistener() {
     }
 }
 
-
+/*
 int get_listener_socket(std::string service) {
     int sockfd = -1;
     struct addrinfo hints {};
@@ -83,7 +83,7 @@ int get_listener_socket(std::string service) {
     ::fcntl(sockfd, F_SETFL, O_NONBLOCK);
     return sockfd;
 }
-/*
+*/
 
 int get_listener_socket(const std::string &service) {
     int sockfd = -1;
@@ -95,22 +95,18 @@ int get_listener_socket(const std::string &service) {
         throw std::runtime_error("Invalid port number");
     }
 
-    // Create an IPv6 socket
     sockfd = socket(AF_INET6, SOCK_STREAM, 0);
     if (sockfd == -1) {
         throw std::runtime_error("socket: failed to create socket");
     }
 
     // Allow both IPv4 and IPv6 connections
-    
     int no = 0;
     if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, (void *)&no, sizeof(no)) == -1) {
         close(sockfd);
         throw std::runtime_error("setsockopt: failed to set IPV6_V6ONLY");
     }
     
-
-    // Set socket options
     int yes = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
         close(sockfd);
@@ -142,7 +138,7 @@ int get_listener_socket(const std::string &service) {
 
     return sockfd;
 }
-*/
+
 
 tcplistener tcplistener::bind(std::string service) {
     int sockfd = get_listener_socket(service);

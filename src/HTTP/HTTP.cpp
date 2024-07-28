@@ -151,7 +151,7 @@ task<void> HTTP::send_error(http_error http_err) {
     << "\r\n"
     << error_html;
     ustring output = to_unsigned(oss.str());
-    auto res = co_await m_stream->write(output, true, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(output, option_singleton().session_timeout);
     if(res == stream_result::ok) {
         co_await m_stream->close_notify();
     }
@@ -302,13 +302,18 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
         headers.insert({"Accept-Ranges", "bytes"});
     }
     ustring header_str = make_header("200 OK", headers);
-    auto res = co_await m_stream->write(header_str, false, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
     if(send_body) {
-        co_return co_await send_body_slice(file_path, 0, file_size, true);
+        auto res = co_await send_body_slice(file_path, 0, file_size);
+        if(res != stream_result::ok) {
+            co_return res;
+        }
+        co_return co_await m_stream->flush();
     }
+
     co_return stream_result::ok;
 }
 
@@ -329,12 +334,12 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
     headers.insert({"Content-Range", "bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size)});
 
     ustring header_str = make_header("206 Partial Content", headers);
-    auto res = co_await m_stream->write(header_str, false, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
     if(send_body) {
-        co_return co_await send_body_slice(file_path, begin, end, true);
+        co_return co_await send_body_slice(file_path, begin, end);
     }
     co_return stream_result::ok;
 }
@@ -373,32 +378,32 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
     headers["Content-Type"] = "multipart/byteranges; boundary=" + boundary_string;
     
     ustring header_str = make_header("206 Partial Content", headers);
-    auto res = co_await m_stream->write(header_str, false, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
     for(auto& range : ranges) {
         auto [begin, end] = get_range_bounds(file_size, range);
         auto delimi = mid_bound + range_header(range, file_size);
-        auto result = co_await m_stream->write(to_unsigned(delimi), false, option_singleton().session_timeout);
+        auto result = co_await m_stream->write(to_unsigned(delimi), option_singleton().session_timeout);
         if(result != stream_result::ok) {
             co_return result;
         }
         if(send_body) {
-            result = co_await send_body_slice(file_path, begin, end, false);
+            result = co_await send_body_slice(file_path, begin, end);
             if(result != stream_result::ok) {
                 co_return result;
             }
         }
-        result = co_await m_stream->write(to_unsigned("\r\n"), false, option_singleton().session_timeout);
+        result = co_await m_stream->write(to_unsigned("\r\n"), option_singleton().session_timeout);
         if(result != stream_result::ok) {
             co_return result;
         }
     }
-    co_return co_await m_stream->write(to_unsigned(end_bound), true, option_singleton().session_timeout);
+    co_return co_await m_stream->write(to_unsigned(end_bound), option_singleton().session_timeout);
 }
 
-task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end, bool last) {
+task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end) {
     std::ifstream t(file_path, std::ifstream::binary);
     if(t.fail()) {
         throw http_error("404 Not Found");
@@ -409,8 +414,7 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
-        bool last_write_before_read = (t.tellg() == end or t.eof()) and last;
-        auto res = co_await m_stream->write(buffer, last_write_before_read, option_singleton().session_timeout);
+        auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
         if(res != stream_result::ok) {
             co_return res;
         }
@@ -441,7 +445,7 @@ task<void> HTTP::redirect(http_frame request, std::string domain) {
         << body;
     
     std::string var = oss.str();
-    co_await m_stream->write(to_unsigned(var), true, option_singleton().session_timeout);
+    co_await m_stream->write(to_unsigned(var), option_singleton().session_timeout);
     co_await m_stream->close_notify();
 }
 

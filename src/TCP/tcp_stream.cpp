@@ -23,7 +23,7 @@ task<stream_result> tcp_stream::read_append(ustring& abuffer, std::optional<mill
     co_return status;
 }
 
-task<stream_result> tcp_stream::write(ustring abuffer, bool last, std::optional<milliseconds> timeout) {
+task<stream_result> tcp_stream::write(ustring abuffer, std::optional<milliseconds> timeout) {
     std::span<const uint8_t> remaining_buffer = {abuffer.data(), abuffer.size()};
     while(remaining_buffer.size() != 0) {
         auto [_, status] = co_await write_some(remaining_buffer, timeout);

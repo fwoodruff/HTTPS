@@ -37,7 +37,7 @@ public:
     ~TLS() = default;
     
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-    [[nodiscard]] task<stream_result> write(ustring, bool last, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
 
     [[nodiscard]] task<std::string> perform_handshake();
@@ -57,8 +57,13 @@ private:
     ustring resumption_master_secret13;
     ustring exporter_master_secret13;
 
-    std::array<uint8_t, WRITE_RECORD_SIZE> m_write_buffer {};
+    static constexpr size_t REGIONS = 1;
+    static constexpr size_t FALSE_SHARING = 0;
+
+    std::array<uint8_t, (WRITE_RECORD_SIZE+FALSE_SHARING) * REGIONS> m_write_buffer {};
     size_t m_write_buffer_idx = 0;
+    size_t m_write_buffer_region = 0;
+    size_t m_buffered_regions = 0;
 
     [[nodiscard]] tls_record decrypt_record(tls_record);
     

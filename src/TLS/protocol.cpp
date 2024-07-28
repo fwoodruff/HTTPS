@@ -32,6 +32,8 @@
 #include <algorithm>
 #include <utility>
 
+#include <queue>
+
 #ifdef __cpp_impl_coroutine
 #include <coroutine>
 #else
@@ -94,40 +96,40 @@ END2:
     co_return stream_result::closed;
 }
 
-bool squeeze_last_chunk(ssize_t additional_data_len, bool is_last) {
-    return  is_last and
-            additional_data_len < WRITE_RECORD_SIZE and 
+bool squeeze_last_chunk(ssize_t additional_data_len) {
+    return  size_t(additional_data_len) < WRITE_RECORD_SIZE and 
             additional_data_len != 0 and 
             additional_data_len + WRITE_RECORD_SIZE + 50 < TLS_RECORD_SIZE and
-            additional_data_len * 3 < WRITE_RECORD_SIZE * 2;
+            size_t(additional_data_len) * 3 < WRITE_RECORD_SIZE * 2;
 }
 
-task<stream_result> TLS::write(ustring data, bool last, std::optional<milliseconds> timeout) {
+task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     try {
         size_t idx = 0;
         while(idx < data.size()) {
+            auto offset0 = (WRITE_RECORD_SIZE+FALSE_SHARING)*m_write_buffer_region;
             size_t write_size = std::min(WRITE_RECORD_SIZE - m_write_buffer_idx, data.size() - idx);
-            std::copy_n(data.data() + idx, write_size, m_write_buffer.data() + m_write_buffer_idx);
+            std::copy_n(data.data() + idx, write_size, m_write_buffer.data() + m_write_buffer_idx + offset0 );
             m_write_buffer_idx += write_size;
             idx += write_size;
-
             if (m_write_buffer_idx == WRITE_RECORD_SIZE) {
-                tls_record rec(ContentType::Application);
-                rec.m_contents = ustring(m_write_buffer.data(), m_write_buffer.data() + WRITE_RECORD_SIZE);
-
-                // push last record 
-                auto additional_data_len = data.size() - idx;
-                if(squeeze_last_chunk(additional_data_len, last)) {
-                    rec.m_contents.append(data.begin() + idx, data.end());
-                    idx = data.size();
+                if(m_buffered_regions + 1 == REGIONS) {
+                    auto write_region = (REGIONS + m_write_buffer_region - m_buffered_regions) % REGIONS;
+                    auto offset_write0 = (WRITE_RECORD_SIZE+FALSE_SHARING) * write_region;
+                    tls_record rec(ContentType::Application);
+                    rec.m_contents = ustring(m_write_buffer.begin() + offset_write0, m_write_buffer.begin() + WRITE_RECORD_SIZE + offset_write0);
+                    auto res = co_await write_record(std::move(rec), timeout);
+                    if (res != stream_result::ok) {
+                        co_return res;
+                    }
+                    m_write_buffer_region = (m_write_buffer_region+1) % REGIONS;
+                    m_write_buffer_idx = 0;
+                } else {
+                    m_buffered_regions ++;
+                    m_write_buffer_region = (m_write_buffer_region+1) % REGIONS;
+                    m_write_buffer_idx = 0;
                 }
-                
-                auto res = co_await write_record(std::move(rec), timeout);
-                if (res != stream_result::ok) {
-                    co_return res;
-                }
-                m_write_buffer_idx = 0;
             }
         }
         co_return stream_result::ok;
@@ -146,14 +148,32 @@ END2:
 }
 
 task<stream_result> TLS::flush() {
-    if (m_write_buffer_idx > 0) {
+    while(m_buffered_regions > 0) {
+        auto write_region = (REGIONS + m_write_buffer_region - m_buffered_regions) % REGIONS ;
+        auto offset0 = write_region * (WRITE_RECORD_SIZE+FALSE_SHARING);
         tls_record rec(ContentType::Application);
-        rec.m_contents = ustring(m_write_buffer.data(), m_write_buffer.data() + m_write_buffer_idx);
+        rec.m_contents = ustring(m_write_buffer.begin() + offset0, m_write_buffer.begin() + WRITE_RECORD_SIZE + offset0);
+        m_buffered_regions--;
+        if(squeeze_last_chunk(m_write_buffer_idx)) {
+            auto offset1 = (WRITE_RECORD_SIZE+FALSE_SHARING)*((REGIONS + m_write_buffer_region) % REGIONS);
+            rec.m_contents.append(m_write_buffer.data() + offset1, m_write_buffer.data() + m_write_buffer_idx + offset1);
+            m_write_buffer_idx = 0;
+        }
+        auto res = co_await write_record(std::move(rec), option_singleton().session_timeout);
+        if (res != stream_result::ok) {
+            co_return res;
+        }
+        
+    }
+    if (m_write_buffer_idx > 0) {
+        auto offset0 = (WRITE_RECORD_SIZE+FALSE_SHARING)*((REGIONS + m_write_buffer_region) % REGIONS) ;
+        tls_record rec(ContentType::Application);
+        rec.m_contents = ustring(m_write_buffer.data() + offset0, m_write_buffer.data() + m_write_buffer_idx + offset0);
         auto res = co_await write_record(std::move(rec), option_singleton().session_timeout);
         m_write_buffer_idx = 0;
-       co_return res;
+        co_return res;
     }
-    co_return stream_result::ok;
+     co_return stream_result::ok;
 }
 
 task<void> TLS::close_notify() {
@@ -302,7 +322,7 @@ task<stream_result> TLS::write_record(tls_record record, std::optional<milliseco
         }
         record = cipher_context->encrypt(record);
     }
-    co_return co_await m_client->write(record.serialise(), false, timeout);
+    co_return co_await m_client->write(record.serialise(), timeout);
 }
 
 task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_record record) {
@@ -549,7 +569,7 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
 task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optional<milliseconds> timeout) {
     auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
     if(heartblead) {
-        co_await m_client->write(to_unsigned("heartbleed?"), false, option_singleton().error_timeout);
+        co_await m_client->write(to_unsigned("heartbleed?"), option_singleton().error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
     co_return co_await write_record(heartbeat_record, timeout);

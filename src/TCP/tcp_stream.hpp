@@ -35,7 +35,7 @@ public:
     tcp_stream& operator=(tcp_stream&& other);
     
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-    [[nodiscard]] task<stream_result> write(ustring, bool last, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] task<stream_result> flush() override;
 

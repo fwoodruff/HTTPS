@@ -1,42 +1,33 @@
 version: 2.1
-# circleci local execute --volume $(pwd):/tmp/https --config ./.circleci/config.yml run_tests
+# circleci local execute --config ./.circleci/config.yml test_make
 jobs:
   test:
     docker:
-      - image: cimg/base:stable
+      - image: cimg/base:2024.07
     steps:
-      - setup_remote_docker
       - checkout
       - run:
-          name: Remove any
-          command: sudo docker rmi -f server && sudo docker rm -f server-container
+          name: Install dependencies
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y g++-12 make
       - run:
-          name: Build image
-          command: sudo docker build -t server .
+          name: Verify g++ version
+          command: g++ --version
       - run:
-          name: Run image
-          command: sudo docker run --init -p 80:80 -p 443:443 -d --name server-container --network=host server
+          name: Build project
+          command: make -j8
+      - run:
+          name: Run
+          command: |
+            ./target/codeymccodeface
+          background: true
       - run:
           name: Sleep
           command: sleep 1
       - run:
-          name: Logs
-          command: sudo docker logs server-container #-f 
-          #background: true
-      - run:
           name: Check server
           command: curl --insecure https://localhost
-      - run:
-          name: Stop container
-          command: sudo docker stop server-container
-      - run:
-          name: Remove container
-          command: sudo docker rm -f server-container
-          when: always
-      - run:
-          name: Remove image
-          command: sudo docker rmi -f server
-          when: always
 
 workflows:
   run_tests:

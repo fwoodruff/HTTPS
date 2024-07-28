@@ -108,27 +108,21 @@ task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout
     try {
         size_t idx = 0;
         while(idx < data.size()) {
-            auto offset0 = (WRITE_RECORD_SIZE+FALSE_SHARING)*m_write_buffer_region;
-            size_t write_size = std::min(WRITE_RECORD_SIZE - m_write_buffer_idx, data.size() - idx);
-            std::copy_n(data.data() + idx, write_size, m_write_buffer.data() + m_write_buffer_idx + offset0 );
-            m_write_buffer_idx += write_size;
+            if(encrypt_send.empty()) {
+                encrypt_send.emplace_back(ContentType::Application);
+            }
+            auto& active_record = encrypt_send.back();
+            size_t write_size = std::min(WRITE_RECORD_SIZE - active_record.m_contents.size(), data.size() - idx);
+            encrypt_send.back().m_contents.append( data.begin() + idx,  data.begin() + idx + write_size);
             idx += write_size;
-            if (m_write_buffer_idx == WRITE_RECORD_SIZE) {
-                if(m_buffered_regions + 1 == REGIONS) {
-                    auto write_region = (REGIONS + m_write_buffer_region - m_buffered_regions) % REGIONS;
-                    auto offset_write0 = (WRITE_RECORD_SIZE+FALSE_SHARING) * write_region;
-                    tls_record rec(ContentType::Application);
-                    rec.m_contents = ustring(m_write_buffer.begin() + offset_write0, m_write_buffer.begin() + WRITE_RECORD_SIZE + offset_write0);
-                    auto res = co_await write_record(std::move(rec), timeout);
+            if (active_record.m_contents.size() == WRITE_RECORD_SIZE) {
+                encrypt_send.emplace_back(ContentType::Application);
+                if(encrypt_send.size() > 2) {
+                    auto res = co_await write_record(std::move(encrypt_send.front()), timeout);
+                    encrypt_send.pop_front();
                     if (res != stream_result::ok) {
                         co_return res;
                     }
-                    m_write_buffer_region = (m_write_buffer_region+1) % REGIONS;
-                    m_write_buffer_idx = 0;
-                } else {
-                    m_buffered_regions ++;
-                    m_write_buffer_region = (m_write_buffer_region+1) % REGIONS;
-                    m_write_buffer_idx = 0;
                 }
             }
         }
@@ -148,32 +142,26 @@ END2:
 }
 
 task<stream_result> TLS::flush() {
-    while(m_buffered_regions > 0) {
-        auto write_region = (REGIONS + m_write_buffer_region - m_buffered_regions) % REGIONS ;
-        auto offset0 = write_region * (WRITE_RECORD_SIZE+FALSE_SHARING);
-        tls_record rec(ContentType::Application);
-        rec.m_contents = ustring(m_write_buffer.begin() + offset0, m_write_buffer.begin() + WRITE_RECORD_SIZE + offset0);
-        m_buffered_regions--;
-        if(squeeze_last_chunk(m_write_buffer_idx)) {
-            auto offset1 = (WRITE_RECORD_SIZE+FALSE_SHARING)*((REGIONS + m_write_buffer_region) % REGIONS);
-            rec.m_contents.append(m_write_buffer.data() + offset1, m_write_buffer.data() + m_write_buffer_idx + offset1);
-            m_write_buffer_idx = 0;
+    if(encrypt_send.size() >= 2) {
+        if(squeeze_last_chunk(encrypt_send.back().m_contents.size())) {
+            auto back = std::move(encrypt_send.back());
+            encrypt_send.pop_back();
+            encrypt_send.back().m_contents.append(back.m_contents);
         }
-        auto res = co_await write_record(std::move(rec), option_singleton().session_timeout);
+    }
+    while(!encrypt_send.empty()) {
+        auto& record = encrypt_send.front();
+        if(record.m_contents.empty()) {
+            encrypt_send.pop_front();
+            continue;
+        }
+        auto res = co_await write_record(std::move(record), option_singleton().session_timeout);
+        encrypt_send.pop_front();
         if (res != stream_result::ok) {
             co_return res;
         }
-        
     }
-    if (m_write_buffer_idx > 0) {
-        auto offset0 = (WRITE_RECORD_SIZE+FALSE_SHARING)*((REGIONS + m_write_buffer_region) % REGIONS) ;
-        tls_record rec(ContentType::Application);
-        rec.m_contents = ustring(m_write_buffer.data() + offset0, m_write_buffer.data() + m_write_buffer_idx + offset0);
-        auto res = co_await write_record(std::move(rec), option_singleton().session_timeout);
-        m_write_buffer_idx = 0;
-        co_return res;
-    }
-     co_return stream_result::ok;
+    co_return stream_result::ok;
 }
 
 task<void> TLS::close_notify() {

@@ -25,7 +25,7 @@
 #include <span>
 #include <optional>
 #include <atomic>
-
+#include <queue>
 
 namespace fbw {
 
@@ -57,13 +57,7 @@ private:
     ustring resumption_master_secret13;
     ustring exporter_master_secret13;
 
-    static constexpr size_t REGIONS = 1;
-    static constexpr size_t FALSE_SHARING = 0;
-
-    std::array<uint8_t, (WRITE_RECORD_SIZE+FALSE_SHARING) * REGIONS> m_write_buffer {};
-    size_t m_write_buffer_idx = 0;
-    size_t m_write_buffer_region = 0;
-    size_t m_buffered_regions = 0;
+    std::deque<tls_record> encrypt_send;
 
     [[nodiscard]] tls_record decrypt_record(tls_record);
     

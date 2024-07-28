@@ -424,7 +424,6 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
 }
 
 
-
 // if a client connects over http:// we need to form a response redirecting them to https://
 task<void> HTTP::redirect(http_frame request, std::string domain) {
     std::string filename = fix_filename(std::move(request.header.resource));

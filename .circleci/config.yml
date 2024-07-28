@@ -7,6 +7,10 @@ jobs:
     steps:
       - checkout
       - run:
+          name: always fails
+          command: |
+            false
+      - run:
           name: Build server
           command: |
             make -j$(nproc)

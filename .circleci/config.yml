@@ -1,5 +1,5 @@
 version: 2.1
-# circleci local execute --config ./.circleci/config.yml test_make
+# circleci local execute --config ./.circleci/config.yml test
 jobs:
   test:
     docker:

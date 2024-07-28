@@ -1,13 +1,34 @@
 version: 2.1
+# circleci local execute --config ./.circleci/config.yml test_make
 jobs:
   test:
     docker:
-      - image: cimg/base:stable
+      - image: cimg/base:2024.07
     steps:
       - checkout
       - run:
-          name: Run tests
-          command: echo 'placeholder tests' && true
+          name: Install dependencies
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y g++-12 make
+      - run:
+          name: Verify g++ version
+          command: g++ --version
+      - run:
+          name: Build project
+          command: make -j8
+      - run:
+          name: Run
+          command: |
+            ./target/codeymccodeface
+          background: true
+      - run:
+          name: Sleep
+          command: sleep 1
+      - run:
+          name: Check server
+          command: curl --insecure https://localhost
+
 workflows:
   run_tests:
     jobs:

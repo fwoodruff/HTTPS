@@ -12,18 +12,15 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y g++-12 make
       - run:
-          name: Build project
+          name: Build server
           command: make -j8
       - run:
-          name: Run
+          name: Run server
           command: |
             ./target/codeymccodeface
           background: true
       - run:
-          name: Sleep
-          command: sleep 1
-      - run:
-          name: Check server
+          name: Test server
           command: curl --insecure https://localhost
 
 workflows:

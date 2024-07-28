@@ -60,7 +60,7 @@ bool is_tls13_supported(std::span<const uint8_t> extension) {
     if(versions + 1 != extension.size() or versions % 2 != 0) {
         throw ssl_error("malformed TLS version extension", AlertLevel::fatal, AlertDescription::decode_error);
     }
-    for(int i = 1; i < extension.size(); i += 2) {
+    for(size_t i = 1; i < extension.size(); i += 2) {
         if(extension[i] == 0x03 and extension[i+1] == 0x04) {
             // tls 1.3 supported // todo: check logic
         }

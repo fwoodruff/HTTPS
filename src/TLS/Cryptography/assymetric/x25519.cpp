@@ -14,6 +14,7 @@
 #include <sstream>
 #include <iostream>
 #include <climits>
+#include <algorithm>
 
 namespace fbw::curve25519 {
 
@@ -197,7 +198,8 @@ constexpr ct_u256 clamp(ct_u256 any_value) {
 // point multiplies serial_point by secret.
 // only takes the x coordinate of the point as input to avoid an invalid curve attack
 std::array<unsigned char,32> multiply(const std::array<unsigned char,32>& secret,
-                                                          const std::array<unsigned char,32>& serial_point) noexcept {
+                                                          std::array<unsigned char,32> serial_point) noexcept {
+    std::reverse(serial_point.begin(), serial_point.end());
     auto clamped_secret = clamp(ct_u256(secret));
     auto curve_point_x = ct_u256(serial_point);
     auto out_point = point_multiply(clamped_secret, curve_point_x);
@@ -208,7 +210,7 @@ std::array<unsigned char,32> multiply(const std::array<unsigned char,32>& secret
 std::array<unsigned char,32> base_multiply(const std::array<unsigned char,32>& secret) noexcept {
     auto clamped_secret = clamp(ct_u256(secret));
     auto output_point = point_multiply(clamped_secret, Base.xcoord);
-    return output_point.serialise();
+    return output_point.serialise_le();
 }
 
 } // namespace fbw::curve25519

@@ -43,15 +43,15 @@ ustring prf(const hash_base& hash_ctor, const T& secret, const std::string& labe
 
 template<typename T, typename U>
 ustring hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, size_t length) {
-    const size_t hash_len = hash_ctor.get_hash_size();  // Assuming SHA-256
-    const size_t N = (length + hash_len - 1) / hash_len;  // Number of blocks needed
+    const size_t hash_len = hash_ctor.get_hash_size();
+    const size_t N = (length + hash_len - 1) / hash_len;
 
     if (N > 255) {
         assert(false);
     }
 
     ustring okm;
-    okm.reserve(length);
+    okm.reserve(length); // check this
 
     ustring previous_block;
     for (size_t i = 0; i < N; ++i) {
@@ -60,9 +60,9 @@ ustring hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, siz
         hmac_ctx.update(info);
         std::array<uint8_t, 1> val { static_cast<uint8_t>(i + 1) };
         hmac_ctx.update(val);
+        previous_block = hmac_ctx.hash();
         okm.insert(okm.end(), previous_block.begin(), previous_block.begin() + std::min(hash_len, length - okm.size()));
     }
-
     return okm;
 }
 
@@ -83,11 +83,6 @@ ustring hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::s
 
 template<typename T, typename U>
 ustring hkdf_extract(const hash_base& hash_ctor, const T& salt, const U& ikm) {
-    if (salt.empty()) {
-        size_t hash_len = hash_ctor.get_hash_size();
-        ustring zero_salt(hash_len, 0);
-        return do_hmac(hash_ctor, zero_salt, ikm);
-    }
     return do_hmac(hash_ctor, salt, ikm);
 }
 

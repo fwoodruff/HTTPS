@@ -51,10 +51,12 @@ template<typename T>
 T EP1(T x) noexcept {
     return rotate_right(x, 6) ^ rotate_right(x, 11) ^ rotate_right(x, 25);
 }
-uint32_t SIG0(uint32_t x) noexcept {
+template<typename T>
+T SIG0(T x) noexcept {
     return rotate_right(x, 7) ^ rotate_right(x, 18) ^ (x >> 3);
 }
-uint32_t SIG1(uint32_t x) noexcept {
+template<typename T>
+T SIG1(T x) noexcept {
     return rotate_right(x, 17) ^ rotate_right(x, 19) ^ (x >> 10);
 }
 
@@ -71,24 +73,10 @@ constexpr double sq_root(double x) noexcept {
     return guess;
 }
 
-constexpr double cube_root(double x) noexcept {
-    // annoyingly this doesn't give enough precision for SHA384 so we have to hard code those...
-    assert(x >= 0);
-    constexpr double small = 9*std::numeric_limits<double>::epsilon();
-    double guess = 1;
-    double diff = 1;
-    while(diff > small or diff < -small) {
-        double root = (2 * guess + x/(guess*guess))/ 3;
-        diff = guess - root;
-        guess = root;
-    }
-    return guess;
-}
-
 /*
 constexpr std::array<uint64_t,8> prime_sqrts { 0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
     0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179 };
-
+*/
 constexpr std::array<uint64_t,80> prime_cbrts {
     0x428a2f98d728ae22, 0x7137449123ef65cd, 0xb5c0fbcfec4d3b2f, 0xe9b5dba58189dbbc, 0x3956c25bf348b538,
     0x59f111f1b605d019, 0x923f82a4af194f9b, 0xab1c5ed5da6d8118, 0xd807aa98a3030242, 0x12835b0145706fbe,
@@ -106,7 +94,157 @@ constexpr std::array<uint64_t,80> prime_cbrts {
     0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178, 0x06f067aa72176fba, 0x0a637dc5a2c898a6,
     0x113f9804bef90dae, 0x1b710b35131c471b, 0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc,
     0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817 };
-*/
+
+
+void sha384_transform(std::array<uint64_t,8>& state, const std::array<uint8_t, sha384::block_size> data) noexcept {
+    std::array<uint64_t, 80> m;
+    for (int i = 0; i < 16; ++i) {
+        m[i] = 0;
+        for(int j = 0; j < 8; j++) {
+            m[i] |= static_cast<uint64_t>(data[i*8 + j]) << (56 - j*8);
+        }
+    }
+    for (int i = 16 ; i < 80; ++i) {
+        m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
+    }
+    auto vars = state;
+    for (int i = 0; i < 80; ++i) {
+        uint64_t t1 = vars[7] + EP1(vars[4]) + CH(vars[4], vars[5], vars[6]) + prime_cbrts[i] + m[i];
+        uint64_t t2 = EP0(vars[0]) + MAJ(vars[0], vars[1], vars[2]);
+        for(int i = 7; i >0; i--) {
+            vars[i] = vars[i-1];
+        }
+        vars[4] += t1;
+        vars[0] = t1 + t2;
+    }
+    for(int i = 0; i < 8; i ++) {
+        state[i] += vars[i];
+    }
+}
+
+constexpr double cube_root(double x) noexcept {
+    // annoyingly this doesn't give enough precision for SHA384 so we have to hard code those...
+    assert(x >= 0);
+    constexpr double small = 9*std::numeric_limits<double>::epsilon();
+    double guess = 1;
+    double diff = 1;
+    while(diff > small or diff < -small) {
+        double root = (2 * guess + x/(guess*guess))/ 3;
+        diff = guess - root;
+        guess = root;
+    }
+    return guess;
+}
+
+
+
+
+sha384::sha384() noexcept {
+    state = {
+        0xcbbb9d5dc1059ed8, 0x629a292a367cd507,
+        0x9159015a3070dd17, 0x152fecd8f70e5939,
+        0x67332667ffc00b31, 0x8eb44a8768581511,
+        0xdb0c2e0d64f98fa7, 0x47b5481dbefa4fa4
+    };
+    m_data.fill(0);
+}
+
+sha384& sha384::update_impl(const uint8_t* const begin, size_t size) noexcept {
+    for (size_t i = 0; i < size; ++i) {
+        assert(datalen < m_data.size());
+        m_data[datalen] = begin[i];
+        ++datalen;
+        if (datalen == 128) {  // SHA-384 operates on 128-byte (1024-bit) blocks
+            sha384_transform(state, m_data);
+            bitlen += 1024;  // Each block processed adds 1024 bits to the bit length
+            datalen = 0;
+        }
+    }
+    return *this;
+}
+
+[[nodiscard]] size_t sha384::get_block_size() const noexcept {
+    return sha384::block_size;
+}
+[[nodiscard]] size_t sha384::get_hash_size() const noexcept {
+    return sha384::hash_size;
+}
+
+std::unique_ptr<hash_base> sha384::clone() const {
+    return std::make_unique<sha384>(*this);
+}
+
+size_t sha256::get_block_size() const noexcept {
+    return block_size;
+}
+
+size_t sha256::get_hash_size() const noexcept {
+    return hash_size;
+}
+
+std::unique_ptr<hash_base> sha256::clone() const {
+    return std::make_unique<sha256>(*this);
+}
+
+
+
+sha256::sha256() noexcept  : datalen(0),  bitlen(0), m_data(), done(false) {
+    constexpr auto state0 = [](){
+        int idx = 0;
+        std::array<uint32_t,8> kl {};
+        for (int i = 2; i <= 19; i++) {
+            bool flag = true;
+            for (int j = 2; j <= i / 2; ++j) {
+                if (i % j == 0) {
+                    flag = false;
+                    break;
+                }
+            }
+            if (flag) {
+                auto x = sq_root(i);
+                kl[idx++] = unsigned((x - unsigned(x))*(1ULL<<32 ));
+            }
+        }
+        return kl;
+
+    }();
+    state = state0;
+}
+
+ustring sha384::hash() && {
+    assert(!done);
+    ustring hash;
+    hash.resize(48); // SHA-384 produces a 48-byte hash
+
+    size_t dlen = datalen;
+    assert(dlen < m_data.size());
+    m_data[dlen] = 0x80;
+    ++dlen;
+    if (dlen > 112) {
+        while (dlen < 128) {
+            m_data[dlen++] = 0x00;
+        }
+        sha384_transform(state, m_data);
+        dlen = 0;
+    }
+    while (dlen < 112) {
+        m_data[dlen++] = 0x00;
+    }
+    bitlen += datalen * 8ull;
+    for (size_t i = 0; i < 16; ++i) {
+        m_data[127 - i] = (bitlen >> (8 * i)) & 0xFF;
+    }
+    sha384_transform(state, m_data);
+
+    for (size_t i = 0; i < 6; ++i) { // SHA-384 produces a 48-byte hash from 6 state elements
+        for (size_t j = 0; j < 8; ++j) {
+            hash[i * 8 + j] = (state[i] >> (56 - j * 8)) & 0xff;
+        }
+    }
+    done = true;
+    return hash;
+}
+
  
 void sha256_transform(std::array<uint32_t,8>& state, const std::array<uint8_t,64> data) noexcept {
     static constexpr std::array<uint32_t,64> k = [](){
@@ -149,77 +287,6 @@ void sha256_transform(std::array<uint32_t,8>& state, const std::array<uint8_t,64
         state[i] += vars[i];
     }
 }
-
-/*
-void sha384_transform(std::array<uint64_t,8>& state, const std::array<uint8_t,64> data) noexcept {
-    // s0 := (w[i-15] rightrotate 1) xor (w[i-15] rightrotate 8) xor (w[i-15] rightshift 7)
-    // s1 := (w[i-2] rightrotate 19) xor (w[i-2] rightrotate 61) xor (w[i-2] rightshift 6)
-    
-    auto& kl = prime_cbrts;
-    std::array<uint64_t,64> m;
-    for (int i = 0, j = 0; i < 16; ++i, j += 4) {
-        m[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
-    }
-    for (int i = 16 ; i < 64; ++i) {
-        
-        
-        m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
-    }
-
-    auto vars = state;
-    for (int i = 0; i < 64; ++i) {
-        uint32_t t1 = vars[7] + EP1(vars[4]) + CH(vars[4], vars[5], vars[6]) + k[i] + m[i];
-        uint32_t t2 = EP0(vars[0]) + MAJ(vars[0], vars[1], vars[2]);
-        for(int i = 7; i >0; i--) {
-            vars[i] = vars[i-1];
-        }
-        vars[4] += t1;
-        vars[0] = t1 + t2;
-    }
-    for(int i = 0; i < 8; i ++) {
-        state[i] += vars[i];
-    }
-}
-*/
-
-
-size_t sha256::get_block_size() const noexcept {
-    return block_size;
-}
-
-size_t sha256::get_hash_size() const noexcept {
-    return hash_size;
-}
-
-std::unique_ptr<hash_base> sha256::clone() const {
-    return std::make_unique<sha256>(*this);
-}
-
-
-
-sha256::sha256() noexcept  : datalen(0),  bitlen(0), m_data(), done(false) {
-    constexpr auto state0 = [](){
-        int idx = 0;
-        std::array<uint32_t,8> kl {};
-        for (int i = 2; i <= 19; i++) {
-            bool flag = true;
-            for (int j = 2; j <= i / 2; ++j) {
-                if (i % j == 0) {
-                    flag = false;
-                    break;
-                }
-            }
-            if (flag) {
-                auto x = sq_root(i);
-                kl[idx++] = unsigned((x - unsigned(x))*(1ULL<<32 ));
-            }
-        }
-        return kl;
-
-    }();
-    state = state0;
-}
-
 
 sha256& sha256::update_impl(const uint8_t* const begin, size_t size) noexcept {
     for (size_t i = 0; i < size; ++i) {
@@ -271,6 +338,7 @@ ustring sha256::hash() && {
     done = true;
     return hash;
 }
+
 
 
 // used in CBC mode

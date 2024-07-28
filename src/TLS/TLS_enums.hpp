@@ -20,6 +20,8 @@ enum class HandshakeStage {
     server_hello_done,
     client_key_exchange,
     client_change_cipher_spec,
+    server_encrypted_extensions,
+    server_certificate_verify,
     client_handshake_finished,
     server_change_cipher_spec,
     server_handshake_finished,
@@ -28,15 +30,37 @@ enum class HandshakeStage {
 
 
 namespace fbw {
-enum class NamedCurve : uint16_t {
-    secp256r1 = 23,
-    secp384r1 = 24,
-    secp521r1 = 25,
-    x25519 = 29,
-    x448 = 30
+enum class NamedGroup : uint16_t {
+    secp256r1 = 0x0017,
+    secp384r1 = 0x0018,
+    secp521r1 = 0x0019,
+    x25519 = 0x001D,
+    x448 = 0x001E,
+
+    ffdhe2048 = 0x0100,
+    ffdhe3072 = 0x0101,
+    ffdhe4096 = 0x0102,
+    ffdhe6144 = 0x0103,
+    ffdhe8192 = 0x0104,
+};
+
+enum class PskKeyExchangeMode : uint8_t { 
+    psk_ke = 0,
+    psk_dhe_ke = 1
+};
+
+enum class CertificateType : uint8_t {
+    X509 = 0,
+    RawPublicKey = 2,
+};
+
+enum class KeyUpdateRequest : uint8_t {
+    update_not_requested = 0,
+    update_requested = 1,
 };
 
 enum class ContentType : uint8_t {
+    Invalid = 0,
     ChangeCipherSpec = 0x14,
     Alert,
     Handshake,
@@ -100,6 +124,31 @@ enum class HandshakeType : uint8_t {
     finished = 20
 };
 
+enum class ExtensionType : uint16_t{
+    server_name = 0,
+    max_fragment_length = 1,
+    status_request = 5,
+    supported_groups = 10,
+    signature_algorithms = 13,
+    use_srtp = 14,
+    heartbeat = 15,
+    application_layer_protocol_negotiation = 16,
+    signed_certificate_timestamp = 18,
+    client_certificate_type = 19,
+    server_certificate_type= 20,
+    padding= 21,
+    pre_shared_key=41,
+    early_data=42,
+    supported_versions=43,
+    cookie=44,
+    psk_key_exchange_modes=45,
+    certificate_authorities=47,
+    oid_filters=48,
+    post_handshake_auth=49,
+    signature_algorithms_cert=50,
+    key_share=51,
+};
+
 enum class HashAlgorithm : uint8_t {
     none = 0,
     md5 = 1,
@@ -139,6 +188,25 @@ enum class cipher_suites : uint16_t {
     TLS_CHACHA20_POLY1305_SHA256 = 0x1303,
     TLS_AES_128_GCM_SHA256 = 0x1301,
     TLS_EMPTY_RENEGOTIATION_INFO_SCSV = 0x00ff
+};
+
+enum class SignatureScheme : uint16_t {
+    rsa_pkcs1_sha256 = 0x0401,
+    rsa_pkcs1_sha384 = 0x0501,
+    rsa_pkcs1_sha512 = 0x0601,
+    ecdsa_secp256r1_sha256 = 0x0403,
+    ecdsa_secp384r1_sha384 = 0x0503,
+    ecdsa_secp521r1_sha512 = 0x0603,
+    rsa_pss_rsae_sha256 = 0x0804,
+    rsa_pss_rsae_sha384 = 0x0805,
+    rsa_pss_rsae_sha512 = 0x0806,
+    ed25519 = 0x0807,
+    ed448 = 0x0808,
+    rsa_pss_pss_sha256 = 0x0809,
+    rsa_pss_pss_sha384 = 0x080a,
+    rsa_pss_pss_sha512 = 0x080b,
+    rsa_pkcs1_sha1 = 0x0201,
+    ecdsa_sha1 = 0x0203,
 };
 
 

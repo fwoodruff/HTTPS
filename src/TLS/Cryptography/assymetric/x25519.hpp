@@ -16,7 +16,7 @@
 namespace fbw::curve25519 {
 [[nodiscard]] std::array<unsigned char,32>
     multiply(const std::array<unsigned char,32>& num,
-                                  const std::array<unsigned char,32>& pnt) noexcept;
+                                  std::array<unsigned char,32> pnt) noexcept;
 // make key pair
 [[nodiscard]] std::array<unsigned char,32>
     base_multiply(const std::array<unsigned char,32>& num) noexcept;

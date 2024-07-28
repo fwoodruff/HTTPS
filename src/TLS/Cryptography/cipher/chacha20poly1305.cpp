@@ -272,10 +272,13 @@ void ChaCha20_Poly1305::set_key_material_13_handshake(ustring handshake_secret, 
     auto server_handshake_key = hkdf_expand_label(sha256(), server_handshake_traffic_secret, "key", std::string(""), 32);
     auto server_handshake_iv = hkdf_expand_label(sha256(), server_handshake_traffic_secret, "iv", std::string(""), 12);
 
-    std::copy(client_handshake_key.begin(), client_handshake_key.begin(), client_write_key.begin());
-    std::copy(server_handshake_key.begin(), server_handshake_key.begin(), server_write_key.begin());
-    std::copy(client_handshake_iv.begin(), client_handshake_iv.begin(), client_implicit_write_IV.begin());
-    std::copy(server_handshake_iv.begin(), server_handshake_iv.begin(), server_implicit_write_IV.begin());
+    std::copy(client_handshake_key.begin(), client_handshake_key.end(), client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.end(), server_write_key.begin());
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), server_implicit_write_IV.begin());
+
+    seqno_server = 0;
+    seqno_client = 0;
 }
 
 void ChaCha20_Poly1305::set_key_material_13_application(ustring master_secret, ustring application_context_hash) {
@@ -286,10 +289,10 @@ void ChaCha20_Poly1305::set_key_material_13_application(ustring master_secret, u
     auto server_handshake_key = hkdf_expand_label(sha256(), server_application_traffic_secret, "key", std::string(""), 32);
     auto server_handshake_iv = hkdf_expand_label(sha256(), server_application_traffic_secret, "iv", std::string(""), 12);
 
-    std::copy(client_handshake_key.begin(), client_handshake_key.begin(), client_write_key.begin());
-    std::copy(server_handshake_key.begin(), server_handshake_key.begin(), server_write_key.begin());
-    std::copy(client_handshake_iv.begin(), client_handshake_iv.begin(), client_implicit_write_IV.begin());
-    std::copy(server_handshake_iv.begin(), server_handshake_iv.begin(), server_implicit_write_IV.begin());
+    std::copy(client_handshake_key.begin(), client_handshake_key.end(), client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.end(), server_write_key.begin());
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), server_implicit_write_IV.begin());
     // seqno not reset
 }
 

@@ -41,22 +41,22 @@ private:
 
 class sha384 final : public hash_base {
 public:
-    static constexpr int64_t block_size = 64;
+    static constexpr int64_t block_size = 128;
     static constexpr int64_t hash_size = 48;
     sha384() noexcept;
     
     std::unique_ptr<hash_base> clone() const override;
-    sha256& update_impl(const uint8_t* begin, size_t size) noexcept override;
+    sha384& update_impl(const uint8_t* begin, size_t size) noexcept override;
     
     ustring hash() && override;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;
 private:
-    size_t datalen;
-    uint64_t bitlen;
-    std::array<uint8_t,block_size> data;
+    size_t datalen = 0;
+    uint64_t bitlen = 0;
+    std::array<uint8_t,block_size> m_data;
     std::array<uint64_t,8> state;
-    bool done;
+    bool done = false;
 };
 
 class sha1 final : public hash_base {

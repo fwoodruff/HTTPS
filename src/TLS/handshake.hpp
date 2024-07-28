@@ -42,24 +42,36 @@ public:
     std::string alpn;
     bool tls13_available = false;
 
+    std::optional<std::array<uint8_t, 32>> client_session_id {};
+
     bool* p_use_tls13 = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;
 
-    [[nodiscard]] tls_record server_certificate_record(bool use_tls13) const;
-    [[nodiscard]] tls_record server_key_exchange_record(std::array<uint8_t, 32> pubkey_ephem) const;
-    [[nodiscard]] tls_record server_hello_record(bool use_tls13, std::optional<std::array<unsigned char, 32UL>> client_session_id, bool can_heartbeat) const;
+    [[nodiscard]] tls_record server_certificate_record(bool use_tls13);
+    [[nodiscard]] tls_record server_key_exchange_record();
+    [[nodiscard]] tls_record server_hello_record(bool use_tls13, bool can_heartbeat);
     [[nodiscard]] tls_record server_certificate_verify_record() const;
     static tls_record server_encrypted_extensions_record();
-    static tls_record server_hello_done_record();
-    static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
+    tls_record server_hello_done_record();
+    
+    
 
     std::pair<ustring, ustring> tls13_key_calc() const;
     void client_hello_record(tls_record record, bool& can_heartbeat);
     ustring client_key_exchange_receipt(tls_record record);
 
+    bool is_middlebox_compatibility_mode();
+
+    void client_handshake_finished12_record(tls_record record);
+    ustring client_handshake_finished13_record(tls_record record);
+
+    tls_record server_handshake_finished12_record();
+    void server_handshake_finished13_record();
+
 private:
     unsigned short cipher_choice(const std::span<const uint8_t>& s);
-    void hello_extensions(tls_record& buffer, bool use_tls13, bool can_heartbeat) const;
+    void hello_extensions(tls_record& buffer, bool use_tls13, bool can_heartbeat);
+    
 };
 
 

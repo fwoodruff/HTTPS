@@ -196,7 +196,7 @@ std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& r
     ssize_t pos = prefix.size();
     std::vector<std::pair<ssize_t, ssize_t>> out;
     while(true) {
-        ssize_t end = range_header.find(',', pos);
+        size_t end = range_header.find(',', pos);
         std::string range = range_header.substr(pos, end - pos);
         remove_whitespace(range);
         ssize_t mid = range.find("-");

@@ -47,11 +47,12 @@ private:
     std::unique_ptr<cipher_base> cipher_context = nullptr;
     HandshakeStage m_expected_record = HandshakeStage::client_hello;
     ustring m_buffer;
-   
     bool can_heartbeat = false;
     bool use_tls13 = false;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
-    std::optional<std::array<uint8_t, 32>> client_session_id {};
+
+    bool server_cipher_spec = false;
+    bool client_cipher_spec = false;
 
     ustring resumption_master_secret13;
     ustring exporter_master_secret13;
@@ -68,20 +69,20 @@ private:
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     
-    void client_change_cipher_spec(tls_record);
+    
     void client_hello(key_schedule& handshake, tls_record);
     void client_key_exchange(key_schedule&, tls_record key_exchange);
-    void client_handshake_finished12(key_schedule& handshake, tls_record finish);
+    void client_handshake_finished12(key_schedule& handshake, tls_record finish); 
     void client_handshake_finished13(key_schedule& handshake, tls_record finish);
     
     [[nodiscard]] task<stream_result> server_hello_request();
-    [[nodiscard]] task<stream_result> server_change_cipher_spec();
+    
     [[nodiscard]] task<stream_result> server_hello(key_schedule&);
     [[nodiscard]] task<stream_result> server_certificate(key_schedule&);
     [[nodiscard]] task<stream_result> server_certificate_verify(key_schedule&);
 
     [[nodiscard]] task<stream_result> server_key_exchange(key_schedule&);
-    [[nodiscard]] task<stream_result> server_hello_done(hash_base&);
+    [[nodiscard]] task<stream_result> server_hello_done(key_schedule&);
     [[nodiscard]] task<stream_result> server_handshake_finished12(const key_schedule&);
     [[nodiscard]] task<stream_result> server_handshake_finished13(key_schedule&);
 
@@ -89,6 +90,12 @@ private:
 
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     
+
+    [[nodiscard]] task<stream_result> server_change_cipher_spec();
+    void client_change_cipher_spec(tls_record);
+
+
+    static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
 
 };
 

@@ -5,7 +5,7 @@
 //  Created by Frederick Benjamin Woodruff on 24/07/2021.
 //
 
-#include "TLS.hpp"
+#include "protocol.hpp"
 
 #include "Cryptography/assymetric/x25519.hpp"
 #include "Cryptography/one_way/secure_hash.hpp"
@@ -46,13 +46,6 @@ namespace fbw {
 
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
-task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
-    auto r = tls_record(ContentType::Alert);
-    r.write1(level);
-    r.write1(description);
-    co_await write_record(std::move(r), option_singleton().error_timeout);
-}
-
 task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl {};
     try {
@@ -81,6 +74,11 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
             case ContentType::Heartbeat:
                 co_await client_heartbeat(std::move(record), timeout);
                 co_return stream_result::ok;
+            case ContentType::Invalid:
+                    throw ssl_error("invalid record type", AlertLevel::fatal, AlertDescription::unexpected_message);
+            default:
+                throw ssl_error("nonexistent record type", AlertLevel::fatal, AlertDescription::decode_error);
+
         }
     } catch(const ssl_error& e) {
         error_ssl = e;
@@ -159,29 +157,11 @@ task<void> TLS::close_notify() {
     } catch(const std::exception& e) { }
 }
 
-task<stream_result> TLS::server_hello_request() {
-    if(m_expected_record == HandshakeStage::client_hello) { // no handshake renegotiations after renegotiation indicator sent
-        tls_record hello_request{ContentType::Handshake};
-        hello_request.write1(HandshakeType::hello_request);
-        hello_request.push_der(3);
-        hello_request.pop_der();
-        co_return co_await write_record(hello_request, option_singleton().handshake_timeout);
-    }
-    co_return stream_result::closed;
-}
-
-tls_record TLS::decrypt_record(tls_record record) {
-    if(m_expected_record > HandshakeStage::client_change_cipher_spec) {
-        if(use_tls13) {
-            auto type = record.m_contents.back();
-            record.m_contents.pop_back();
-            record = cipher_context->decrypt(std::move(record));
-            record.m_type = type;
-        } else {
-            record = cipher_context->decrypt(std::move(record));
-        }
-    }
-    return record;
+task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
+    auto r = tls_record(ContentType::Alert);
+    r.write1(level);
+    r.write1(description);
+    co_await write_record(std::move(r), option_singleton().error_timeout);
 }
 
 task<std::string> TLS::perform_handshake() {
@@ -220,16 +200,22 @@ task<std::string> TLS::perform_handshake() {
                     client_change_cipher_spec(std::move(record));
                     break;
                 case ContentType::Application:
-                    throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::unexpected_message);
+                    throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
                 case ContentType::Alert:
                     co_await client_alert(std::move(record), option_singleton().handshake_timeout);
                     co_return "";
                 case ContentType::Heartbeat:
-                    auto res = co_await client_heartbeat(std::move(record), option_singleton().handshake_timeout);
-                    if(res != stream_result::ok) {
-                        co_return "";
+                    {
+                        auto res = co_await client_heartbeat(std::move(record), option_singleton().handshake_timeout);
+                        if(res != stream_result::ok) {
+                            co_return "";
+                        }
                     }
                     break;
+                case ContentType::Invalid:
+                    throw ssl_error("invalid record type", AlertLevel::fatal, AlertDescription::unexpected_message);
+                default:
+                    throw ssl_error("nonexistent record type", AlertLevel::fatal, AlertDescription::decode_error);
             }
         } 
     } catch(const ssl_error& e) {
@@ -244,6 +230,32 @@ END:
 END2:
     co_await server_alert(AlertLevel::fatal, AlertDescription::decode_error);
     co_return "";
+}
+
+tls_record TLS::decrypt_record(tls_record record) {
+    if(client_cipher_spec) {
+        if(use_tls13) {
+            record = cipher_context->decrypt(std::move(record));
+            auto type = record.m_contents.back();
+            record.m_contents.pop_back();
+            
+            record.m_type = type;
+        } else {
+            record = cipher_context->decrypt(std::move(record));
+        }
+    }
+    return record;
+}
+
+task<stream_result> TLS::server_hello_request() {
+    if(m_expected_record == HandshakeStage::client_hello) { // no handshake renegotiations after renegotiation indicator sent
+        tls_record hello_request{ContentType::Handshake};
+        hello_request.write1(HandshakeType::hello_request);
+        hello_request.push_der(3);
+        hello_request.pop_der();
+        co_return co_await write_record(hello_request, option_singleton().handshake_timeout);
+    }
+    co_return stream_result::closed;
 }
 
 task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<milliseconds> timeout) {
@@ -266,22 +278,19 @@ task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<mi
 }
 
 task<stream_result> TLS::write_record(tls_record record, std::optional<milliseconds> timeout) {
-    if(m_expected_record > HandshakeStage::server_change_cipher_spec) {
+    if(server_cipher_spec) {
         if(use_tls13) {
             auto type = record.m_type;
             record.m_type = static_cast<uint8_t>(ContentType::Application);
-            record = cipher_context->encrypt(record);
             record.m_contents.push_back(type);
-        } else {
-            record = cipher_context->encrypt(record);
         }
+        record = cipher_context->encrypt(record);
     }
     co_return co_await m_client->write(record.serialise(), timeout);
 }
 
 task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_record record) {
-    ustring handshake_record = record.m_contents;
-    switch (handshake_record.at(0)) {
+    switch (record.m_contents.at(0)) {
         case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
         case static_cast<uint8_t>(HandshakeType::client_hello):
@@ -290,8 +299,10 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
                 co_return result;
             }
             if(use_tls13) {
-                if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
-                    co_return result;
+                if(handshake.is_middlebox_compatibility_mode()) {
+                    if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
+                        co_return result;
+                    }
                 }
                 if(auto result = co_await server_encrypted_extensions(); result != stream_result::ok) {
                     co_return result;
@@ -312,7 +323,7 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
                 if(auto result = co_await server_key_exchange(handshake); result != stream_result::ok) {
                     co_return result;
                 }
-                if(auto result = co_await server_hello_done(*handshake.handshake_hasher); result != stream_result::ok) {
+                if(auto result = co_await server_hello_done(handshake); result != stream_result::ok) {
                     co_return result;
                 }
                 break;
@@ -340,61 +351,65 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
     co_return stream_result::ok;
 }
 
+
 void TLS::client_hello(key_schedule& handshake, tls_record record) {
     if(m_expected_record != HandshakeStage::client_hello) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     handshake.client_hello_record(record, can_heartbeat);
+
     m_expected_record = HandshakeStage::server_hello;
 }
 
 task<stream_result> TLS::server_hello(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_hello);
-
-    // server random
-    handshake.m_server_random.resize(32);
-    randomgen.randgen(handshake.m_server_random);
-    auto hello_record = handshake.server_hello_record(use_tls13, client_session_id, can_heartbeat);
-    if(use_tls13) {
-        randomgen.randgen(handshake.server_private_key_ephem);
-    }
-    assert(hello_record.m_contents.size() >= 4);
-    assert(handshake.handshake_hasher != nullptr);
-    handshake.handshake_hasher->update(hello_record.m_contents);
-    
+    auto hello_record = handshake.server_hello_record(use_tls13, can_heartbeat);
     auto result = co_await write_record(hello_record, option_singleton().handshake_timeout);
-    m_expected_record = HandshakeStage::server_certificate;
+
+    if(use_tls13) {
+        if(handshake.is_middlebox_compatibility_mode()) {
+            m_expected_record = HandshakeStage::server_change_cipher_spec;
+        } else {
+            server_cipher_spec = true; // implicit
+            m_expected_record = HandshakeStage::server_encrypted_extensions;
+        }
+    } else {
+        m_expected_record = HandshakeStage::server_certificate;
+    }
     auto [handshake_secret, handshake_context] = handshake.tls13_key_calc();
     cipher_context->set_key_material_13_handshake(handshake_secret, handshake_context);
-    co_return std::move(result);
+    co_return result;
 }
 
 task<stream_result> TLS::server_certificate(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_certificate);
     tls_record certificate_record = handshake.server_certificate_record(use_tls13);
-    handshake.handshake_hasher->update(certificate_record.m_contents);
-    m_expected_record = HandshakeStage::server_key_exchange;
+    if(use_tls13) {
+        m_expected_record = HandshakeStage::server_certificate_verify;
+    } else {
+        m_expected_record = HandshakeStage::server_key_exchange;
+    }
     co_return co_await write_record(certificate_record, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_certificate_verify(key_schedule& handshake) {
+    assert(m_expected_record == HandshakeStage::server_certificate_verify);
     auto record = handshake.server_certificate_verify_record();
     co_return co_await write_record(record, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_key_exchange(key_schedule& handshake) {
-    randomgen.randgen(handshake.server_private_key_ephem);
-    std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(handshake.server_private_key_ephem);
-    tls_record record = handshake.server_key_exchange_record(pubkey_ephem);
-    handshake.handshake_hasher->update(record.m_contents);
+    
+    tls_record record = handshake.server_key_exchange_record();
+    
     m_expected_record = HandshakeStage::server_hello_done;
     co_return co_await write_record(record, option_singleton().handshake_timeout);
 }
 
-task<stream_result> TLS::server_hello_done(hash_base& handshake_hasher) {
+task<stream_result> TLS::server_hello_done(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_hello_done);
-    auto record = key_schedule::server_hello_done_record();
-    handshake_hasher.update(record.m_contents);
+    auto record = handshake.server_hello_done_record();
+    
     m_expected_record = HandshakeStage::client_key_exchange;
     co_return co_await write_record(record, option_singleton().handshake_timeout);
 }
@@ -405,18 +420,17 @@ void TLS::client_key_exchange(key_schedule& handshake, tls_record record) {
     }
     auto key_material = handshake.client_key_exchange_receipt(record);
     cipher_context->set_key_material_12(key_material);
-    handshake.handshake_hasher->update(record.m_contents);
     m_expected_record = HandshakeStage::client_change_cipher_spec;
 }
 
-void TLS::client_change_cipher_spec(tls_record record) {
-    auto change_message = record.m_contents;
+void TLS::client_change_cipher_spec( tls_record record) {
     if(m_expected_record != HandshakeStage::client_change_cipher_spec) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    if(change_message.size() != 1 and change_message.at(0) != static_cast<uint8_t>(ChangeCipherSpec::change_cipher_spec)) {
+    if(record.m_contents.size() != 1 and record.m_contents.at(0) != static_cast<uint8_t>(ChangeCipherSpec::change_cipher_spec)) {
         throw ssl_error("bad cipher spec", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
+    client_cipher_spec = true;
     m_expected_record = HandshakeStage::client_handshake_finished;
 }
 
@@ -424,19 +438,7 @@ void TLS::client_handshake_finished13(key_schedule& handshake, tls_record record
     if(m_expected_record != HandshakeStage::client_handshake_finished and m_expected_record != HandshakeStage::client_change_cipher_spec) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    auto finished_hash = handshake.handshake_hasher->hash();
-
-    // todo: scope
-    auto client_application_traffic_secret = hkdf_expand_label(*handshake.hash_ctor, handshake.master_secret, "c ap traffic", handshake.server_handshake_hash, handshake.hash_ctor->get_hash_size());
-    auto finished_key = hkdf_expand_label(*handshake.hash_ctor, client_application_traffic_secret, "finished", ustring{}, handshake.hash_ctor->get_hash_size());
-    resumption_master_secret13 = hkdf_expand_label(*handshake.hash_ctor, handshake.master_secret, "res master", finished_hash, handshake.hash_ctor->get_hash_size());
-
-    auto verify_data = do_hmac(*handshake.hash_ctor, finished_key, finished_hash);
-
-    if(verify_data != record.m_contents.substr(4)){
-        throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
-    }
-
+    resumption_master_secret13 = handshake.client_handshake_finished13_record(record);
     m_expected_record = HandshakeStage::application_data;
 }
 
@@ -444,39 +446,30 @@ void TLS::client_handshake_finished12(key_schedule& handshake, tls_record record
     if(m_expected_record != HandshakeStage::client_handshake_finished) {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    static_cast<void>(record.m_contents.at(0));
-    if(record.m_contents[0] != static_cast<uint8_t>(HandshakeType::finished)) {
-        throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
-    }
-    
-    const size_t len = try_bigend_read(record.m_contents, 1, 3);
-    if(len != 12) {
-        throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
-    }
-
-    auto finish = record.m_contents.substr(4);
-    auto handshake_hash = handshake.handshake_hasher->hash();
-    ustring expected_finished = prf(*handshake.hash_ctor, handshake.master_secret, "client finished", handshake_hash, 12);
-
-    if(expected_finished != finish) {
-        throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
-    }
-
-    handshake.handshake_hasher->update(record.m_contents);
+    handshake.client_handshake_finished12_record(record);
     m_expected_record = HandshakeStage::server_change_cipher_spec;
 }
 
 task<stream_result> TLS::server_change_cipher_spec() {
     assert(m_expected_record == HandshakeStage::server_change_cipher_spec);
+    
     tls_record record { ContentType::ChangeCipherSpec };
     record.write1(ChangeCipherSpec::change_cipher_spec);
     auto res = co_await write_record(record, option_singleton().handshake_timeout);
-    m_expected_record = HandshakeStage::server_handshake_finished;
+    if(use_tls13) {
+        m_expected_record = HandshakeStage::server_encrypted_extensions;
+    } else {
+        m_expected_record = HandshakeStage::server_handshake_finished;
+    }
+    
+    server_cipher_spec = true;
     co_return res;
 }
 
 task<stream_result> TLS::server_handshake_finished12(const key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_handshake_finished);
+
+    
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::finished);
     out.push_der(3);
@@ -489,31 +482,33 @@ task<stream_result> TLS::server_handshake_finished12(const key_schedule& handsha
     
     out.write(server_finished);
     out.pop_der();
-    if(m_expected_record <= HandshakeStage::server_change_cipher_spec) {
-        throw ssl_error("Unwilling to respond on unencrypted channel", AlertLevel::fatal, AlertDescription::insufficient_security);
-    }
+    
     m_expected_record = HandshakeStage::application_data;
     co_return co_await write_record(out, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_encrypted_extensions() {
+    assert(m_expected_record == HandshakeStage::server_encrypted_extensions);
     tls_record out = key_schedule::server_encrypted_extensions_record();
+    m_expected_record = HandshakeStage::server_certificate;
     co_return co_await write_record(out, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_handshake_finished13(key_schedule& handshake) {
-    m_expected_record = HandshakeStage::client_change_cipher_spec;
+    assert(m_expected_record == HandshakeStage::server_handshake_finished);
+    handshake.server_handshake_finished13_record();
+    exporter_master_secret13 = hkdf_expand_label(*handshake.hash_ctor, ustring{}, "exp master", handshake.server_handshake_hash, 32);
 
-    if(m_expected_record <= HandshakeStage::server_change_cipher_spec) {
-        throw ssl_error("Unwilling to respond on unencrypted channel", AlertLevel::fatal, AlertDescription::insufficient_security);
+    if(handshake.is_middlebox_compatibility_mode()) {
+        m_expected_record = HandshakeStage::client_change_cipher_spec;
+    } else {
+        m_expected_record = HandshakeStage::client_handshake_finished;
     }
-    handshake.server_handshake_hash = handshake.handshake_hasher->hash();
-    exporter_master_secret13 = hkdf_expand_label(*handshake.hash_ctor, ustring{}, "exp master", handshake.server_handshake_hash, 32); // handshake.server_handshake_hash
     co_return stream_result::ok;
 }
 
 task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> timeout) {
-    auto alert_message = record.m_contents;
+    const auto& alert_message = record.m_contents;
     if(alert_message.size() != 2) {
         co_return; // do not send anything after receiving malformed alert
     }
@@ -536,12 +531,36 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
 }
 
 task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optional<milliseconds> timeout) {
-    auto [heartblead, heartbeat_record] = key_schedule::client_heartbeat_record(client_record, can_heartbeat);
+    auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
     if(heartblead) {
         co_await m_client->write(to_unsigned("heartbleed?"), option_singleton().error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
     co_return co_await write_record(heartbeat_record, timeout);
+}
+
+
+std::pair<bool, tls_record> TLS::client_heartbeat_record(tls_record record, bool can_heartbeat) {
+    if(!can_heartbeat) {
+        throw ssl_error("bad heartbeat payload length", AlertLevel::fatal, AlertDescription::illegal_parameter);
+    }
+    auto heartbeat_message = record.m_contents;
+
+    if (heartbeat_message.size() < 1 or heartbeat_message[0] != 0x01 ) {
+        throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
+    }
+
+    auto payload_length = try_bigend_read(heartbeat_message, 1, 2);
+    if (payload_length >  heartbeat_message.size() - 3) {
+        return { true, {}};
+    }
+
+    auto length_and_payload = heartbeat_message.substr(1, payload_length + 2);
+
+    tls_record heartbeat_record( ContentType::Heartbeat);
+    heartbeat_record.m_contents = { 0x02 };
+    heartbeat_record.m_contents.append( length_and_payload );
+    return {false, heartbeat_record} ;
 }
 
 }// namespace fbw

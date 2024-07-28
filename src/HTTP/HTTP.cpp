@@ -316,7 +316,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::
     assert(range.first != -1 or range.second != -1);
     filename = fix_filename(std::move(filename));
     auto file_path = rootdir/filename.relative_path();
-    size_t file_size = get_file_size(file_path);
+    ssize_t file_size = get_file_size(file_path);
     std::string MIME = Mime_from_file(filename);
     
     auto [begin, end] = get_range_bounds(file_size, range);

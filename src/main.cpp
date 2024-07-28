@@ -1,5 +1,5 @@
 
-#include "TLS/TLS.hpp"
+#include "TLS/protocol.hpp"
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP.hpp"
@@ -9,6 +9,8 @@
 #include "TLS/PEMextract.hpp"
 #include "HTTP/string_utils.hpp"
 #include "limiter.hpp"
+#include "TLS/Cryptography/one_way/secure_hash.hpp"
+#include "TLS/Cryptography/one_way/hash_base.hpp"
 
 #include <memory>
 #include <fstream>
@@ -24,16 +26,17 @@
 // Implement a map between HTTP 'host' header and webroot (with default)
 // Implement an HTTP webroot (with 301 not 404) - this is so we can use HTTP ACME challenges
 // Implement a map between SNI host and TLS certificate (with default)
-// SHA-384 and AES-256
+// fix the SHA-384 implementations
+// AES-256
 // add a health check to the docker image
 // implement HTTP/1.1 compression encodings
-// review unnecessary buffer copies are ugly
+// review unnecessary buffer copies, more subspan, less substr
 // HTTP codes should be a map code -> { title, blurb }
 // errors in server config should output to stderr
 // HTTP/2
 // use master key rather than expanded key material for TLS 1.2 handshakes
 // mostly lock-free runtime
-
+// check all 'expected record' logic (asserts, etc.)
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

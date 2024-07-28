@@ -94,7 +94,15 @@ END2:
     co_return stream_result::closed;
 }
 
-task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
+bool squeeze_last_chunk(ssize_t additional_data_len, bool is_last) {
+    return  is_last and
+            additional_data_len < WRITE_RECORD_SIZE and 
+            additional_data_len != 0 and 
+            additional_data_len + WRITE_RECORD_SIZE + 50 < TLS_RECORD_SIZE and
+            additional_data_len * 3 < WRITE_RECORD_SIZE * 2;
+}
+
+task<stream_result> TLS::write(ustring data, bool last, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     try {
         size_t idx = 0;
@@ -107,6 +115,14 @@ task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout
             if (m_write_buffer_idx == WRITE_RECORD_SIZE) {
                 tls_record rec(ContentType::Application);
                 rec.m_contents = ustring(m_write_buffer.data(), m_write_buffer.data() + WRITE_RECORD_SIZE);
+
+                // push last record 
+                auto additional_data_len = data.size() - idx;
+                if(squeeze_last_chunk(additional_data_len, last)) {
+                    rec.m_contents.append(data.begin() + idx, data.end());
+                    idx = data.size();
+                }
+                
                 auto res = co_await write_record(std::move(rec), timeout);
                 if (res != stream_result::ok) {
                     co_return res;
@@ -286,7 +302,7 @@ task<stream_result> TLS::write_record(tls_record record, std::optional<milliseco
         }
         record = cipher_context->encrypt(record);
     }
-    co_return co_await m_client->write(record.serialise(), timeout);
+    co_return co_await m_client->write(record.serialise(), false, timeout);
 }
 
 task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_record record) {
@@ -533,7 +549,7 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
 task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optional<milliseconds> timeout) {
     auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
     if(heartblead) {
-        co_await m_client->write(to_unsigned("heartbleed?"), option_singleton().error_timeout);
+        co_await m_client->write(to_unsigned("heartbleed?"), false, option_singleton().error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
     co_return co_await write_record(heartbeat_record, timeout);

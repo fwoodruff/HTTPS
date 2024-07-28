@@ -5,8 +5,7 @@ jobs:
     docker:
       - image: cimg/base:stable
     steps:
-      - setup_remote_docker:
-          version: 26.0.0
+      - setup_remote_docker
       - checkout
       - run:
           name: Remove any

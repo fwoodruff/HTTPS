@@ -12,9 +12,6 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y g++-12 make
       - run:
-          name: Verify g++ version
-          command: g++ --version
-      - run:
           name: Build project
           command: make -j8
       - run:

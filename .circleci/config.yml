@@ -7,13 +7,9 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install dependencies
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y g++-12 make
-      - run:
           name: Build server
-          command: make -j8
+          command: |
+            make -j$(nproc)
       - run:
           name: Run server
           command: |

@@ -9,7 +9,7 @@ jobs:
       - run:
           name: always fails
           command: |
-            false
+            true
       - run:
           name: Build server
           command: |

@@ -38,6 +38,7 @@
 // mostly lock-free runtime
 // check all 'expected record' logic (asserts, etc.)
 // unhandled exception when running exec outside of root folder
+// 'split' and 'split_string' functions are redundant
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -118,6 +119,7 @@ task<void> async_main(int argc, const char * argv[]) {
         fbw::MIMEmap = fbw::MIMES(fbw::option_singleton().mime_folder);
         static_cast<void>(fbw::privkey_from_file(fbw::option_singleton().key_file));
         static_cast<void>(fbw::der_cert_from_file(fbw::option_singleton().certificate_file));
+        fbw::parse_tlds(fbw::option_singleton().tld_file);
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
 

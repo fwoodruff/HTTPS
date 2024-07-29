@@ -22,6 +22,11 @@
 
 namespace fbw {
 
+char asciitolower(char in) {
+    if (in <= 'Z' && in >= 'A')
+        return in - ('Z' - 'z');
+    return in;
+}
 
 // convert current time for string
 // used in response header
@@ -112,6 +117,8 @@ http_header parse_http_headers(const std::string& header_str) {
         if (colon_pos != std::string::npos) {
             auto key = trim(line.substr(0, colon_pos));
             auto value = trim(line.substr(colon_pos + 1));
+            std::transform(key.begin(), key.end(), key.begin(), asciitolower);
+            std::transform(value.begin(), value.end(), value.begin(), asciitolower);
             headers.headers[key] = value;
         }
     }
@@ -175,6 +182,55 @@ std::vector<std::string> operating_systems {
     "(Visopsys)"
     "(HeartOS) (DDC-I)"
 };
+
+std::unordered_set<std::string> known_tlds;
+
+
+
+void parse_tlds(const std::string& tld_filename) {
+    std::ifstream tld_file(tld_filename);
+    if (!tld_file.is_open()) {
+        throw std::runtime_error("TLD file not found\n");
+    }
+    std::string tld;
+    while (std::getline(tld_file, tld)) {
+        remove_whitespace(tld);
+        if (tld.empty() || tld[0] == '#') {
+            continue; // skip comments
+        }
+        std::transform(tld.begin(), tld.end(), tld.begin(), asciitolower);
+        known_tlds.insert(tld);
+    }
+}
+
+bool is_tld(std::string domain) {
+    return known_tlds.find(domain) != known_tlds.end();
+}
+
+std::string parse_domain(std::string hostname) {
+    std::transform(hostname.begin(), hostname.end(), hostname.begin(), asciitolower);
+    if(hostname == "localhost" or hostname == "test" or hostname == "invalid") {
+        return hostname;
+    }
+    auto hostname_parts = split(hostname, ".");
+    if(hostname_parts.empty()) {
+        return {};
+    }
+    std::string top_level_domain = hostname_parts.back();
+    hostname_parts.pop_back();
+    while(!hostname_parts.empty()) {
+        if(is_tld(hostname_parts.back())) {
+            top_level_domain = hostname_parts.back() + "." + top_level_domain;
+            hostname_parts.pop_back();
+        } else {
+            break;
+        }
+    }
+    if(hostname_parts.empty()) {
+        return {};
+    }
+    return hostname_parts.back() + "." + top_level_domain;
+}
 
 std::string make_server_name() {
     std::array<uint8_t, 2> random_bytes;

@@ -62,10 +62,10 @@ bool is_body_required(const http_header& header) {
     }
     if( header.verb == "POST") {
         bool is_transfer_encoded = false;
-        if(auto it = header.headers.find("Transfer-Encoding"); it != header.headers.end()) {
+        if(auto it = header.headers.find("transfer-encoding"); it != header.headers.end()) {
             is_transfer_encoded = (it->second == "chunked"); // not implemented
         }
-        bool has_length = header.headers.contains("Content-Length");
+        bool has_length = header.headers.contains("content-length");
         if(is_transfer_encoded) {
             throw http_error("400 Bad Request");
         }
@@ -74,7 +74,7 @@ bool is_body_required(const http_header& header) {
         }
         return true;
     }
-    if(header.headers.contains("Content-Length")) {
+    if(header.headers.contains("content-length")) {
         throw http_error("400 Bad Request");
     }
     return false;
@@ -83,7 +83,7 @@ bool is_body_required(const http_header& header) {
 // we may receive a partial HTTP request, in which case we want to leave it in a buffer
 // extracting an HTTP request is required to generate a response
 std::optional<ustring> try_extract_body(ustring& m_buffer, const http_header& header) {
-    auto len = header.headers.at("Content-Length");
+    auto len = header.headers.at("content-length");
     auto size = http_stoll(len);
     if(size > MAX_BODY_SIZE) {
         throw http_error("413 Payload Too Large");
@@ -169,12 +169,7 @@ task<void> HTTP::client() {
                 co_return; // connection closed
             }
             if(m_redirect) {
-                auto& domains = option_singleton().domain_names;
-                if(domains.empty()) {
-                    // todo: could extract domain names from SSL certificate?
-                    throw std::runtime_error("no configured domain names");
-                }
-                co_await redirect(std::move(*http_request), domains[0]);
+                co_await redirect(std::move(*http_request));
                 co_return;
             } else {
                 auto res = co_await respond(m_folder, std::move(*http_request));
@@ -214,19 +209,28 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
         throw http_error("414 URI Too Long");
     }
     if(http_request.header.verb == "GET" or http_request.header.verb == "HEAD") {
-        auto it = http_request.header.headers.find("Range");
-        if(it == http_request.header.headers.end()) {
-            co_return co_await send_file(rootdirectory, filename, (http_request.header.verb == "GET"));
+        std::string subfolder = option_singleton().default_subfolder;
+        if(auto it = http_request.header.headers.find("host"); it != http_request.header.headers.end()) {
+            subfolder = parse_domain(it->second);
         }
-        auto range_str = http_request.header.headers.at("Range");
+        if(!std::filesystem::exists(rootdirectory/subfolder)) {
+            subfolder = option_singleton().default_subfolder;
+        }
+        auto webroot = rootdirectory/subfolder;
+        
+        auto it = http_request.header.headers.find("range");
+        if(it == http_request.header.headers.end()) {
+            co_return co_await send_file(webroot, filename, (http_request.header.verb == "GET"));
+        }
+        auto range_str = http_request.header.headers.at("range");
         auto ranges = parse_range_header(range_str);
         if(ranges.empty()) {
             throw http_error("400 Bad Request");
         }
         if(ranges.size() == 1) {
-            co_return co_await send_range(rootdirectory, filename, ranges[0], (http_request.header.verb == "GET"));
+            co_return co_await send_range(webroot, filename, ranges[0], (http_request.header.verb == "GET"));
         }
-        co_return co_await send_multi_ranges(rootdirectory, filename, ranges, (http_request.header.verb == "GET"));
+        co_return co_await send_multi_ranges(webroot, filename, ranges, (http_request.header.verb == "GET"));
         
 
     } else if(http_request.header.verb == "POST") {
@@ -425,10 +429,15 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
 
 
 // if a client connects over http:// we need to form a response redirecting them to https://
-task<void> HTTP::redirect(http_frame request, std::string domain) {
+task<void> HTTP::redirect(http_frame request) {
     std::string filename = fix_filename(std::move(request.header.resource));
     std::string MIME = Mime_from_file(filename);
     std::string body = "HTTP/1.1 301 Moved Permanently";
+
+    std::string domain = option_singleton().default_subfolder;
+    if(auto it = request.header.headers.find("host"); it != request.header.headers.end()) {
+        domain = it->second;
+    }
     
     std::string https_port = option_singleton().server_port;
     std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;

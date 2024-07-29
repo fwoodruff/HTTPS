@@ -211,10 +211,10 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
     if(http_request.header.verb == "GET" or http_request.header.verb == "HEAD") {
         std::string subfolder = option_singleton().default_subfolder;
         if(auto it = http_request.header.headers.find("host"); it != http_request.header.headers.end()) {
-            subfolder = parse_domain(it->second);
-        }
-        if(!std::filesystem::exists(rootdirectory/subfolder)) {
-            subfolder = option_singleton().default_subfolder;
+            const auto domain = parse_domain(it->second);
+            if(std::filesystem::exists(rootdirectory/domain)) {
+                subfolder = domain;
+            }
         }
         auto webroot = rootdirectory/subfolder;
         

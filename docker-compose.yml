@@ -3,8 +3,7 @@ services:
     container_name: server
     build:
       context: .
-      dockerfile: Dockerfile
-    network_mode: "host"     
+      dockerfile: Dockerfile   
     init: true
     ports:
       - 80:80 # redirect

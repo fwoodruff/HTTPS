@@ -37,6 +37,7 @@
 // use master key rather than expanded key material for TLS 1.2 handshakes
 // mostly lock-free runtime
 // check all 'expected record' logic (asserts, etc.)
+// unhandled exception when running exec outside of root folder
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

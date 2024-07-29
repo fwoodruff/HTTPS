@@ -82,9 +82,7 @@ void key_schedule::client_hello_record(tls_record record, bool& can_heartbeat) {
             case 0x000a:
                 break;
             case 0x0000: // SNI
-                if(!check_SNI(extension)) {
-                    throw ssl_error("unexpected SNI", AlertLevel::fatal, AlertDescription::handshake_failure);
-                }
+                m_SNI = check_SNI(extension);
                 break;
             case 0x000f: // Heartbeat
                 {

@@ -70,7 +70,7 @@ bool is_tls13_supported(std::span<const uint8_t> extension) {
 }
 
 
-bool check_SNI(std::span<const uint8_t> servernames) {
+std::string check_SNI(std::span<const uint8_t> servernames) {
     // Server name
     try {
         while(!servernames.empty()) {
@@ -85,12 +85,12 @@ bool check_SNI(std::span<const uint8_t> servernames) {
                     const auto subdomain_name = entry.subspan(3);
                     
                     if(name_len != subdomain_name.size()) {
-                        return false;
+                        return "";
                     }
                     auto domain_names = option_singleton().domain_names;
                     for(auto name : domain_names) {
                         if(name.size() == subdomain_name.size() and std::equal(name.begin(), name.end(), subdomain_name.begin())) {
-                            return true;
+                            return name;
                         }
                     }
                     break;
@@ -101,7 +101,7 @@ bool check_SNI(std::span<const uint8_t> servernames) {
             servernames = servernames.subspan(entry.size() + 2);
         }
     } catch(...) { }
-    return false;
+    return "";
 }
 
 }

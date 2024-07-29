@@ -78,5 +78,11 @@ std::string make_server_name();
 
 [[nodiscard]] http_header parse_http_headers(const std::string& header_str);
 
+void parse_tlds(const std::string& tld_filename);
+
+bool is_tld(std::string domain);
+
+
+std::string parse_domain(std::string hostname);
 } // namespace fbw
 #endif // string_utils_hpp

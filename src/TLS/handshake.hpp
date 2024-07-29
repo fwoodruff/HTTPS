@@ -47,6 +47,8 @@ public:
     bool* p_use_tls13 = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;
 
+    std::string m_SNI {};
+
     [[nodiscard]] tls_record server_certificate_record(bool use_tls13);
     [[nodiscard]] tls_record server_key_exchange_record();
     [[nodiscard]] tls_record server_hello_record(bool use_tls13, bool can_heartbeat);

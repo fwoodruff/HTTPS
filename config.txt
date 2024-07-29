@@ -4,5 +4,7 @@ DOMAIN_NAMES=localhost, www.localhost
 CERTIFICATE_FILE=resources/keypair/ecc_cert.pem
 KEY_FILE=resources/keypair/ecc_key.pem
 WEBPAGE_FOLDER=resources/webpages
+DEFAULT_SUBFOLDER=freddiewoodruff.co.uk
 MIME_FOLDER=resources/MIME
+TLD_FILE=resources/tld.txt
 HTTP_STRICT_TRANSPORT_SECURITY=false

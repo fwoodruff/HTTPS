@@ -39,7 +39,9 @@ struct options {
     std::filesystem::path certificate_file;
     std::filesystem::path key_file;
     std::filesystem::path webpage_folder;
+    std::filesystem::path default_subfolder;
     std::filesystem::path mime_folder;
+    std::filesystem::path tld_file;
     bool http_strict_transport_security;
     std::chrono::milliseconds session_timeout;
     std::chrono::milliseconds keep_alive;

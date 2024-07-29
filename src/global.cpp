@@ -25,11 +25,11 @@ void remove_whitespace(std::string& str) {
 }
 
 // Function to convert comma-separated string to vector of strings
-std::vector<std::string> split_string(const std::string& input) {
+std::vector<std::string> split_string(const std::string& input, char delimiter) {
     std::vector<std::string> tokens;
     std::stringstream ss(input);
     std::string token;
-    while (std::getline(ss, token, ',')) {
+    while (std::getline(ss, token, delimiter)) {
         remove_whitespace(token);
         tokens.push_back(token);
     }
@@ -55,10 +55,12 @@ const options& option_singleton() {
         }
         project_options.redirect_port = option_map.at("REDIRECT_PORT");
         project_options.server_port = option_map.at("SERVER_PORT");
-        project_options.domain_names = split_string(option_map.at("DOMAIN_NAMES"));
+        project_options.domain_names = split_string(option_map.at("DOMAIN_NAMES"), ',');
         project_options.certificate_file = option_map.at("CERTIFICATE_FILE");
         project_options.key_file = option_map.at("KEY_FILE");
         project_options.webpage_folder = option_map.at("WEBPAGE_FOLDER");
+        project_options.default_subfolder = option_map.at("DEFAULT_SUBFOLDER");
+        project_options.tld_file = option_map.at("TLD_FILE");
         project_options.mime_folder = option_map.at("MIME_FOLDER");
         project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
     });

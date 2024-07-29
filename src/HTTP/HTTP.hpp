@@ -26,7 +26,7 @@ class HTTP {
 
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
     [[nodiscard]]  task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);
-    [[nodiscard]] task<void> redirect(http_frame header, std::string domain);
+    [[nodiscard]] task<void> redirect(http_frame header);
     [[nodiscard]] task<stream_result> send_file(const std::filesystem::path& rootdirectory, std::filesystem::path filename, bool send_body);
     [[nodiscard]] task<stream_result> send_range(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range, bool send_body);
     [[nodiscard]] task<stream_result> send_multi_ranges(const std::filesystem::path& rootdirectory, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges, bool send_body);

@@ -326,44 +326,51 @@ std::optional<tls_record> try_extract_record(ustring& input) {
 }
 
 void key_schedule::hello_extensions(tls_record& record, bool use_tls13, bool can_heartbeat) {
-     // announces no support for vulnerable handshake renegotiation attacks
-    const ustring handshake_reneg = { 0xff, 0x01, 0x00, 0x01, 0x00 };
-
-    // announces application layer will use http/1.1
-    ustring alpn_protocol_data { 0x00, 0x10, 0x00, 0x00, 0x00, 0x00 }; 
-    auto http11 = to_unsigned("http/1.1");
-
-    auto lenhttp11 = static_cast<uint8_t>(http11.size());
-    alpn_protocol_data.push_back(lenhttp11);
-    alpn_protocol_data.append(http11);
-    checked_bigend_write(alpn_protocol_data.size() - 6, alpn_protocol_data, 4, 2);
-    checked_bigend_write(alpn_protocol_data.size() - 4, alpn_protocol_data, 2, 2);
-
-    // announces willingness to accept heartbeat records
-    ustring heartbeat = { 0x00, 0x0f, 0x00, 0x01, 0x00 };
-
-    // announces we will use TLS 1.3
-    ustring tls13_ext = { 0x00, 0x2b, 0x00, 0x02, 0x03, 0x04 };
-
-    ustring key_share_ext = { 0x00, 0x33, 0x00, 0x24, 0x00, 0x1d, 0x00, 0x20};
-    if(use_tls13) {
-        // compute x25519 keypair 
-        randomgen.randgen(server_private_key_ephem);
-        std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
-        key_share_ext.append(pubkey_ephem.begin(), pubkey_ephem.end());
-    }
-
     record.push_der(2);
 
     if(use_tls13) {
-        record.m_contents.append(tls13_ext);
-        record.m_contents.append(key_share_ext);
+        // announces we will use TLS 1.3
+        record.write2(ExtensionType::supported_versions);
+        record.push_der(2);
+        uint16_t tls_13_support = 0x0304;
+        record.write2(tls_13_support);
+        record.pop_der();
+
+        // x25519 key share
+        record.write2(ExtensionType::key_share);
+        record.push_der(2);
+        record.write2(NamedGroup::x25519);
+        record.push_der(2);
+        randomgen.randgen(server_private_key_ephem);
+        std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
+        record.write(pubkey_ephem);
+        record.pop_der();
+        record.pop_der();
     } else {
-        //record.m_contents.append(alpn_protocol_data); // todo understand TLS 1.3 alpn
-        record.m_contents.append(handshake_reneg);
+        // announces no support for vulnerable handshake renegotiation attacks
+        const uint16_t handshake_reneg = 0xff01;
+        record.write2(handshake_reneg);
+        record.push_der(2);
+        record.write1(0);
+        record.pop_der();
+
+        // announces application layer will use http/1.1
+        ustring alpn_protocol_data { 0x00, 0x10 };
+        record.write(alpn_protocol_data);
+        record.push_der(2);
+        record.push_der(2);
+        record.push_der(1);
+        record.write(to_unsigned("http/1.1"));
+        record.pop_der();
+        record.pop_der();
+        record.pop_der();
     }
+
     if (can_heartbeat) {
-        record.m_contents.append(heartbeat);
+        record.write2(ExtensionType::heartbeat);
+        record.push_der(2);
+        record.write1(0);
+        record.pop_der();
     }
     record.pop_der();
 }

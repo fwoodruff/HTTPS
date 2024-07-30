@@ -200,22 +200,20 @@ ERROR:
 // Creates an HTTP response from an HTTP request
 task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, http_frame http_request) {
     const std::filesystem::path& filename = http_request.header.resource;
-    if(http_request.header.protocol != "HTTP/1.0" and http_request.header.protocol != "HTTP/1.1") {
+    if(http_request.header.protocol != "HTTP/1.0" and http_request.header.protocol != "HTTP/1.1" and http_request.header.protocol != "HTTP/0.9") {
         throw http_error("505 HTTP Version Not Supported");
     }
-    if(http_request.header.verb == "GET" or http_request.header.verb == "HEAD") {
-        std::string subfolder = option_singleton().default_subfolder;
-        if(auto it = http_request.header.headers.find("host"); it != http_request.header.headers.end()) {
-            const auto domain = parse_domain(it->second);
-            if(std::filesystem::exists(rootdirectory/domain)) {
-                subfolder = domain;
-            }
+    std::string subfolder = option_singleton().default_subfolder;
+    if(auto it = http_request.header.headers.find("host"); it != http_request.header.headers.end()) {
+        const auto domain = parse_domain(it->second);
+        if(std::filesystem::exists(rootdirectory/domain)) {
+            subfolder = domain;
         }
-        auto webroot = rootdirectory/subfolder;
-        
+    }
+    if(http_request.header.verb == "GET" or http_request.header.verb == "HEAD") {
         auto it = http_request.header.headers.find("range");
         if(it == http_request.header.headers.end()) {
-            co_return co_await send_file(webroot, filename, (http_request.header.verb == "GET"));
+            co_return co_await send_file(rootdirectory, subfolder, filename, (http_request.header.verb == "GET"));
         }
         auto range_str = http_request.header.headers.at("range");
         auto ranges = parse_range_header(range_str);
@@ -223,14 +221,12 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
             throw http_error("400 Bad Request");
         }
         if(ranges.size() == 1) {
-            co_return co_await send_range(webroot, filename, ranges[0], (http_request.header.verb == "GET"));
+            co_return co_await send_range(rootdirectory, subfolder, filename, ranges[0], (http_request.header.verb == "GET"));
         }
-        co_return co_await send_multi_ranges(webroot, filename, ranges, (http_request.header.verb == "GET"));
-        
-
+        co_return co_await send_multi_ranges(rootdirectory, subfolder, filename, ranges, (http_request.header.verb == "GET"));
     } else if(http_request.header.verb == "POST") {
         write_body(std::move( http_request.body));
-        co_return co_await send_file(rootdirectory, filename, true);
+        co_return co_await send_file(rootdirectory, subfolder, filename, true);
     } else {
         throw http_error("405 Method Not Allowed\r\n");
     }
@@ -268,7 +264,7 @@ ssize_t get_file_size(std::filesystem::path filename) {
     return t.tellg();
 }
 
-std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string filename) {
+std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string domain) {
     auto time = std::time(0);
     if(static_cast<std::time_t>(-1) == time) {
         throw http_error("500 Internal Server Error");
@@ -282,6 +278,7 @@ std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_
         {"Connection", "Keep-Alive"},
         {"Keep-Alive", "timeout=" + std::to_string(option_singleton().keep_alive.count())},
         {"Server", make_server_name()},
+        {"X-Served-By", domain }
     };
     if(option_singleton().http_strict_transport_security) {
         headers.insert({"Strict-Transport-Security", "max-age=31536000"});
@@ -291,9 +288,9 @@ std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_
 
 // our HTTP client has sent an HTTP request. We send over the response header, then stream the file
 // contents back to them. If sending would block, we park this coroutine for polling
-task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::filesystem::path filename, bool send_body) {
+task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const std::string& domain, std::filesystem::path filename, bool send_body) {
     filename = fix_filename(std::move(filename));
-    auto file_path = rootdir/filename.relative_path();
+    auto file_path = rootdir/domain/filename.relative_path();
     std::string MIME = Mime_from_file(filename);
     ssize_t file_size = get_file_size(file_path);
     auto headers = prepare_headers(file_size, MIME, file_path);
@@ -316,16 +313,16 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, std::f
     co_return stream_result::ok;
 }
 
-task<stream_result> HTTP::send_range(const std::filesystem::path& rootdir, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range, bool send_body) {
+task<stream_result> HTTP::send_range(const std::filesystem::path& rootdirectory, const std::string& subfolder, std::filesystem::path filename, std::pair<ssize_t, ssize_t> range, bool send_body) {
     assert(range.first != -1 or range.second != -1);
     filename = fix_filename(std::move(filename));
-    auto file_path = rootdir/filename.relative_path();
+    auto file_path = rootdirectory/subfolder/filename.relative_path();
     ssize_t file_size = get_file_size(file_path);
     std::string MIME = Mime_from_file(filename);
     
     auto [begin, end] = get_range_bounds(file_size, range);
     if(begin == 0 and end == file_size) {
-        co_return co_await send_file(rootdir, filename, send_body);
+        co_return co_await send_file(rootdirectory, subfolder, filename, send_body);
     }
 
     auto headers = prepare_headers(end - begin, MIME, file_path);
@@ -348,10 +345,10 @@ std::string range_header(std::pair<ssize_t, ssize_t> range, ssize_t file_size) {
     return "Content-Range: bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size) + "\r\n\r\n";
 }
 
-task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges, bool send_body) {
+task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir, const std::string& subfolder, std::filesystem::path filename, std::vector<std::pair<ssize_t, ssize_t>> ranges, bool send_body) {
 
     filename = fix_filename(std::move(filename));
-    auto file_path = rootdir/filename.relative_path();
+    auto file_path = rootdir/subfolder/filename.relative_path();
     size_t file_size = get_file_size(file_path);
     std::string MIME = Mime_from_file(filename);
 

@@ -255,6 +255,12 @@ public:
         m_contents.push_back(value);
     }
 
+    template<typename T>
+    inline void write2(T value) {
+        m_contents.append({ 0, 0 });
+        checked_bigend_write(static_cast<uint16_t>(value), m_contents, m_contents.size() - 2, 2);
+    }
+
     inline void write2(uint16_t value) {
         m_contents.append({ 0, 0 });
         checked_bigend_write(value, m_contents, m_contents.size() - 2, 2);

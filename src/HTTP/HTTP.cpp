@@ -22,8 +22,6 @@
 namespace fbw {
 
 
-constexpr long MAX_URI_SIZE = 5000;
-
 // an HTTP handler streams data in, gets a file from a folder and streams it back
 // or it might redirect unencrypted HTTP traffic
 HTTP::HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect) :
@@ -53,7 +51,7 @@ ssize_t http_stoll(std::string number) {
 }
 
 bool is_body_required(const http_header& header) {
-    if(!verbs.contains(header.verb)) {
+    if(header.protocol != "HTTP/1.1" and header.protocol != "HTTP/1.0" and header.protocol != "HTTP/0.9") {
         throw http_error("400 Bad Request");
     }
     if (header.verb == "PUT" or header.verb == "DELETE" or header.verb == "CONNECT" or header.verb == "PATCH"
@@ -204,9 +202,6 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
     const std::filesystem::path& filename = http_request.header.resource;
     if(http_request.header.protocol != "HTTP/1.0" and http_request.header.protocol != "HTTP/1.1") {
         throw http_error("505 HTTP Version Not Supported");
-    }
-    if(http_request.header.resource.size() > MAX_URI_SIZE) {
-        throw http_error("414 URI Too Long");
     }
     if(http_request.header.verb == "GET" or http_request.header.verb == "HEAD") {
         std::string subfolder = option_singleton().default_subfolder;

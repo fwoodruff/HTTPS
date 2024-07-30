@@ -163,7 +163,7 @@ tls_record key_schedule::server_encrypted_extensions_record() {
     return out;
 }
 
-tls_record key_schedule::server_certificate_record( bool use_tls13) {
+tls_record key_schedule::server_certificate_record(bool use_tls13) {
     tls_record certificate_record(ContentType::Handshake);
     certificate_record.write1(HandshakeType::certificate);
     certificate_record.push_der(3);
@@ -303,6 +303,7 @@ tls_record key_schedule::server_handshake_finished12_record() {
 }
 
 bool key_schedule::is_middlebox_compatibility_mode() {
+    assert(p_use_tls13);
     return (*p_use_tls13 and client_session_id != std::nullopt);
 }
 
@@ -358,7 +359,7 @@ void key_schedule::hello_extensions(tls_record& record, bool use_tls13, bool can
         record.m_contents.append(tls13_ext);
         record.m_contents.append(key_share_ext);
     } else {
-        record.m_contents.append(alpn_protocol_data); // todo understand TLS 1.3 alpn
+        //record.m_contents.append(alpn_protocol_data); // todo understand TLS 1.3 alpn
         record.m_contents.append(handshake_reneg);
     }
     if (can_heartbeat) {

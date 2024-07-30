@@ -23,9 +23,27 @@
 namespace fbw {
 
 char asciitolower(char in) {
-    if (in <= 'Z' && in >= 'A')
+    if (in <= 'Z' && in >= 'A') {
         return in - ('Z' - 'z');
+    }
     return in;
+}
+
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), asciitolower);
+    return s;
+}
+
+char asciitoupper(char in) {
+    if (in <= 'z' && in >= 'a') {
+        return in + ('Z' - 'z');
+    }
+    return in;
+}
+
+std::string to_upper(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), asciitoupper);
+    return s;
 }
 
 // convert current time for string
@@ -106,19 +124,26 @@ http_header parse_http_headers(const std::string& header_str) {
         if(objs.size() != 3) {
             throw http_error("400 Bad Request");
         }
-        headers.verb = trim(objs[0]);
+        headers.verb = to_upper(trim(objs[0]));
         headers.resource = trim(objs[1]);
-        headers.protocol = trim(objs[2]);
+        headers.protocol = to_upper(trim(objs[2]));
+    }
+    if(header_str.size() - end > MAX_HEADER_FIELD_SIZE) {
+        throw http_error("431 Request Header Fields Too Large");
+    }
+    if(headers.resource.size() > MAX_URI_SIZE) {
+        throw http_error("414 URI Too Long");
+    }
+    if(!verbs.contains(headers.verb)) {
+        throw http_error("400 Bad Request");
     }
     while ((end = header_str.find(delim, start)) != std::string::npos) {
         auto line = header_str.substr(start, end - start);
-        start = end + delim.size(); 
+        start = end + delim.size();
         const size_t colon_pos = line.find(':');
         if (colon_pos != std::string::npos) {
-            auto key = trim(line.substr(0, colon_pos));
+            auto key = to_lower(trim(line.substr(0, colon_pos)));
             auto value = trim(line.substr(colon_pos + 1));
-            std::transform(key.begin(), key.end(), key.begin(), asciitolower);
-            std::transform(value.begin(), value.end(), value.begin(), asciitolower);
             headers.headers[key] = value;
         }
     }

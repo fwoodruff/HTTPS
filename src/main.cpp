@@ -40,6 +40,9 @@
 // unhandled exception when running exec outside of root folder
 // 'split' and 'split_string' functions are redundant
 // more functions should take const& and return a value
+// when content length is zero status code is 204 No Content
+// GET request to /readiness should return 206 below brownout threshold, 
+// options singleton, let's just use a global static
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -67,13 +70,9 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
-task<void> https_server(std::shared_ptr<limiter> ip_connections) {
+task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
-        auto port = fbw::option_singleton().server_port;
-        auto listener = fbw::tcplistener::bind(port);
-        std::stringstream ss;
-        ss << "HTTPS running on port " << port << std::endl;
-        std::clog << ss.str() << std::flush;
+        
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);
@@ -92,14 +91,10 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections) {
     }
 }
 
-task<void> redirect_server(std::shared_ptr<limiter> ip_connections) {
+task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
         // todo: have a folder for HTTP connections so we can implement HTTP-01 acme challenges
-        auto port = fbw::option_singleton().redirect_port ;
-        auto listener = fbw::tcplistener::bind(port);
-        std::stringstream ss;
-        ss << "Redirect running on port " << port << std::endl;
-        std::clog << ss.str() << std::flush;
+        
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);
@@ -115,27 +110,43 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections) {
     }
 }
 
-task<void> async_main(int argc, const char * argv[]) {
+task<void> async_main(fbw::tcplistener https_listener, std::string https_port, fbw::tcplistener http_listener, std::string http_port) {
     try {
         fbw::MIMEmap = fbw::MIMES(fbw::option_singleton().mime_folder);
         static_cast<void>(fbw::privkey_from_file(fbw::option_singleton().key_file));
         static_cast<void>(fbw::der_cert_from_file(fbw::option_singleton().certificate_file));
         fbw::parse_tlds(fbw::option_singleton().tld_file);
+
+        std::stringstream ss;
+        std::clog << ss.str() << std::flush;
+        ss << "Redirect running on port " << http_port << std::endl;
+        std::clog << ss.str();
+        std::stringstream ss_s;
+        ss_s << "HTTPS running on port " << https_port << std::endl;
+        std::clog << ss_s.str() << std::flush;
+
+        auto ip_connections = std::make_shared<limiter>();
+        async_spawn(https_server(ip_connections, std::move(https_listener)));
+        async_spawn(redirect_server(ip_connections, std::move(http_listener)));
+
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
-
         std::cerr << "Mime folder: " << std::filesystem::absolute(fbw::option_singleton().mime_folder) << std::endl;
         std::cerr << "Key file: " << std::filesystem::absolute(fbw::option_singleton().key_file) << std::endl;
         std::cerr << "Certificate file: " << std::filesystem::absolute(fbw::option_singleton().certificate_file) << std::endl;
-        co_return;
     }
-    auto ip_connections = std::make_shared<limiter>();
-    async_spawn(https_server(ip_connections));
-    async_spawn(redirect_server(ip_connections));
     co_return;
 }
 
 int main(int argc, const char * argv[]) {
-    run(async_main(argc, argv));
+     try {
+        auto http_port = fbw::option_singleton().redirect_port ;
+        auto http_listener = fbw::tcplistener::bind(http_port);
+        auto https_port = fbw::option_singleton().server_port;
+        auto https_listener = fbw::tcplistener::bind(https_port);
+        run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
+    } catch(const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
     return 0;
 }

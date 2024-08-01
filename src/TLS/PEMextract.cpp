@@ -75,6 +75,14 @@ std::array<uint8_t,32> deserialise(ustring asn1) {
     return privkey;
 }
 
+std::array<uint8_t,32> privkey_for_domain(std::string domain) {
+    auto privkey_file = option_singleton().key_folder / domain / option_singleton().key_file;
+    if(!std::filesystem::exists(privkey_file) or domain == "") {
+        privkey_file = option_singleton().key_folder / option_singleton().default_subfolder / option_singleton().key_file;
+    }
+    return privkey_from_file(privkey_file);
+}
+
 std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
     std::ifstream t(filename);
     if (t.fail()) {
@@ -101,6 +109,14 @@ std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
     ustring DER = decode64(data);
     auto key = deserialise(DER);
     return key;
+}
+
+std::vector<ustring> der_cert_for_domain(std::string domain) {
+    auto cert_file = option_singleton().key_folder / domain / option_singleton().certificate_file;
+    if(!std::filesystem::exists(cert_file) or domain == "") {
+        cert_file = option_singleton().key_folder / option_singleton().default_subfolder / option_singleton().certificate_file;
+    }
+    return der_cert_from_file(cert_file);
 }
 
 std::vector<ustring> der_cert_from_file(std::filesystem::path filename) {

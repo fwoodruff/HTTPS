@@ -56,6 +56,7 @@ const options& option_singleton() {
         project_options.redirect_port = option_map.at("REDIRECT_PORT");
         project_options.server_port = option_map.at("SERVER_PORT");
         project_options.domain_names = split_string(option_map.at("DOMAIN_NAMES"), ',');
+        project_options.key_folder = option_map.at("KEY_FOLDER");
         project_options.certificate_file = option_map.at("CERTIFICATE_FILE");
         project_options.key_file = option_map.at("KEY_FILE");
         project_options.webpage_folder = option_map.at("WEBPAGE_FOLDER");

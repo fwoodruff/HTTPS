@@ -420,24 +420,43 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
     co_return stream_result::ok;
 }
 
+std::string moved_301() {
+    return
+R"(<html>
+    <head>
+        <title>301 Moved Permanently</title>
+    </head>
+    <body>
+        <h1>301 Moved Permanently</h1>
+        <p>Redirecting</p>
+    </body>
+</html>
+)";
+}
 
 // if a client connects over http:// we need to form a response redirecting them to https://
 task<void> HTTP::redirect(http_frame request) {
-    std::string filename = fix_filename(std::move(request.header.resource));
+    std::string filename = fix_filename(request.header.resource);
     std::string MIME = Mime_from_file(filename);
-    std::string body = "HTTP/1.1 301 Moved Permanently";
+    std::string body = moved_301();
 
     std::string domain = option_singleton().default_subfolder;
     if(auto it = request.header.headers.find("host"); it != request.header.headers.end()) {
         domain = it->second;
     }
+    auto domain_parts = split(domain, ":");
+    if(domain_parts.size() == 2) {
+        domain = domain_parts[0];
+    }
     
     std::string https_port = option_singleton().server_port;
     std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
 
+    std::string location_resource = request.header.resource == "/" ? "" : request.header.resource;
+
     std::ostringstream oss;
     oss << "HTTP/1.1 301 Moved Permanently\r\n"
-        << "Location: https://" << domain << optional_port << filename << "\r\n"
+        << "Location: https://" << domain << optional_port << location_resource << "\r\n"
         << "Content-Type: " << MIME << (MIME.substr(0,4)=="text" ? "; charset=UTF-8" : "") << "\r\n"
         << "Content-Length: " << body.size() << "\r\n"
         << "Connection: close\r\n"

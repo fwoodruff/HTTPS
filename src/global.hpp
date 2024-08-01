@@ -40,6 +40,7 @@ struct options {
     std::vector<std::string> domain_names;
     std::filesystem::path certificate_file;
     std::filesystem::path key_file;
+    std::filesystem::path key_folder;
     std::filesystem::path webpage_folder;
     std::filesystem::path default_subfolder;
     std::filesystem::path mime_folder;

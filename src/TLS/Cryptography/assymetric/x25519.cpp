@@ -80,11 +80,9 @@ constexpr ct_u256 REDC(ct_u512 aR) noexcept {
     for(size_t i = 0; i < Prime.v.size(); i++) {
         a.v[i] = aR.v[i + Prime.v.size()];
     }
-    if(a>Prime) {
-        return a - Prime;
-    } else {
-        return a;
-    }
+    ct_u256 diff = a - Prime;
+    ct_u256 mask = -(diff >> (sizeof(ct_u256) * CHAR_BIT - 1));
+    return (diff & ~mask) | (a & mask);
 }
 
 
@@ -95,16 +93,10 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) {
     auto aR = REDC(a*RR_P);
     for(int i = sizeof(ct_u256)*CHAR_BIT-1; i >=0; i--) {
         auto prime_shift = Prime2 >> i;
-        if(prime_shift == "0x0"_xl) {
-            continue;
-        }
         auto reduced = REDC(ladder*ladder);
         auto next = REDC(aR*reduced);
-        if((prime_shift&"0x1"_xl) != "0x0"_xl) {
-            ladder = next;
-        } else {
-            ladder = reduced;
-        }
+        auto mask = (prime_shift&"0x1"_xl) - "0x1"_xl;
+        ladder = (next & ~mask) | (reduced & mask);
     }
     return REDC(ct_u512(ladder));
 }
@@ -114,7 +106,7 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) {
 
 
 // computes lhs + rhs mod P
-constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) {
+constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) { // todo: CT
     assert(lhs < Prime and rhs < Prime);
     ct_u256 summand = lhs + rhs;
     return summand >= Prime ? summand - Prime : summand;
@@ -122,13 +114,11 @@ constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) {
 
 // computes lhs - rhs mod P
 constexpr ct_u256 modulo_sub(const ct_u256& lhs, const ct_u256& rhs) {
-    assert(lhs < (Prime+Prime) and rhs < Prime);
-    if(lhs>=rhs) {
-        return lhs-rhs;
-    } else {
-        
-        return (Prime+lhs) - rhs;
-    }
+    assert(lhs < (Prime + Prime) && rhs < Prime);
+    ct_u256 diff = lhs - rhs;
+    ct_u256 mask = -(diff >> (sizeof(ct_u256) * CHAR_BIT - 1));
+    ct_u256 result = diff + (mask & Prime);
+    return result;
 }
 
 
@@ -175,13 +165,11 @@ ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) { // is th
         auto tangent_intersect = point_double(current_point);
         auto next_intersect = point_double(current_double);
 
-        if((shift_secret & "0x1"_xl) == "0x1"_xl){
-            current_point = third_point;
-            current_double = next_intersect;
-        } else {
-            current_point = tangent_intersect;
-            current_double = third_point;
-        }
+        auto mask = (shift_secret & "0x1"_xl) - "0x1"_xl;
+        current_point.xcoord = (third_point.xcoord & ~mask) | (tangent_intersect.xcoord & mask);
+        current_point.affine = (third_point.affine & ~mask) | (tangent_intersect.affine & mask);
+        current_double.xcoord = (next_intersect.xcoord & ~mask) | (third_point.xcoord & mask);
+        current_double.affine = (next_intersect.affine & ~mask) | (third_point.affine & mask);
     }
     return (current_point.xcoord * modular_inverse(current_point.affine) )% Prime;
 }

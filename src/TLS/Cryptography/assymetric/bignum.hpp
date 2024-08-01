@@ -174,8 +174,8 @@ public:
             v = {};
             return *this;
         }
-        int bits = rhs % RADIXBITS;
-        size_t blocks = rhs / RADIXBITS;
+        const int bits = rhs % RADIXBITS;
+        const size_t blocks = rhs / RADIXBITS;
 
         radix mask = 0;
         if(bits!=0) {

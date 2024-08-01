@@ -47,7 +47,9 @@ void keccak_sponge::reset() noexcept {
 
 void keccak_sponge::absorb(const uint8_t* const input, size_t inputByteLen) noexcept {
     assert(absorb_phase);
-    if(!inputByteLen) return;
+    if(!inputByteLen) [[unlikely]] {
+        return;
+    }
     while(inputByteLen > 0) {
         if(idx==rate_in_bytes) {
             keccak_F1600_state_permute(state);
@@ -60,7 +62,9 @@ void keccak_sponge::absorb(const uint8_t* const input, size_t inputByteLen) noex
 
 void keccak_sponge::absorb(const char* const input, size_t inputByteLen) noexcept {
     assert(absorb_phase);
-    if(!inputByteLen) return;
+    if(!inputByteLen) [[unlikely]]  {
+        return;
+    }
     while(inputByteLen > 0) {
         if(idx==rate_in_bytes) {
             keccak_F1600_state_permute(state);

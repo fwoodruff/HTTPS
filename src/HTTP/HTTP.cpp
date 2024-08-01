@@ -112,7 +112,7 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
             co_await m_stream->close_notify();
             co_return std::nullopt;
         }
-        if(connection_alive != stream_result::ok) {
+        if(connection_alive != stream_result::ok) [[unlikely]] {
             co_return std::nullopt;
         }
         // todo: size check on m_buffer
@@ -128,7 +128,7 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         }
         stream_result connection_alive = co_await m_stream->read_append(m_buffer, option_singleton().session_timeout);
         // todo: size check on m_buffer
-        if(connection_alive != stream_result::ok) {
+        if(connection_alive != stream_result::ok) [[unlikely]] {
             co_return std::nullopt;
         }
         continue;
@@ -297,7 +297,8 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
     if(file_size > RANGE_SUGGESTED_SIZE) {
         headers.insert({"Accept-Ranges", "bytes"});
     }
-    ustring header_str = make_header("200 OK", headers);
+    auto status_code = (file_size != 0)? "200 OK": "206 No Content";
+    ustring header_str = make_header(status_code, headers);
     auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
     if(res != stream_result::ok) {
         co_return res;
@@ -411,7 +412,7 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
         auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
-        if(res != stream_result::ok) {
+        if(res != stream_result::ok) [[unlikely]] {
             co_return res;
         }
         assert(t.tellg() <= end);

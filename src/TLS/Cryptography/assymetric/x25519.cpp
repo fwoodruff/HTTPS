@@ -197,8 +197,9 @@ constexpr ct_u256 clamp(ct_u256 any_value) {
 
 // point multiplies serial_point by secret.
 // only takes the x coordinate of the point as input to avoid an invalid curve attack
-std::array<unsigned char,32> multiply(const std::array<unsigned char,32>& secret,
+std::array<unsigned char,32> multiply(std::array<unsigned char,32> secret,
                                                           std::array<unsigned char,32> serial_point) noexcept {
+    std::reverse(secret.begin(), secret.end());
     std::reverse(serial_point.begin(), serial_point.end());
     auto clamped_secret = clamp(ct_u256(secret));
     auto curve_point_x = ct_u256(serial_point);
@@ -207,7 +208,8 @@ std::array<unsigned char,32> multiply(const std::array<unsigned char,32>& secret
 }
 
 // point multiplies the base point by secret.
-std::array<unsigned char,32> base_multiply(const std::array<unsigned char,32>& secret) noexcept {
+std::array<unsigned char,32> base_multiply(std::array<unsigned char,32> secret) noexcept {
+    std::reverse(secret.begin(), secret.end());
     auto clamped_secret = clamp(ct_u256(secret));
     auto output_point = point_multiply(clamped_secret, Base.xcoord);
     return output_point.serialise_le();

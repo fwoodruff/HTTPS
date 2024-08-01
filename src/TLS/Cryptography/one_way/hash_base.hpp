@@ -30,18 +30,12 @@ public:
     hash_base& update(const T & data) {
         return update_impl(data.data(), data.size());
     }
-    
-    [[nodiscard]] ustring hash() const &;
-    [[nodiscard]] virtual ustring hash() && = 0;
+     
+    [[nodiscard]] virtual ustring hash() const = 0;
 
     [[nodiscard]] virtual size_t get_block_size() const noexcept = 0;
     [[nodiscard]] virtual size_t get_hash_size() const noexcept = 0;
 };
-
-inline ustring hash_base::hash() const & {
-    auto copy = clone();
-    return std::move(*copy).hash();
-}
 
 
 } // namespace fbw

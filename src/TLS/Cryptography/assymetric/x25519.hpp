@@ -15,11 +15,11 @@
 // get secret
 namespace fbw::curve25519 {
 [[nodiscard]] std::array<unsigned char,32>
-    multiply(const std::array<unsigned char,32>& num,
+    multiply(std::array<unsigned char,32> num,
                                   std::array<unsigned char,32> pnt) noexcept;
 // make key pair
 [[nodiscard]] std::array<unsigned char,32>
-    base_multiply(const std::array<unsigned char,32>& num) noexcept;
+    base_multiply(std::array<unsigned char,32> num) noexcept;
 
 }
 

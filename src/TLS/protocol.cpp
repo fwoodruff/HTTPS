@@ -63,8 +63,8 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
         }
         record = decrypt_record(record);
         switch (static_cast<ContentType>(record.get_type()) ) {
-            case ContentType::Handshake:
-            case ContentType::ChangeCipherSpec:
+            [[unlikely]] case ContentType::Handshake: [[fallthrough]];
+            [[unlikely]] case ContentType::ChangeCipherSpec:
                 co_await server_alert(AlertLevel::fatal, AlertDescription::unexpected_message);
                 co_return stream_result::closed;
             case ContentType::Application:
@@ -76,9 +76,9 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
             case ContentType::Heartbeat:
                 co_await client_heartbeat(std::move(record), timeout);
                 co_return stream_result::ok;
-            case ContentType::Invalid:
+            [[unlikely]] case ContentType::Invalid:
                     throw ssl_error("invalid record type", AlertLevel::fatal, AlertDescription::unexpected_message);
-            default:
+            [[unlikely]] default:
                 throw ssl_error("nonexistent record type", AlertLevel::fatal, AlertDescription::decode_error);
 
         }
@@ -223,7 +223,7 @@ task<std::string> TLS::perform_handshake() {
                 case ContentType::ChangeCipherSpec:
                     client_change_cipher_spec(std::move(record));
                     break;
-                case ContentType::Application:
+                [[unlikely]] case ContentType::Application:
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
                 case ContentType::Alert:
                     co_await client_alert(std::move(record), option_singleton().handshake_timeout);
@@ -236,9 +236,9 @@ task<std::string> TLS::perform_handshake() {
                         }
                     }
                     break;
-                case ContentType::Invalid:
+                [[unlikely]] case ContentType::Invalid:
                     throw ssl_error("invalid record type", AlertLevel::fatal, AlertDescription::unexpected_message);
-                default:
+                [[unlikely]] default:
                     throw ssl_error("nonexistent record type", AlertLevel::fatal, AlertDescription::decode_error);
             }
         } 
@@ -291,7 +291,7 @@ task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<mi
             }
             co_return { *record, stream_result::ok };
         }
-        if (m_buffer.size() > TLS_RECORD_SIZE + TLS_HEADER_SIZE + TLS_EXPANSION_MAX) {
+        if (m_buffer.size() > TLS_RECORD_SIZE + TLS_HEADER_SIZE + TLS_EXPANSION_MAX) [[unlikely]] {
             throw ssl_error("oversized record", AlertLevel::fatal, AlertDescription::record_overflow);
         }
         stream_result connection_alive = co_await m_client->read_append(m_buffer, timeout);
@@ -315,7 +315,7 @@ task<stream_result> TLS::write_record(tls_record record, std::optional<milliseco
 
 task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_record record) {
     switch (record.m_contents.at(0)) {
-        case static_cast<uint8_t>(HandshakeType::hello_request):
+        [[unlikely]] case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
         case static_cast<uint8_t>(HandshakeType::client_hello):
             client_hello(handshake, std::move(record));
@@ -369,7 +369,7 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
             }
             
             co_return stream_result::ok;
-        default:
+        [[unlikely]] default:
             throw ssl_error("unsupported handshake record type", AlertLevel::fatal, AlertDescription::decode_error);
     }
     co_return stream_result::ok;
@@ -377,7 +377,7 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
 
 
 void TLS::client_hello(key_schedule& handshake, tls_record record) {
-    if(m_expected_record != HandshakeStage::client_hello) {
+    if(m_expected_record != HandshakeStage::client_hello) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     handshake.client_hello_record(record, can_heartbeat);
@@ -439,7 +439,7 @@ task<stream_result> TLS::server_hello_done(key_schedule& handshake) {
 }
 
 void TLS::client_key_exchange(key_schedule& handshake, tls_record record) {
-    if(m_expected_record != HandshakeStage::client_key_exchange) {
+    if(m_expected_record != HandshakeStage::client_key_exchange) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     auto key_material = handshake.client_key_exchange_receipt(record);
@@ -448,10 +448,10 @@ void TLS::client_key_exchange(key_schedule& handshake, tls_record record) {
 }
 
 void TLS::client_change_cipher_spec( tls_record record) {
-    if(m_expected_record != HandshakeStage::client_change_cipher_spec) {
+    if(m_expected_record != HandshakeStage::client_change_cipher_spec) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    if(record.m_contents.size() != 1 and record.m_contents.at(0) != static_cast<uint8_t>(ChangeCipherSpec::change_cipher_spec)) {
+    if(record.m_contents.size() != 1 or record.m_contents.at(0) != static_cast<uint8_t>(ChangeCipherSpec::change_cipher_spec)) [[unlikely]]  {
         throw ssl_error("bad cipher spec", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     client_cipher_spec = true;
@@ -459,7 +459,7 @@ void TLS::client_change_cipher_spec( tls_record record) {
 }
 
 void TLS::client_handshake_finished13(key_schedule& handshake, tls_record record) {
-    if(m_expected_record != HandshakeStage::client_handshake_finished and m_expected_record != HandshakeStage::client_change_cipher_spec) {
+    if(m_expected_record != HandshakeStage::client_handshake_finished and m_expected_record != HandshakeStage::client_change_cipher_spec) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     resumption_master_secret13 = handshake.client_handshake_finished13_record(record);
@@ -467,7 +467,7 @@ void TLS::client_handshake_finished13(key_schedule& handshake, tls_record record
 }
 
 void TLS::client_handshake_finished12(key_schedule& handshake, tls_record record) {
-    if(m_expected_record != HandshakeStage::client_handshake_finished) {
+    if(m_expected_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     handshake.client_handshake_finished12_record(record);
@@ -565,12 +565,12 @@ task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optiona
 
 
 std::pair<bool, tls_record> TLS::client_heartbeat_record(tls_record record, bool can_heartbeat) {
-    if(!can_heartbeat) {
+    if(!can_heartbeat) [[unlikely]] {
         throw ssl_error("bad heartbeat payload length", AlertLevel::fatal, AlertDescription::illegal_parameter);
     }
     auto heartbeat_message = record.m_contents;
 
-    if (heartbeat_message.size() < 1 or heartbeat_message[0] != 0x01 ) {
+    if (heartbeat_message.size() < 1 or heartbeat_message[0] != 0x01 ) [[unlikely]] {
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
 

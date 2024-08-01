@@ -258,7 +258,7 @@ ustring aes_gcm_ad(roundkey rk, ustring iv,
     aes_gcm_gctr(rk, J0, crypt.data(), crypt.size(), plain.data());
     ustring S = aes_gcm_ghash(H, aad, crypt.data(), crypt.size());
     aes_gctr(rk, J0, S.data(), S.size(), &T[0]);
-    if(!std::equal(tag.begin(), tag.end(), T.begin())) {
+    if(!std::equal(tag.begin(), tag.end(), T.begin())) [[unlikely]] {
         throw ssl_error("bad tag", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     
@@ -334,7 +334,7 @@ tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
 
 tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
     
-    if(record.m_contents.size() < 24) {
+    if(record.m_contents.size() < 24) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
     
@@ -366,7 +366,7 @@ tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
     ustring plain = aes_gcm_ad(client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
     record.m_contents = plain;
     
-    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) {
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }
     return record;

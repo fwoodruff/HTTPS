@@ -22,6 +22,7 @@ std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension) {
         size_t len = try_bigend_read(extension, 2, 2);
         auto key_value = extension.subspan(4, len);
         ustring val{ 0x00, 0x1d };
+        // todo: NamedGroup::x25519
         if(std::equal(key_type.begin(), key_type.end(), val.begin()) and key_value.size() == 32) {
             std::array<uint8_t, 32> out;
             std::copy(key_value.begin(), key_value.end(), out.begin());

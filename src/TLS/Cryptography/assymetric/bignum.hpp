@@ -168,8 +168,9 @@ public:
         }
         return *this;
     }
-    constexpr uVar& operator>>=(unsigned rhs) noexcept {
-        if(rhs >= INTBITS) {
+
+    constexpr uVar& operator>>=(unsigned rhs) noexcept { // ct when rhs is const
+        if(rhs >= INTBITS) [[unlikely]] {
             v = {};
             return *this;
         }

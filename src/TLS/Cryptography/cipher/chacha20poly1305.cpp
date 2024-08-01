@@ -157,25 +157,24 @@ constexpr u192 REDCpoly(u384 aR) noexcept {
     for(size_t i = 0; i < prime130_5.v.size(); i++) {
         a.v[i] = aR.v[i + prime130_5.v.size()];
     }
-    if(a > prime130_5) {
+    if(a > prime130_5) [[unlikely]] {
         return a - prime130_5;
-    } else {
-        return a;
     }
+    return a;
 }
 
 
 u192 add_mod(u192 x, u192 y , u192 mod) noexcept {
     auto sum = x + y;
     assert(sum >= x);
-    if (sum > mod) {
+    if (sum > mod) { // todo constant time
         sum -= mod;
     }
     return sum;
 }
 
 ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
-    if(x > y) {
+    if(x > y) { // todo: constant time
         return x - y;
     } else {
         return (mod - y) + x;
@@ -361,12 +360,12 @@ tls_record ChaCha20_Poly1305::decrypt(tls_record record) {
     
     auto [plaintext, tag_recalc] = chacha20_aead_crypt(additional_data, client_write_key, nonce, ciphertext, false);
 
-    if(tag != tag_recalc) {
+    if(tag != tag_recalc) [[unlikely]] {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     record.m_contents = plaintext;
 
-    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) {
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }
     return record;

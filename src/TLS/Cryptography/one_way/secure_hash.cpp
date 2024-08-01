@@ -43,21 +43,36 @@ template<typename T>
 T MAJ(T x, T y, T z) noexcept {
     return (x & y) ^ (x & z) ^ (y & z);
 }
-template<typename T>
-T EP0(T x) noexcept {
+
+uint32_t EP0(uint32_t x) noexcept {
     return rotate_right(x, 2) ^ rotate_right(x, 13) ^ rotate_right(x, 22);
 }
-template<typename T>
-T EP1(T x) noexcept {
+
+uint32_t EP1(uint32_t x) noexcept {
     return rotate_right(x, 6) ^ rotate_right(x, 11) ^ rotate_right(x, 25);
 }
-template<typename T>
-T SIG0(T x) noexcept {
+
+uint32_t SIG0(uint32_t x) noexcept {
     return rotate_right(x, 7) ^ rotate_right(x, 18) ^ (x >> 3);
 }
-template<typename T>
-T SIG1(T x) noexcept {
+
+uint32_t SIG1(uint32_t x) noexcept {
     return rotate_right(x, 17) ^ rotate_right(x, 19) ^ (x >> 10);
+}
+
+uint64_t EP0(uint64_t x) noexcept {
+    return rotate_right(x, 28) ^ rotate_right(x, 34) ^ rotate_right(x, 39);
+}
+
+uint64_t EP1(uint64_t x) noexcept {
+    return rotate_right(x, 14) ^ rotate_right(x, 18) ^ rotate_right(x, 41);
+}
+
+uint64_t SIG0(uint64_t x) noexcept {
+    return rotate_right(x,  1) ^ rotate_right(x,  8) ^ (x >> 7);
+}
+uint64_t SIG1(uint64_t x) noexcept {
+    return rotate_right(x, 19) ^ rotate_right(x, 61) ^ (x >> 6);
 }
 
 constexpr double sq_root(double x) noexcept {
@@ -93,16 +108,16 @@ constexpr std::array<uint64_t,80> prime_cbrts {
     0x90befffa23631e28, 0xa4506cebde82bde9, 0xbef9a3f7b2c67915, 0xc67178f2e372532b, 0xca273eceea26619c,
     0xd186b8c721c0c207, 0xeada7dd6cde0eb1e, 0xf57d4f7fee6ed178, 0x06f067aa72176fba, 0x0a637dc5a2c898a6,
     0x113f9804bef90dae, 0x1b710b35131c471b, 0x28db77f523047d84, 0x32caab7b40c72493, 0x3c9ebe0a15c9bebc,
-    0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817 };
+    0x431d67c49c100d4c, 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817
+};
 
 
+// todo: combine sha256 and sha384 transforms
 void sha384_transform(std::array<uint64_t,8>& state, const std::array<uint8_t, sha384::block_size> data) noexcept {
     std::array<uint64_t, 80> m;
-    for (int i = 0; i < 16; ++i) {
-        m[i] = 0;
-        for(int j = 0; j < 8; j++) {
-            m[i] |= static_cast<uint64_t>(data[i*8 + j]) << (56 - j*8);
-        }
+    for (int i = 0, j = 0; i < 16; ++i, j += 8) {
+        m[i] = (uint64_t(data[j  ]) << 56) | (uint64_t(data[j + 1]) << 48) | (uint64_t(data[j + 2]) << 40) | (uint64_t(data[j + 3]) << 32) |
+               (uint64_t(data[j+4]) << 24) | (uint64_t(data[j + 5]) << 16) | (uint64_t(data[j + 6]) << 8 ) | (uint64_t(data[j + 7]));
     }
     for (int i = 16 ; i < 80; ++i) {
         m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
@@ -122,7 +137,7 @@ void sha384_transform(std::array<uint64_t,8>& state, const std::array<uint8_t, s
     }
 }
 
-constexpr double cube_root(double x) noexcept {
+constexpr long double cube_root(long double x) noexcept { // todo: check if long double is sufficient
     // annoyingly this doesn't give enough precision for SHA384 so we have to hard code those...
     assert(x >= 0);
     constexpr double small = 9*std::numeric_limits<double>::epsilon();
@@ -154,10 +169,11 @@ sha384& sha384::update_impl(const uint8_t* const begin, size_t size) noexcept {
         assert(datalen < m_data.size());
         m_data[datalen] = begin[i];
         ++datalen;
-        if (datalen == 128) {  // SHA-384 operates on 128-byte (1024-bit) blocks
+        if (datalen == 128) {
             sha384_transform(state, m_data);
-            bitlen += 1024;  // Each block processed adds 1024 bits to the bit length
+            bitlen += 1024;
             datalen = 0;
+            std::fill(m_data.begin(), m_data.end(),0);
         }
     }
     return *this;
@@ -211,41 +227,43 @@ sha256::sha256() noexcept  : datalen(0),  bitlen(0), m_data(), done(false) {
     state = state0;
 }
 
-ustring sha384::hash() && {
+ustring sha384::hash() const {
+    auto o_data = m_data;
+    auto o_state = state;
+    auto o_bitlen = bitlen;
+
     assert(!done);
     ustring hash;
-    hash.resize(48); // SHA-384 produces a 48-byte hash
+    hash.resize(48);
 
     size_t dlen = datalen;
     assert(dlen < m_data.size());
-    m_data[dlen] = 0x80;
+    o_data[dlen] = 0x80;
     ++dlen;
-    if (dlen > 112) {
-        while (dlen < 128) {
-            m_data[dlen++] = 0x00;
-        }
-        sha384_transform(state, m_data);
-        dlen = 0;
-    }
     while (dlen < 112) {
-        m_data[dlen++] = 0x00;
+        assert(dlen < o_data.size());
+        o_data[dlen] = 0x00;
+        ++dlen;
     }
-    bitlen += datalen * 8ull;
-    for (size_t i = 0; i < 16; ++i) {
-        m_data[127 - i] = (bitlen >> (8 * i)) & 0xFF;
+    if (datalen >= 112) {
+        sha384_transform(o_state, o_data);
+        std::fill(o_data.begin(),o_data.end(),0);
     }
-    sha384_transform(state, m_data);
+    o_bitlen += datalen * CHAR_BIT;
+    for (size_t i = 0; i < sizeof(o_bitlen); ++i) {
+        o_data[127 - i] = o_bitlen >> (CHAR_BIT * i);
+    }
+    sha384_transform(o_state, o_data);
 
-    for (size_t i = 0; i < 6; ++i) { // SHA-384 produces a 48-byte hash from 6 state elements
-        for (size_t j = 0; j < 8; ++j) {
-            hash[i * 8 + j] = (state[i] >> (56 - j * 8)) & 0xff;
+    for (size_t i = 0; i < CHAR_BIT; ++i) {
+        for (size_t j = 0; j < 6; ++j) {
+            hash[i + j*sizeof(o_state[0])] = (o_state[j] >> (56 - i * CHAR_BIT)) & 0xff;
         }
     }
-    done = true;
     return hash;
 }
 
- 
+
 void sha256_transform(std::array<uint32_t,8>& state, const std::array<uint8_t,64> data) noexcept {
     static constexpr std::array<uint32_t,64> k = [](){
         int idx = 0;
@@ -267,7 +285,7 @@ void sha256_transform(std::array<uint32_t,8>& state, const std::array<uint8_t,64
     }();
     std::array<uint32_t, 64> m {};
     for (int i = 0, j = 0; i < 16; ++i, j += 4) {
-        m[i] = (data[j] << 24) | (data[j + 1] << 16) | (data[j + 2] << 8) | (data[j + 3]);
+        m[i] = (uint32_t(data[j]) << 24) | (uint32_t(data[j + 1]) << 16) | (uint32_t(data[j + 2]) << 8) | (uint32_t(data[j + 3]));
     }
     for (int i = 16 ; i < 64; ++i) {
         m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
@@ -303,39 +321,42 @@ sha256& sha256::update_impl(const uint8_t* const begin, size_t size) noexcept {
 }
 
 
-ustring sha256::hash() && {
+ustring sha256::hash() const{
     // todo: complex logic, should add comments and better name variables
+
+    auto o_data = m_data;
+    auto o_state = state;
+    auto o_bitlen = bitlen;
     assert(!done);
     ustring hash;
     hash.resize(32);
     size_t dlen = datalen;
-    assert(dlen < m_data.size());
-    m_data[dlen] = 0x80;
+    assert(dlen < o_data.size());
+    o_data[dlen] = 0x80;
     ++dlen;
     while (dlen < 56) {
-        assert(dlen < m_data.size());
-        m_data[dlen] = 0x00;
+        assert(dlen < o_data.size());
+        o_data[dlen] = 0x00;
         ++dlen;
     }
     if (datalen >= 56) {
-        sha256_transform(state, m_data);
-        static_assert(decltype(m_data)().size() == 64, "bad context");
-        std::fill_n(m_data.begin(),56,0);
+        sha256_transform(o_state, o_data);
+        static_assert(decltype(o_data)().size() == 64, "bad context");
+        std::fill_n(o_data.begin(),56,0);
     }
-    bitlen += datalen * sizeof(bitlen);
-    for(size_t i = 0; i < sizeof(bitlen); i++) {
+    o_bitlen += datalen * sizeof(o_bitlen);
+    for(size_t i = 0; i < sizeof(o_bitlen); i++) {
         assert(i <= 63);
-        m_data[63-i] = bitlen >> (CHAR_BIT * i);
+        o_data[63-i] = o_bitlen >> (CHAR_BIT * i);
     }
-    sha256_transform(state, m_data);
-    for (size_t i = 0; i < sizeof(state[0]); ++i) {
+    sha256_transform(o_state, o_data);
+    for (size_t i = 0; i < sizeof(o_state[0]); ++i) {
         for(size_t j = 0; j < CHAR_BIT; j++) {
-            assert(i + j*sizeof(state[0]) < hash.size());
+            assert(i + j*sizeof(o_state[0]) < hash.size());
             assert(24 >= i * CHAR_BIT);
-            hash[i + j*sizeof(state[0])] = (state[j] >> (24 - i * CHAR_BIT)) & 0xff;
+            hash[i + j*sizeof(o_state[0])] = (o_state[j] >> (24 - i * CHAR_BIT)) & 0xff;
         }
     }
-    done = true;
     return hash;
 }
 
@@ -414,19 +435,22 @@ sha1& sha1::update_impl(const uint8_t* const data, size_t size) noexcept {
 }
 
 
-ustring sha1::hash() && {
+ustring sha1::hash() const {
     assert(!done);
-    m_data[datalen%block_size] = 0x80;
+    auto o_data = m_data;
+    auto o_state = m_state;
+
+    o_data[datalen%block_size] = 0x80;
     
     if(datalen%block_size >= 56) {
-        sha1_transform(m_state,m_data);
+        sha1_transform(o_state,o_data);
     }
-    checked_bigend_write(datalen * 8, m_data, 56, 8);
-    sha1_transform(m_state, m_data);
+    checked_bigend_write(datalen * 8, o_data, 56, 8);
+    sha1_transform(o_state, o_data);
     ustring hash;
     hash.resize(20);
     for(int i = 0; i < 5; i ++) {
-        checked_bigend_write(m_state[i], hash, i*4, 4);
+        checked_bigend_write(o_state[i], hash, i*4, 4);
     }
     return hash;
 }
@@ -451,10 +475,9 @@ size_t hmac::get_hash_size() const noexcept {
     return m_hasher->get_block_size();
 }
 
-ustring hmac::hash() && {
+ustring hmac::hash() const {
     std::vector<uint8_t> opadkey;
     opadkey.resize(m_factory->get_block_size());
-    assert(opadkey.size() == 64);
     std::transform(KeyPrime.cbegin(), KeyPrime.cend(), opadkey.begin(), [](uint8_t c){return c ^ 0x5c;});
     auto hsh = m_hasher->hash();
     assert(!hsh.empty());
@@ -502,10 +525,10 @@ hmac::hmac(const hash_base& hasher, const uint8_t* key, size_t key_len) {
     } else {
         std::copy_n(key, key_len, KeyPrime.begin());
     }
-    assert(KeyPrime.size() == 64);
+    assert(KeyPrime.size() == hasher.get_block_size());
     ustring ipadkey;
     ipadkey.resize(m_factory->get_block_size());
-    assert(ipadkey.size() == 64);
+    assert(ipadkey.size() == hasher.get_block_size());
     std::transform(KeyPrime.cbegin(), KeyPrime.cend(), ipadkey.begin(), [](uint8_t c){return c ^ 0x36;});
     m_hasher->update(ipadkey);
 }

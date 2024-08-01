@@ -156,10 +156,10 @@ affine_point256 point_double(const affine_point256& P) noexcept;
 // finds point R, on the line through P and Q
 // The y coordinate is inferred from the base point.
 affine_point256 point_add(const affine_point256& P, const affine_point256& Q) noexcept {
-    if (P.ycoord == secp256r1_p) {
+    if(P.ycoord == secp256r1_p) [[unlikely]] { // unreachable in practice therefore CT
         return Q;
     }
-    if (Q.ycoord == secp256r1_p) {
+    if(Q.ycoord == secp256r1_p) [[unlikely]]  { // unreachable in practice therefore CT
         return P;
     }
 
@@ -172,13 +172,9 @@ affine_point256 point_add(const affine_point256& P, const affine_point256& Q) no
     auto S1 = REDC(P.ycoord * Z23);
     auto Z13 = REDC(P.zcoord * Z1Z1);
     auto S2 = REDC(Q.ycoord * Z13);
-    if (U1 == U2) {
-        if (S1 != S2) {
-            // pathological and untested
-            // I'll cross this bridge if I get to it
-            // but I believe this is unreachable because
-            // the server chooses what is signed
-            std::cerr << "Point at infinity" << std::endl;
+    if(U1 == U2) [[unlikely]] {
+        if(S1 != S2) {
+            std::cerr << "Point at infinity" << std::endl; // unreachable in practice therefore CT
             return POINT_AT_INFINITY;
         } else {
             return point_double(P);
@@ -209,7 +205,7 @@ affine_point256 point_add(const affine_point256& P, const affine_point256& Q) no
 affine_point256 point_double(const affine_point256& P) noexcept {
     assert(P.ycoord <= secp256r1_p);
     
-    if (P.ycoord == "0x0"_xl or P.ycoord == secp256r1_p) {
+    if(P.ycoord == "0x0"_xl or P.ycoord == secp256r1_p) [[unlikely]] {
         std::cerr << "PD Point at Infinity" << std::endl;
         return POINT_AT_INFINITY;
     }
@@ -256,14 +252,15 @@ affine_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_co
     
     for(int i = 0; i < 256; i ++) {
         auto b = "0x1"_xl << i;
-        if ((b & secret) != "0x0"_xl) {
-
-            if(init == 0) {
-                init = 1;
-                out = P;
-            } else {
-                out = point_add(P, out);
-            }
+        if((b & secret) != "0x0"_xl) { // todo: CT
+            ct_u256 mask;
+            mask.v[0] = (init == 0);
+            mask -= "0x1"_xl;
+            auto sum = point_add(P, out);
+            out.xcoord = (P.xcoord & ~mask) | (sum.xcoord & mask);
+            out.ycoord = (P.ycoord & ~mask) | (sum.ycoord & mask);
+            out.zcoord = (P.zcoord & ~mask) | (sum.zcoord & mask);
+            init |= 1;
         }
         P = point_double(P);
     }
@@ -271,6 +268,9 @@ affine_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_co
 }
 
 std::pair<ct_u256,ct_u256> project(affine_point256 P) noexcept {
+    if(P.xcoord == POINT_AT_INFINITY.xcoord) [[unlikely]] { 
+        return { "0x0"_xl, "0x0"_xl };
+    }
     auto zz = REDC(P.zcoord * P.zcoord);
     auto zzz = REDC(P.zcoord * zz);
     ct_u256 invzz = modular_inverse(REDC(ct_u512(zz)));
@@ -329,18 +329,17 @@ bool verify_signature(const ct_u256& h,
 
 
 ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const ct_u256& private_key) {
-    if (k_random == "0x0"_xl or k_random >= secp256r1_q) {
+    if(k_random == "0x0"_xl or k_random >= secp256r1_q) [[unlikely]] {
         throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     
     auto [x, y] = point_multiply(k_random, secp256r1_gx, secp256r1_gy);
-    
-    if(x >= secp256r1_q) {
+    if(x >= secp256r1_q) [[unlikely]] {
         x -= secp256r1_q;
     }
     
     auto r = x;
-    if (r == "0x0"_xl) {
+    if(r == "0x0"_xl) [[unlikely]] {
         throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     
@@ -354,7 +353,7 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
     const auto sMonty = REDCQ(vvv*drpMonty);
     const auto s = REDCQ(ct_u512(sMonty));
     
-    if (s == "0x0"_xl) {
+    if(s == "0x0"_xl) [[unlikely]] {
         throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 

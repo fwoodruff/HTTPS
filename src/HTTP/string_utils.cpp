@@ -233,6 +233,11 @@ bool is_tld(std::string domain) {
 }
 
 std::string parse_domain(std::string hostname) {
+    auto port_host = split(hostname, ":");
+    if(port_host.empty() or port_host.size() > 2) {
+        return {};
+    }
+    hostname = port_host.front();
     std::transform(hostname.begin(), hostname.end(), hostname.begin(), asciitolower);
     if(hostname == "localhost" or hostname == "test" or hostname == "invalid") {
         return hostname;

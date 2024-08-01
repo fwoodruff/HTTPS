@@ -113,8 +113,8 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
 task<void> async_main(fbw::tcplistener https_listener, std::string https_port, fbw::tcplistener http_listener, std::string http_port) {
     try {
         fbw::MIMEmap = fbw::MIMES(fbw::option_singleton().mime_folder);
-        static_cast<void>(fbw::privkey_from_file(fbw::option_singleton().key_file));
-        static_cast<void>(fbw::der_cert_from_file(fbw::option_singleton().certificate_file));
+        static_cast<void>(fbw::der_cert_for_domain(fbw::option_singleton().default_subfolder));
+        static_cast<void>(fbw::privkey_for_domain(fbw::option_singleton().default_subfolder));
         fbw::parse_tlds(fbw::option_singleton().tld_file);
 
         std::stringstream ss;

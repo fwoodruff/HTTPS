@@ -4,5 +4,7 @@ DOMAIN_NAMES=freddiewoodruff.co.uk, www.freddiewoodruff.co.uk
 CERTIFICATE_FILE=/etc/letsencrypt/live/freddiewoodruff.co.uk/fullchain.pem
 KEY_FILE=/etc/letsencrypt/live/freddiewoodruff.co.uk/privkey.pem
 WEBPAGE_FOLDER=resources/webpages
+DEFAULT_SUBFOLDER=freddiewoodruff.co.uk
 MIME_FOLDER=resources/MIME
+TLD_FILE=resources/tld.txt
 HTTP_STRICT_TRANSPORT_SECURITY=true

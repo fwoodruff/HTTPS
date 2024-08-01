@@ -170,7 +170,7 @@ tls_record key_schedule::server_certificate_record(bool use_tls13) {
     if(use_tls13) {
         certificate_record.write1(0);
     }
-    certificates_serial(certificate_record);
+    certificates_serial(certificate_record, m_SNI);
     if(use_tls13) {
         certificate_record.write({0, 0});
     }
@@ -184,7 +184,7 @@ tls_record key_schedule::server_certificate_record(bool use_tls13) {
     record.write1(HandshakeType::server_key_exchange);
     record.push_der(3);
  
-    auto certificate_private = privkey_from_file(option_singleton().key_file);
+    auto certificate_private = privkey_for_domain(m_SNI);
 
     auto hash_verify_context = handshake_hasher->hash();
     std::array<uint8_t, 32> signature_digest;
@@ -255,7 +255,7 @@ tls_record key_schedule::server_key_exchange_record() {
     std::array<uint8_t, 32> signature_digest;
     std::copy(signature_digest_vec.cbegin(), signature_digest_vec.cend(), signature_digest.begin());
     
-    auto certificate_private = privkey_from_file(option_singleton().key_file);
+    auto certificate_private = privkey_for_domain(m_SNI);
 
     // Signature
     std::array<uint8_t, 32> csrn;

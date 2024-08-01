@@ -63,11 +63,10 @@ constexpr ct_u256 REDCQ(ct_u512 T) noexcept {
     ct_u512 t = ct_u512((ct_u768(T) + ct_u768(m*secp256r1_q))>>256);
     ct_u256 pri = secp256r1_q;
     const auto prime = ct_u512(pri);
-    if(t >= prime) {
-        return ct_u256(t - prime);
-    } else {
-        return ct_u256(t);
-    }
+    const auto diff = t - prime;
+    auto mask = -(diff >> (sizeof(diff) * CHAR_BIT - 1)); // todo: don't use full 512 bit width, also slightly silly
+    auto res = (diff & ~mask) | (t & mask);
+    return ct_u256(res);
 }
 
 
@@ -87,11 +86,10 @@ ct_u256 add_mod(ct_u256 x, ct_u256 y , ct_u256 mod) noexcept {
 ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
     assert(x < mod);
     assert(y < mod);
-    if(x > y) {
-        return x - y;
-    } else {
-        return (mod - y) + x;
-    }
+    ct_u256 mask{};
+    mask.v[0] = x > y;
+    mask -= "0x1"_xl;
+    return ((x - y) & ~mask) | (((mod - y) + x) & mask);
 }
 
 // computes a' such that a * a' = 1 mod P
@@ -105,11 +103,8 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) noexcept {
         }
         auto reduced = REDC(ladder*ladder);
         auto next = REDC(aR*reduced);
-        if((prime_shift&"0x1"_xl) != "0x0"_xl) {
-            ladder = next;
-        } else {
-            ladder = reduced;
-        }
+        auto mask = (prime_shift&"0x1"_xl) - "0x1"_xl;
+        ladder = (next & ~mask) | (reduced & mask);
     }
     return REDC(ct_u512(ladder));
 }
@@ -125,11 +120,12 @@ constexpr ct_u256 invQ(const ct_u256& a) noexcept {
         auto thh = th * th;
         auto t = thh % secp256r1_q;
         auto y = t * a;
-        if((es & "0x1"_xl) != "0x0"_xl) {
-            th = y % secp256r1_q;
-        } else {
-            th = thh % secp256r1_q;
-        }
+        bool cond = es.v[0] != 0;
+        ct_u512 mask{};
+        mask.v[0] = cond;
+        mask -= "0x1"_xll;
+        auto oth = (y & mask) | (thh & ~mask);
+        th = oth % secp256r1_q;
     }
     return th;
 }
@@ -143,11 +139,11 @@ constexpr ct_u256 MontyinvQ(const ct_u256& a) noexcept {
         }
         auto t = REDCQ(th * th);
         auto y = REDCQ(t * a);
-        if((es & "0x1"_xl) != "0x0"_xl) {
-            th = y;
-        } else {
-            th = t;
-        }
+        bool cond = (es.v[0] & 1) != 0;
+        ct_u256 mask{};
+        mask.v[0] = cond;
+        mask -= "0x1"_xl;
+        th = (y & ~mask) | (t & mask);
     }
     return th;
 }

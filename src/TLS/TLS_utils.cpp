@@ -35,11 +35,11 @@ std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension) {
     return {};
 }
 
-void certificates_serial(tls_record& record) {
+void certificates_serial(tls_record& record, std::string domain) {
     record.push_der(3);
     std::vector<ustring> certs;
     try {
-        certs = der_cert_from_file(option_singleton().certificate_file);
+        certs = der_cert_for_domain(domain);
     } catch(std::exception& e) {
         std::cerr << e.what() << std::endl;
         throw e;

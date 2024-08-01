@@ -29,7 +29,7 @@
 namespace fbw {
 
 [[nodiscard]] std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension);
-void certificates_serial(tls_record& record);
+void certificates_serial(tls_record& record, std::string domain);
 bool is_tls13_supported(std::span<const uint8_t> extension);
 std::string check_SNI(std::span<const uint8_t> servernames);
 std::optional<tls_record> try_extract_record(ustring& input);

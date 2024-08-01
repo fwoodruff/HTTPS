@@ -28,7 +28,7 @@ public:
     std::unique_ptr<hash_base> clone() const override;
     sha256& update_impl(const uint8_t* begin, size_t size) noexcept override;
     
-    ustring hash() && override; // todo: rvalue ref is a bit clumsy, generating a hash shouldn't mangle the context
+    ustring hash() const override;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;
 private:
@@ -48,7 +48,7 @@ public:
     std::unique_ptr<hash_base> clone() const override;
     sha384& update_impl(const uint8_t* begin, size_t size) noexcept override;
     
-    ustring hash() && override;
+    ustring hash() const override;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;
 private:
@@ -68,7 +68,7 @@ public:
     std::unique_ptr<hash_base> clone() const override;
     sha1& update_impl(const uint8_t* begin, size_t size) noexcept override;
     
-    ustring hash() && override;
+    ustring hash() const override;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;
 
@@ -91,7 +91,7 @@ public:
     template<typename T> hmac(const hash_base& hasher, const T& key);
     std::unique_ptr<hash_base> clone() const override;
     hmac& update_impl(const uint8_t* key, size_t key_len) noexcept override;
-    [[nodiscard]] ustring hash() && override;
+    [[nodiscard]] ustring hash() const override;
     using hash_base::hash;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;

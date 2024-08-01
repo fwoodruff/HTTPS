@@ -76,7 +76,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);
-                if(conn == std::nullopt) {
+                if(conn == std::nullopt) [[unlikely]] {
                     continue;
                 }
 
@@ -98,7 +98,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);
-                if(conn == std::nullopt) {
+                if(conn == std::nullopt) [[unlikely]] {
                     continue;
                 }
                 auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));

@@ -88,7 +88,7 @@ void key_schedule::client_hello_record(tls_record record, bool& can_heartbeat) {
                 {
                     ustring peer_may_send {0x00, 0x01, 0x00};
                     ustring peer_no_send { 0x00, 0x01, 0x02};
-                    if(extension.size() == 3) {
+                    if(extension.size() == 3) [[likely]] {
                         if(std::equal(extension.begin(), extension.end(), peer_may_send.begin()) or
                             std::equal(extension.begin(), extension.end(), peer_no_send.begin())) {
                                 can_heartbeat = true;
@@ -314,10 +314,10 @@ std::optional<tls_record> try_extract_record(ustring& input) {
     tls_record out(static_cast<ContentType>(input[0]), input[1], input[2] );
 
     size_t record_size = try_bigend_read(input, 3, 2);
-    if(record_size > TLS_RECORD_SIZE + TLS_EXPANSION_MAX) {
+    if(record_size > TLS_RECORD_SIZE + TLS_EXPANSION_MAX) [[unlikely]] {
         throw ssl_error("record header size too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }
-    if(input.size() < record_size + TLS_HEADER_SIZE) {
+    if(input.size() < record_size + TLS_HEADER_SIZE) [[unlikely]] {
         return std::nullopt;
     }
     out.m_contents = input.substr(TLS_HEADER_SIZE, record_size);
@@ -384,11 +384,11 @@ ustring key_schedule::client_key_exchange_receipt(tls_record record) {
     
     const size_t len = try_bigend_read(key_exchange, 1, 3);
     const size_t keylen = try_bigend_read(key_exchange, 4, 1);
-    if(len + 4 != key_exchange.size() or len != keylen + 1) {
+    if(len + 4 != key_exchange.size() or len != keylen + 1) [[unlikely]] {
         throw ssl_error("bad key exchange", AlertLevel::fatal, AlertDescription::decode_error);
     }
     
-    if(key_exchange.size() < 37) {
+    if(key_exchange.size() < 37) [[unlikely]] {
         throw ssl_error("bad public key", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     std::copy(&key_exchange[5], &key_exchange[37], client_public_key.begin());
@@ -421,7 +421,7 @@ std::pair<ustring, ustring> key_schedule::tls13_key_calc() const {
 unsigned short key_schedule::cipher_choice(const std::span<const uint8_t>& s) {
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);
-        if(x == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) {
+        if(x == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) [[unlikely]] {
             return x;
         }
     }
@@ -466,7 +466,7 @@ unsigned short key_schedule::cipher_choice(const std::span<const uint8_t>& s) {
 void key_schedule::client_handshake_finished12_record(tls_record record) {
     
     static_cast<void>(record.m_contents.at(0));
-    if(record.m_contents[0] != static_cast<uint8_t>(HandshakeType::finished)) {
+    if(record.m_contents[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     
@@ -479,7 +479,7 @@ void key_schedule::client_handshake_finished12_record(tls_record record) {
     auto handshake_hash = handshake_hasher->hash();
     ustring expected_finished = prf(*hash_ctor, master_secret, "client finished", handshake_hash, 12);
 
-    if(expected_finished != finish) {
+    if(expected_finished != finish) [[unlikely]] {
         throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     handshake_hasher->update(record.m_contents);

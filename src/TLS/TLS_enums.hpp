@@ -276,13 +276,13 @@ public:
 
     // record items with variable length include a header and are sometimes nested
     // append data and then figure out the header size
-    inline void push_der(ssize_t bytes) {
+    inline void start_size_header(ssize_t bytes) {
         heads.push_back({static_cast<ssize_t>(m_contents.size()), bytes});
         auto size = ustring(bytes, 0);
         m_contents.append(size);
     }
 
-    inline void pop_der() {
+    inline void end_size_header() {
         auto [idx_start, num_bytes] = heads.back();
         heads.pop_back();
         checked_bigend_write(m_contents.size() - idx_start - num_bytes, m_contents, idx_start, num_bytes);

@@ -95,7 +95,7 @@ public:
         std::reverse(out.begin(),out.end()); // to bigendian
         return out;
     }
-    constexpr std::array<unsigned char, INTBYTES> serialise_le() const noexcept { // bigendian
+    constexpr std::array<unsigned char, INTBYTES> serialise_le() const noexcept {
         std::array<unsigned char,INTBYTES> out {0};
         constexpr int sr = sizeof(radix);
         for(size_t i = 0; i < v.size(); i++) {

@@ -52,10 +52,9 @@ public:
     [[nodiscard]] tls_record server_certificate_record(bool use_tls13);
     [[nodiscard]] tls_record server_key_exchange_record();
     [[nodiscard]] tls_record server_hello_record(bool use_tls13, bool can_heartbeat);
-    [[nodiscard]] tls_record server_certificate_verify_record() const;
-    static tls_record server_encrypted_extensions_record();
+    [[nodiscard]] tls_record server_certificate_verify_record();
+    tls_record server_encrypted_extensions_record();
     tls_record server_hello_done_record();
-    
     
 
     std::pair<ustring, ustring> tls13_key_calc() const;

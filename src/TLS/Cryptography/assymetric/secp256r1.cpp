@@ -360,7 +360,7 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
 }
 
 
-
+// todo: use span
 ustring DER_ECDSA(
                      std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,

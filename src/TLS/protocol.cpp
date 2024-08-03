@@ -275,8 +275,8 @@ task<stream_result> TLS::server_hello_request() {
     if(m_expected_record == HandshakeStage::client_hello) { // no handshake renegotiations after renegotiation indicator sent
         tls_record hello_request{ContentType::Handshake};
         hello_request.write1(HandshakeType::hello_request);
-        hello_request.push_der(3);
-        hello_request.pop_der();
+        hello_request.start_size_header(3);
+        hello_request.end_size_header();
         co_return co_await write_record(hello_request, option_singleton().handshake_timeout);
     }
     co_return stream_result::closed;
@@ -325,7 +325,7 @@ task<stream_result> TLS::client_handshake_record(key_schedule& handshake, tls_re
                         co_return result;
                     }
                 }
-                if(auto result = co_await server_encrypted_extensions(); result != stream_result::ok) {
+                if(auto result = co_await server_encrypted_extensions(handshake); result != stream_result::ok) {
                     co_return result;
                 }
                 if(auto result = co_await server_certificate(handshake); result != stream_result::ok) {
@@ -396,6 +396,13 @@ task<stream_result> TLS::server_hello(key_schedule& handshake) {
         m_expected_record = HandshakeStage::server_certificate;
     }
     co_return result;
+}
+
+task<stream_result> TLS::server_encrypted_extensions(key_schedule& handshake) {
+    assert(m_expected_record == HandshakeStage::server_encrypted_extensions);
+    tls_record out = handshake.server_encrypted_extensions_record();
+    m_expected_record = HandshakeStage::server_certificate;
+    co_return co_await write_record(out, option_singleton().handshake_timeout);
 }
 
 task<stream_result> TLS::server_certificate(key_schedule& handshake) {
@@ -491,7 +498,7 @@ task<stream_result> TLS::server_handshake_finished12(const key_schedule& handsha
 
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::finished);
-    out.push_der(3);
+    out.start_size_header(3);
     
     assert(handshake.handshake_hasher);
     auto handshake_hash = handshake.handshake_hasher->hash();
@@ -500,16 +507,9 @@ task<stream_result> TLS::server_handshake_finished12(const key_schedule& handsha
     ustring server_finished = prf(*handshake.hash_ctor, handshake.master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
-    out.pop_der();
+    out.end_size_header();
     
     m_expected_record = HandshakeStage::application_data;
-    co_return co_await write_record(out, option_singleton().handshake_timeout);
-}
-
-task<stream_result> TLS::server_encrypted_extensions() {
-    assert(m_expected_record == HandshakeStage::server_encrypted_extensions);
-    tls_record out = key_schedule::server_encrypted_extensions_record();
-    m_expected_record = HandshakeStage::server_certificate;
     co_return co_await write_record(out, option_singleton().handshake_timeout);
 }
 

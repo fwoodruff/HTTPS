@@ -35,7 +35,7 @@ std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension) {
 }
 
 void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
-    record.push_der(3);
+    record.start_size_header(3);
     std::vector<ustring> certs;
     try {
         certs = der_cert_for_domain(domain);
@@ -44,15 +44,15 @@ void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
         throw e;
     }
     for (const auto& cert : certs) {
-        record.push_der(3);
+        record.start_size_header(3);
         record.write(cert);
+        record.end_size_header();
         if(tls_13) { // certificate extensions
-            record.push_der(2);
-            record.pop_der();
+            record.start_size_header(2);
+            record.end_size_header();
         }
-        record.pop_der();
     }
-    record.pop_der();
+    record.end_size_header();
 }
 
 

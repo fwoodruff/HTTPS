@@ -126,7 +126,7 @@ tls_record key_schedule::server_hello_record(bool use_tls13, bool can_heartbeat 
     randomgen.randgen(m_server_random);
 
     hello_record.write1(HandshakeType::server_hello);
-    hello_record.push_der(3);
+    hello_record.start_size_header(3);
     hello_record.write({3, 3});
 
     hello_record.write(m_server_random);
@@ -144,7 +144,7 @@ tls_record key_schedule::server_hello_record(bool use_tls13, bool can_heartbeat 
 
     hello_extensions(hello_record, use_tls13, can_heartbeat); // todo: store each of the extensions sent by the client in a map, and then only return those
 
-    hello_record.pop_der();
+    hello_record.end_size_header();
 
     assert(hello_record.m_contents.size() >= 4);
     assert(handshake_hasher != nullptr);
@@ -156,43 +156,57 @@ tls_record key_schedule::server_hello_record(bool use_tls13, bool can_heartbeat 
 tls_record key_schedule::server_encrypted_extensions_record() {
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::encrypted_extensions);
-    out.push_der(3);
-    out.push_der(2);
-    out.pop_der();
-    out.pop_der();
+    out.start_size_header(3);
+    out.start_size_header(2);
+    out.end_size_header();
+    out.end_size_header();
+    handshake_hasher->update(out.m_contents);
+    handshake_hasher->update(ustring{static_cast<uint8_t>(ContentType::Handshake)});
     return out;
 }
 
 tls_record key_schedule::server_certificate_record(bool use_tls13) {
     tls_record certificate_record(ContentType::Handshake);
     certificate_record.write1(HandshakeType::certificate);
-    certificate_record.push_der(3);
+    certificate_record.start_size_header(3);
     if(use_tls13) {
         certificate_record.write1(0);
     }
     certificates_serial(certificate_record, m_SNI, use_tls13);
-    certificate_record.pop_der();
+    certificate_record.end_size_header();
     handshake_hasher->update(certificate_record.m_contents);
+    if(use_tls13) {
+        handshake_hasher->update(ustring{static_cast<uint8_t>(ContentType::Handshake)});
+    }
     return certificate_record;
 }
 
-[[nodiscard]] tls_record key_schedule::server_certificate_verify_record() const {
-    tls_record record(ContentType::Handshake);
-    record.write1(HandshakeType::server_key_exchange);
-    record.push_der(3);
- 
+[[nodiscard]] tls_record key_schedule::server_certificate_verify_record() {
     auto certificate_private = privkey_for_domain(m_SNI);
-
     auto hash_verify_context = handshake_hasher->hash();
-    std::array<uint8_t, 32> signature_digest;
-    std::copy_n(hash_verify_context.begin(), signature_digest.size(), signature_digest.begin());
 
+    sha256 ctx;
+    ctx.update(ustring(64, 0x20));
+    ctx.update(to_unsigned("TLS 1.3, server CertificateVerify"));
+    ctx.update(ustring{0});
+    ctx.update(hash_verify_context);
+    auto hash_out = ctx.hash();
+
+    std::array<uint8_t, 32> signature_digest;
+    std::copy(hash_out.begin(), hash_out.end(), signature_digest.begin());
     std::array<uint8_t, 32> csrn;
     randomgen.randgen(csrn);
     ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
 
+    tls_record record(ContentType::Handshake);
+    record.write1(HandshakeType::certificate_verify);
+    record.start_size_header(3);
+    record.write2(SignatureScheme::ecdsa_secp256r1_sha256);
+    record.start_size_header(2);
     record.write(signature);
-    record.pop_der();
+    record.end_size_header();
+    record.end_size_header();
+    handshake_hasher->update(record.m_contents);
     return record;
 }
 
@@ -228,7 +242,7 @@ tls_record key_schedule::server_key_exchange_record() {
     // Handshake Header
     record.m_contents.reserve(116);
     record.write1(HandshakeType::server_key_exchange);
-    record.push_der(3);
+    record.start_size_header(3);
 
     // Curve Info
     std::array<uint8_t,3> curve_info({static_cast<uint8_t>(ECCurveType::named_curve), 0x00, 0x00});
@@ -259,16 +273,16 @@ tls_record key_schedule::server_key_exchange_record() {
     randomgen.randgen(csrn);
     ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
     ustring sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
-    static_cast<uint8_t>(SignatureAlgorithm::ecdsa), 0x00, 0x00});
-    
-    checked_bigend_write(signature.size(), sig_header, 2, 2);
+        static_cast<uint8_t>(SignatureAlgorithm::ecdsa)});
     
     record.write(signed_empheral_key);
     record.write(sig_header);
+    record.start_size_header(2);
     record.write(signature);
+    record.end_size_header();
 
     assert(record.m_contents.size() >= 4);
-    record.pop_der();
+    record.end_size_header();
 
     handshake_hasher->update(record.m_contents);
     return record;
@@ -277,8 +291,8 @@ tls_record key_schedule::server_key_exchange_record() {
 tls_record key_schedule::server_hello_done_record() {
     tls_record record(ContentType::Handshake);
     record.write1(HandshakeType::server_hello_done);
-    record.push_der(3);
-    record.pop_der();
+    record.start_size_header(3);
+    record.end_size_header();
     handshake_hasher->update(record.m_contents);
     return record;
 }
@@ -286,7 +300,7 @@ tls_record key_schedule::server_hello_done_record() {
 tls_record key_schedule::server_handshake_finished12_record() {
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::finished);
-    out.push_der(3);
+    out.start_size_header(3);
     
     assert(handshake_hasher);
     auto handshake_hash = handshake_hasher->hash();
@@ -295,7 +309,7 @@ tls_record key_schedule::server_handshake_finished12_record() {
     ustring server_finished = prf(*hash_ctor, master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
-    out.pop_der();
+    out.end_size_header();
     return out;
 }
 
@@ -323,53 +337,53 @@ std::optional<tls_record> try_extract_record(ustring& input) {
 }
 
 void key_schedule::hello_extensions(tls_record& record, bool use_tls13, bool can_heartbeat) {
-    record.push_der(2);
+    record.start_size_header(2);
 
     if(use_tls13) {
         // announces we will use TLS 1.3
         record.write2(ExtensionType::supported_versions);
-        record.push_der(2);
+        record.start_size_header(2);
         uint16_t tls_13_support = 0x0304;
         record.write2(tls_13_support);
-        record.pop_der();
+        record.end_size_header();
 
         // x25519 key share
         record.write2(ExtensionType::key_share);
-        record.push_der(2);
+        record.start_size_header(2);
         record.write2(NamedGroup::x25519);
-        record.push_der(2);
+        record.start_size_header(2);
         randomgen.randgen(server_private_key_ephem);
         std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
         record.write(pubkey_ephem);
-        record.pop_der();
-        record.pop_der();
+        record.end_size_header();
+        record.end_size_header();
     } else {
         // announces no support for vulnerable handshake renegotiation attacks
         const uint16_t handshake_reneg = 0xff01;
         record.write2(handshake_reneg);
-        record.push_der(2);
+        record.start_size_header(2);
         record.write1(0);
-        record.pop_der();
+        record.end_size_header();
 
         // announces application layer will use http/1.1
         ustring alpn_protocol_data { 0x00, 0x10 };
         record.write(alpn_protocol_data);
-        record.push_der(2);
-        record.push_der(2);
-        record.push_der(1);
+        record.start_size_header(2);
+        record.start_size_header(2);
+        record.start_size_header(1);
         record.write(to_unsigned("http/1.1"));
-        record.pop_der();
-        record.pop_der();
-        record.pop_der();
+        record.end_size_header();
+        record.end_size_header();
+        record.end_size_header();
     }
 
     if (can_heartbeat) {
         record.write2(ExtensionType::heartbeat);
-        record.push_der(2);
+        record.start_size_header(2);
         record.write1(0);
-        record.pop_der();
+        record.end_size_header();
     }
-    record.pop_der();
+    record.end_size_header();
 }
 
 
@@ -435,7 +449,7 @@ unsigned short key_schedule::cipher_choice(const std::span<const uint8_t>& s) {
         }
     }
     */
-    
+
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);
         if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256)) {

@@ -85,7 +85,7 @@ private:
     [[nodiscard]] task<stream_result> server_handshake_finished12(const key_schedule&);
     [[nodiscard]] task<stream_result> server_handshake_finished13(key_schedule&);
 
-    [[nodiscard]] task<stream_result> server_encrypted_extensions();
+    [[nodiscard]] task<stream_result> server_encrypted_extensions(key_schedule&);
 
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     

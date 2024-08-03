@@ -29,6 +29,8 @@ private:
     
     uint64_t seqno_server = 0;
     uint64_t seqno_client = 0;
+
+    bool tls_13_aad = false;
     
 public:
     ChaCha20_Poly1305() = default;

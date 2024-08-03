@@ -19,11 +19,10 @@ std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension) {
     extension = extension.subspan(2);
     while(!extension.empty()) { // todo: check max iterations for any while(true)
         auto key_type = extension.subspan(0, 2);
+        uint16_t group = try_bigend_read(key_type, 0, 2);
         size_t len = try_bigend_read(extension, 2, 2);
         auto key_value = extension.subspan(4, len);
-        ustring val{ 0x00, 0x1d };
-        // todo: NamedGroup::x25519
-        if(std::equal(key_type.begin(), key_type.end(), val.begin()) and key_value.size() == 32) {
+        if(group == static_cast<uint16_t>(NamedGroup::x25519) and key_value.size() == 32) {
             std::array<uint8_t, 32> out;
             std::copy(key_value.begin(), key_value.end(), out.begin());
             return out;
@@ -35,7 +34,7 @@ std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension) {
     return {};
 }
 
-void certificates_serial(tls_record& record, std::string domain) {
+void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
     record.push_der(3);
     std::vector<ustring> certs;
     try {
@@ -47,6 +46,10 @@ void certificates_serial(tls_record& record, std::string domain) {
     for (const auto& cert : certs) {
         record.push_der(3);
         record.write(cert);
+        if(tls_13) { // certificate extensions
+            record.push_der(2);
+            record.pop_der();
+        }
         record.pop_der();
     }
     record.pop_der();

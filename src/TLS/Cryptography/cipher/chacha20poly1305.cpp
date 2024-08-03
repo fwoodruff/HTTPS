@@ -278,6 +278,7 @@ void ChaCha20_Poly1305::set_key_material_13_handshake(ustring handshake_secret, 
 
     seqno_server = 0;
     seqno_client = 0;
+    tls_13_aad = true;
 }
 
 void ChaCha20_Poly1305::set_key_material_13_application(ustring master_secret, ustring application_context_hash) {
@@ -309,7 +310,7 @@ void ChaCha20_Poly1305::set_key_material_12(ustring material) {
     it += server_implicit_write_IV.size();
 }
 
-ustring make_additional(tls_record& record, std::array<uint8_t,8>& sequence_no, size_t tag_size) {
+ustring make_additional_12(tls_record& record, std::array<uint8_t,8>& sequence_no, size_t tag_size) {
     assert(record.m_contents.size() >= tag_size);
     uint16_t msglen = htons(record.m_contents.size() - tag_size);
     ustring additional_data;
@@ -320,11 +321,30 @@ ustring make_additional(tls_record& record, std::array<uint8_t,8>& sequence_no, 
     return additional_data;
 }
 
+ustring make_additional_13(const tls_record& record, bool record_is_plaintext) {
+    ustring additional_data { 0x17, 0x03, 0x03, 0, 0};
+    auto size = record.m_contents.size();
+    if(record_is_plaintext) {
+        size += 17;
+    }
+    checked_bigend_write(size, additional_data, 3, 2);
+    return additional_data;
+}
+
 tls_record ChaCha20_Poly1305::encrypt(tls_record record) noexcept {
     std::array<uint8_t,8> sequence_no;
     checked_bigend_write(seqno_server, sequence_no, 0, 8);
     seqno_server++;
-    ustring additional_data = make_additional(record, sequence_no, 0);
+    
+    ustring additional_data;
+    if(tls_13_aad) {
+        additional_data = make_additional_13(record, true);
+        record.m_contents.push_back(record.get_type());
+        record.m_type = static_cast<uint8_t>(ContentType::Application);
+    } else {
+        additional_data = make_additional_12(record, sequence_no, 0);
+    }
+    
     std::array<uint8_t, 12> nonce = server_implicit_write_IV;
     for(int i = 0; i < 8; i ++) {
         nonce[i+4] ^= sequence_no[i];
@@ -343,9 +363,13 @@ tls_record ChaCha20_Poly1305::decrypt(tls_record record) {
     std::array<uint8_t, 8> sequence_no {};
     checked_bigend_write(seqno_client, sequence_no, 0, 8);
     seqno_client++;
-
-    ustring additional_data = make_additional(record, sequence_no, 16);
-
+    
+    ustring additional_data;
+    if(tls_13_aad) {
+        additional_data = make_additional_13(record, false);
+    } else {
+        additional_data = make_additional_12(record, sequence_no, 16);
+    }
     ustring ciphertext;
     ciphertext.append(record.m_contents.begin(), record.m_contents.end()-16);
     
@@ -364,6 +388,11 @@ tls_record ChaCha20_Poly1305::decrypt(tls_record record) {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     record.m_contents = plaintext;
+
+    if(tls_13_aad) {
+        record.m_type = record.m_contents.back();
+        record.m_contents.pop_back();
+    }
 
     if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);

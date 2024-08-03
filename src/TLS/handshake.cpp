@@ -170,10 +170,7 @@ tls_record key_schedule::server_certificate_record(bool use_tls13) {
     if(use_tls13) {
         certificate_record.write1(0);
     }
-    certificates_serial(certificate_record, m_SNI);
-    if(use_tls13) {
-        certificate_record.write({0, 0});
-    }
+    certificates_serial(certificate_record, m_SNI, use_tls13);
     certificate_record.pop_der();
     handshake_hasher->update(certificate_record.m_contents);
     return certificate_record;
@@ -425,16 +422,20 @@ unsigned short key_schedule::cipher_choice(const std::span<const uint8_t>& s) {
             return x;
         }
     }
-    // for(size_t i = 0; i < s.size(); i += 2) {
-    //    uint16_t x = try_bigend_read(s, i, 2);
-    //    if(x == static_cast<uint16_t>(cipher_suites::TLS_CHACHA20_POLY1305_SHA256)) {
-    //        *p_use_tls13 = true;
-    //        *p_cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
-    //        hash_ctor = std::make_unique<sha256>();
-    //        handshake_hasher = hash_ctor->clone();
-    //        return x;
-    //    }
-    // }
+
+    /*
+    for(size_t i = 0; i < s.size(); i += 2) {
+        uint16_t x = try_bigend_read(s, i, 2);
+        if(x == static_cast<uint16_t>(cipher_suites::TLS_CHACHA20_POLY1305_SHA256)) {
+            *p_use_tls13 = true;
+            *p_cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
+            hash_ctor = std::make_unique<sha256>();
+            handshake_hasher = hash_ctor->clone();
+            return x;
+        }
+    }
+    */
+    
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);
         if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256)) {

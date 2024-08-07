@@ -13,7 +13,7 @@
 #include "Cryptography/one_way/hash_base.hpp"
 #include "Cryptography/cipher/block_chain.hpp"
 #include "../global.hpp"
-#include "Cryptography/one_way/secure_hash.hpp"
+#include "Cryptography/one_way/sha2.hpp"
 
 #include "TLS_enums.hpp"
 #include "../TCP/tcp_stream.hpp"

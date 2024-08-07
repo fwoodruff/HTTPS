@@ -11,6 +11,8 @@
 #include "../one_way/keccak.hpp"
 #include "../assymetric/bignum.hpp"
 
+#include "../one_way/sha2.hpp"
+
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <cstring>

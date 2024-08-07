@@ -359,6 +359,18 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
     return {r, s};
 }
 
+ustring raw_ECDSA(std::array<uint8_t,32> k_random,
+                     std::array<uint8_t,32> digest,
+                     std::array<uint8_t,32> private_key) {
+    auto signature = ECDSA_impl(std::move(k_random), std::move(digest), std::move(private_key));
+    auto r = signature.r.serialise();
+    auto s = signature.s.serialise();
+    ustring out;
+    out.append(r.begin(), r.end());
+    out.append(s.begin(), s.end());
+    return out;
+}
+
 
 // todo: use span
 ustring DER_ECDSA(

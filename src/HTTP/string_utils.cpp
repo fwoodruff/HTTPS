@@ -83,24 +83,6 @@ ustring extract(ustring& bytes, size_t nbytes) {
 }
 
 
-
-std::vector<std::string> split(const std::string& line, const std::string& delim) {
-    std::vector<std::string> out;
-    size_t start = 0;
-    size_t end = 0;
-    while ((end = line.find(delim, start)) != std::string::npos) {
-        if (start != end) {
-            out.push_back(line.substr(start, end - start));
-        }
-        start = end + delim.size(); 
-    }
-    if (start != line.size()) {
-        out.push_back(line.substr(start));
-    }
-    
-    return out;
-}
-
 std::string trim(std::string str) {
     auto start = str.find_first_not_of(" \t\r\n");
     auto end = str.find_last_not_of(" \t\r\n");

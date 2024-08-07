@@ -76,9 +76,9 @@ std::array<uint8_t,32> deserialise(ustring asn1) {
 }
 
 std::array<uint8_t,32> privkey_for_domain(std::string domain) {
-    auto privkey_file = option_singleton().key_folder / domain / option_singleton().key_file;
+    auto privkey_file = project_options.key_folder / domain / project_options.key_file;
     if(!std::filesystem::exists(privkey_file) or domain == "") {
-        privkey_file = option_singleton().key_folder / option_singleton().default_subfolder / option_singleton().key_file;
+        privkey_file = project_options.key_folder / project_options.default_subfolder / project_options.key_file;
     }
     return privkey_from_file(privkey_file);
 }
@@ -112,9 +112,9 @@ std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
 }
 
 std::vector<ustring> der_cert_for_domain(std::string domain) {
-    auto cert_file = option_singleton().key_folder / domain / option_singleton().certificate_file;
+    auto cert_file = project_options.key_folder / domain / project_options.certificate_file;
     if(!std::filesystem::exists(cert_file) or domain == "") {
-        cert_file = option_singleton().key_folder / option_singleton().default_subfolder / option_singleton().certificate_file;
+        cert_file = project_options.key_folder / project_options.default_subfolder / project_options.certificate_file;
     }
     return der_cert_from_file(cert_file);
 }

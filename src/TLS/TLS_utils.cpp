@@ -91,7 +91,7 @@ std::string check_SNI(std::span<const uint8_t> servernames) {
                     if(name_len != subdomain_name.size()) {
                         return "";
                     }
-                    auto domain_names = option_singleton().domain_names;
+                    auto domain_names = project_options.domain_names;
                     for(auto name : domain_names) {
                         if(name.size() == subdomain_name.size() and std::equal(name.begin(), name.end(), subdomain_name.begin())) {
                             return name;

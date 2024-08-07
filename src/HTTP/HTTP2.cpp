@@ -28,7 +28,7 @@ task<bool> HTTP2::handle_frame(h2frame frame) {
     while(true) {
         if(priority_queue.size() < 100) {
             bool should_block = priority_queue.empty();
-            auto res = co_await m_stream->read_append(buffer, should_block? option_singleton().keep_alive : 0ms);
+            auto res = co_await m_stream->read_append(buffer, should_block? project_options.keep_alive : 0ms);
             if(res != stream_result::ok) {
                 co_return;
             }

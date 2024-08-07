@@ -52,7 +52,8 @@ struct options {
     std::chrono::milliseconds handshake_timeout;
 };
 
-const options& option_singleton();
+extern options project_options;
+void init_options();
 
 template<typename T>
 [[nodiscard]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {
@@ -70,7 +71,7 @@ template<typename T>
 template<typename T>
 [[nodiscard]] inline std::span<const uint8_t> der_span_read(const T& container, size_t idx, size_t nbytes) {
     auto size = try_bigend_read(container, idx, nbytes );
-    if(container.size() <= idx + nbytes) {
+    if(container.size() < idx + nbytes) {
         throw std::out_of_range{"out of range"};
     }
     std::span<const uint8_t> a_view( container.begin() + idx + nbytes, size);
@@ -105,6 +106,8 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
 }
 
 void remove_whitespace(std::string& str);
+
+std::vector<std::string> split(const std::string& line, const std::string& delim);
 
 } // namespace fbw
 

@@ -8,7 +8,7 @@
 #include "protocol.hpp"
 
 #include "Cryptography/assymetric/x25519.hpp"
-#include "Cryptography/one_way/secure_hash.hpp"
+#include "Cryptography/one_way/sha2.hpp"
 #include "Cryptography/assymetric/secp256r1.hpp"
 #include "PEMextract.hpp"
 #include "TLS_enums.hpp"
@@ -155,7 +155,7 @@ task<stream_result> TLS::flush() {
             encrypt_send.pop_front();
             continue;
         }
-        auto res = co_await write_record(std::move(record), option_singleton().session_timeout);
+        auto res = co_await write_record(std::move(record), project_options.session_timeout);
         encrypt_send.pop_front();
         if (res != stream_result::ok) {
             co_return res;
@@ -168,7 +168,7 @@ task<void> TLS::close_notify() {
     try {
         co_await flush();
         co_await server_alert(AlertLevel::warning, AlertDescription::close_notify);
-        auto [record, result] = co_await try_read_record(option_singleton().error_timeout);
+        auto [record, result] = co_await try_read_record(project_options.error_timeout);
         if(result != stream_result::ok) {
             co_return;
         }
@@ -185,7 +185,7 @@ task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
     auto r = tls_record(ContentType::Alert);
     r.write1(level);
     r.write1(description);
-    co_await write_record(std::move(r), option_singleton().error_timeout);
+    co_await write_record(std::move(r), project_options.error_timeout);
 }
 
 task<std::string> TLS::perform_handshake() {
@@ -196,7 +196,7 @@ task<std::string> TLS::perform_handshake() {
         handshake.p_use_tls13 = &use_tls13;
         bool hello_request_sent = false;
         for(;;) {
-            auto [record, result] = co_await try_read_record(option_singleton().handshake_timeout);
+            auto [record, result] = co_await try_read_record(project_options.handshake_timeout);
             if(result == stream_result::read_timeout) {
                 if(!hello_request_sent) {
                     auto res = co_await server_hello_request();
@@ -211,6 +211,7 @@ task<std::string> TLS::perform_handshake() {
                 co_return "";
             }
             record = decrypt_record(record);
+            // todo: handshake record fragmentation and fusion
             switch ( static_cast<ContentType>(record.get_type()) ) {
                 case ContentType::Handshake:
                     if(co_await client_handshake_record(handshake, std::move(record)) != stream_result::ok) {
@@ -226,11 +227,11 @@ task<std::string> TLS::perform_handshake() {
                 [[unlikely]] case ContentType::Application:
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
                 case ContentType::Alert:
-                    co_await client_alert(std::move(record), option_singleton().handshake_timeout);
+                    co_await client_alert(std::move(record), project_options.handshake_timeout);
                     co_return "";
                 case ContentType::Heartbeat:
                     {
-                        auto res = co_await client_heartbeat(std::move(record), option_singleton().handshake_timeout);
+                        auto res = co_await client_heartbeat(std::move(record), project_options.handshake_timeout);
                         if(res != stream_result::ok) {
                             co_return "";
                         }
@@ -277,7 +278,7 @@ task<stream_result> TLS::server_hello_request() {
         hello_request.write1(HandshakeType::hello_request);
         hello_request.start_size_header(3);
         hello_request.end_size_header();
-        co_return co_await write_record(hello_request, option_singleton().handshake_timeout);
+        co_return co_await write_record(hello_request, project_options.handshake_timeout);
     }
     co_return stream_result::closed;
 }
@@ -385,7 +386,7 @@ void TLS::client_hello(key_schedule& handshake, tls_record record) {
 task<stream_result> TLS::server_hello(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_hello);
     auto hello_record = handshake.server_hello_record(use_tls13, can_heartbeat);
-    auto result = co_await write_record(hello_record, option_singleton().handshake_timeout);
+    auto result = co_await write_record(hello_record, project_options.handshake_timeout);
 
     if(use_tls13) {
         auto [handshake_secret, handshake_context] = handshake.tls13_key_calc();
@@ -402,7 +403,7 @@ task<stream_result> TLS::server_encrypted_extensions(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_encrypted_extensions);
     tls_record out = handshake.server_encrypted_extensions_record();
     m_expected_record = HandshakeStage::server_certificate;
-    co_return co_await write_record(out, option_singleton().handshake_timeout);
+    co_return co_await write_record(out, project_options.handshake_timeout);
 }
 
 task<stream_result> TLS::server_certificate(key_schedule& handshake) {
@@ -413,14 +414,14 @@ task<stream_result> TLS::server_certificate(key_schedule& handshake) {
     } else {
         m_expected_record = HandshakeStage::server_key_exchange;
     }
-    co_return co_await write_record(certificate_record, option_singleton().handshake_timeout);
+    co_return co_await write_record(certificate_record, project_options.handshake_timeout);
 }
 
 task<stream_result> TLS::server_certificate_verify(key_schedule& handshake) {
     assert(m_expected_record == HandshakeStage::server_certificate_verify);
     auto record = handshake.server_certificate_verify_record();
     m_expected_record = HandshakeStage::server_handshake_finished;
-    co_return co_await write_record(record, option_singleton().handshake_timeout);
+    co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
 task<stream_result> TLS::server_key_exchange(key_schedule& handshake) {
@@ -428,7 +429,7 @@ task<stream_result> TLS::server_key_exchange(key_schedule& handshake) {
     tls_record record = handshake.server_key_exchange_record();
     
     m_expected_record = HandshakeStage::server_hello_done;
-    co_return co_await write_record(record, option_singleton().handshake_timeout);
+    co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
 task<stream_result> TLS::server_hello_done(key_schedule& handshake) {
@@ -436,7 +437,7 @@ task<stream_result> TLS::server_hello_done(key_schedule& handshake) {
     auto record = handshake.server_hello_done_record();
     
     m_expected_record = HandshakeStage::client_key_exchange;
-    co_return co_await write_record(record, option_singleton().handshake_timeout);
+    co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
 void TLS::client_key_exchange(key_schedule& handshake, tls_record record) {
@@ -483,7 +484,7 @@ task<stream_result> TLS::server_change_cipher_spec() {
     
     tls_record record { ContentType::ChangeCipherSpec };
     record.write1(ChangeCipherSpec::change_cipher_spec);
-    auto res = co_await write_record(record, option_singleton().handshake_timeout);
+    auto res = co_await write_record(record, project_options.handshake_timeout);
     if(use_tls13) {
         m_expected_record = HandshakeStage::server_encrypted_extensions;
     } else {
@@ -510,7 +511,7 @@ task<stream_result> TLS::server_handshake_finished12(const key_schedule& handsha
     out.end_size_header();
     
     m_expected_record = HandshakeStage::application_data;
-    co_return co_await write_record(out, option_singleton().handshake_timeout);
+    co_return co_await write_record(out, project_options.handshake_timeout);
 }
 
 task<stream_result> TLS::server_handshake_finished13(key_schedule& handshake) {
@@ -552,7 +553,7 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
 task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optional<milliseconds> timeout) {
     auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
     if(heartblead) {
-        co_await m_client->write(to_unsigned("heartbleed?"), option_singleton().error_timeout);
+        co_await m_client->write(to_unsigned("heartbleed?"), project_options.error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
     co_return co_await write_record(heartbeat_record, timeout);

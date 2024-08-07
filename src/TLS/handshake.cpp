@@ -84,6 +84,17 @@ void key_schedule::client_hello_record(tls_record record, bool& can_heartbeat) {
             case 0x0000: // SNI
                 m_SNI = check_SNI(extension);
                 break;
+            case 0x000d:
+                {
+                    auto allowed_groups = extension.subspan(2);
+                    for(int i = 0; i < ssize_t(allowed_groups.size())-1; i += 2) {
+                        auto group = try_bigend_read(allowed_groups, i, 2);
+                        if(group == static_cast<uint16_t>(SignatureScheme::ecdsa_secp256r1_sha256)) {
+                            // todo: if found then can enable TLS 1.3, not before 
+                        }
+                    }
+                }
+                break;
             case 0x000f: // Heartbeat
                 {
                     ustring peer_may_send {0x00, 0x01, 0x00};
@@ -161,7 +172,6 @@ tls_record key_schedule::server_encrypted_extensions_record() {
     out.end_size_header();
     out.end_size_header();
     handshake_hasher->update(out.m_contents);
-    handshake_hasher->update(ustring{static_cast<uint8_t>(ContentType::Handshake)});
     return out;
 }
 
@@ -175,9 +185,6 @@ tls_record key_schedule::server_certificate_record(bool use_tls13) {
     certificates_serial(certificate_record, m_SNI, use_tls13);
     certificate_record.end_size_header();
     handshake_hasher->update(certificate_record.m_contents);
-    if(use_tls13) {
-        handshake_hasher->update(ustring{static_cast<uint8_t>(ContentType::Handshake)});
-    }
     return certificate_record;
 }
 
@@ -449,6 +456,7 @@ unsigned short key_schedule::cipher_choice(const std::span<const uint8_t>& s) {
         }
     }
     */
+    
 
     for(size_t i = 0; i < s.size(); i += 2) {
         uint16_t x = try_bigend_read(s, i, 2);

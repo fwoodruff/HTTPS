@@ -10,7 +10,7 @@
 #define key_derivation_hpp
 
 #include "../../global.hpp"
-#include "one_way/secure_hash.hpp"
+#include "one_way/hmac.hpp"
 
 #include <stdio.h>
 #include <array>

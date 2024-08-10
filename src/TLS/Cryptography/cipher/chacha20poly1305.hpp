@@ -36,8 +36,8 @@ public:
     ChaCha20_Poly1305() = default;
     
     void set_key_material_12(ustring material) override;
-    void set_key_material_13_handshake(ustring handshake_secret, ustring handshake_context_hash) override;
-    void set_key_material_13_application(ustring master_secret, ustring application_context_hash) override;
+    void set_key_material_13_handshake(const key_schedule& key_sche) override;
+    void set_key_material_13_application(const key_schedule& key_sche) override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };

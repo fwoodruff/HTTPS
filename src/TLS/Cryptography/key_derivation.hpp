@@ -20,6 +20,32 @@
 
 namespace fbw {
 
+struct key_schedule {
+
+    ustring early_secret;
+    ustring resumption_binder_key;
+    ustring external_binder_key;
+    ustring client_early_traffic_secret;
+    ustring early_exporter_master_secret;
+    ustring early_derived_secret;
+
+    ustring handshake_secret;
+    ustring client_handshake_traffic_secret;
+    ustring server_handshake_traffic_secret;
+    ustring handshake_derived_secret;
+
+    ustring master_secret;
+    ustring client_application_traffic_secret;
+    ustring server_application_traffic_secret;
+    ustring exporter_master_secret;
+    ustring resumption_master_secret;
+};
+
+void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, ustring psk, ustring client_hello_hash);
+void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, ustring ecdh, ustring server_hello_hash);
+void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, ustring server_finished_hash);
+void tls13_resumption_key_calc(const hash_base& base, key_schedule& key_sch, ustring client_finished_hash);
+
 template<typename T>
 ustring P_hash(const hash_base& hash_ctor, const T& secret, const ustring& seed, size_t len) {
     ustring result;

@@ -20,7 +20,6 @@
 #include <unordered_map>
 
 // todo:
-// secp256k1 and x25519, get the point at infinity behaviour right
 // implement TLS 1.3
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
 // Implement a map between HTTP 'host' header and webroot (with default)
@@ -30,7 +29,6 @@
 // implement HTTP/1.1 compression encodings
 // review unnecessary buffer copies, more subspan, less substr
 // HTTP codes should be a map code -> { title, blurb }
-// errors in server config should output to stderr
 // HTTP/2
 // use master key rather than expanded key material for TLS 1.2 handshakes
 // mostly lock-free runtime
@@ -39,7 +37,8 @@
 // more functions should take const& and return a value
 // GET request to /readiness should return 206 below brownout threshold, 429 above
 // options singleton, let's just use a global static
-// parse hello record into a struct.
+// deserialise hello record into a struct before further parsing
+// memory pool of common objects (records) - view calls to malloc
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

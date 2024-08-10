@@ -54,8 +54,6 @@ private:
     bool server_cipher_spec = false;
     bool client_cipher_spec = false;
 
-    ustring resumption_master_secret13;
-    ustring exporter_master_secret13;
 
     std::deque<tls_record> encrypt_send;
 
@@ -64,28 +62,28 @@ private:
     [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
     
-    [[nodiscard]] task<stream_result> client_handshake_record(key_schedule&, tls_record);
+    [[nodiscard]] task<stream_result> client_handshake_record(handshake_ctx&, tls_record);
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     
     
-    void client_hello(key_schedule& handshake, tls_record);
-    void client_key_exchange(key_schedule&, tls_record key_exchange);
-    void client_handshake_finished12(key_schedule& handshake, tls_record finish); 
-    void client_handshake_finished13(key_schedule& handshake, tls_record finish);
+    void client_hello(handshake_ctx& handshake, tls_record);
+    void client_key_exchange(handshake_ctx&, tls_record key_exchange);
+    void client_handshake_finished12(handshake_ctx& handshake, tls_record finish); 
+    void client_handshake_finished13(handshake_ctx& handshake, tls_record finish);
     
     [[nodiscard]] task<stream_result> server_hello_request();
     
-    [[nodiscard]] task<stream_result> server_hello(key_schedule&);
-    [[nodiscard]] task<stream_result> server_certificate(key_schedule&);
-    [[nodiscard]] task<stream_result> server_certificate_verify(key_schedule&);
+    [[nodiscard]] task<stream_result> server_hello(handshake_ctx&);
+    [[nodiscard]] task<stream_result> server_certificate(handshake_ctx&);
+    [[nodiscard]] task<stream_result> server_certificate_verify(handshake_ctx&);
 
-    [[nodiscard]] task<stream_result> server_key_exchange(key_schedule&);
-    [[nodiscard]] task<stream_result> server_hello_done(key_schedule&);
-    [[nodiscard]] task<stream_result> server_handshake_finished12(const key_schedule&);
-    [[nodiscard]] task<stream_result> server_handshake_finished13(key_schedule&);
+    [[nodiscard]] task<stream_result> server_key_exchange(handshake_ctx&);
+    [[nodiscard]] task<stream_result> server_hello_done(handshake_ctx&);
+    [[nodiscard]] task<stream_result> server_handshake_finished12(const handshake_ctx&);
+    [[nodiscard]] task<stream_result> server_handshake_finished13(handshake_ctx&);
 
-    [[nodiscard]] task<stream_result> server_encrypted_extensions(key_schedule&);
+    [[nodiscard]] task<stream_result> server_encrypted_extensions(handshake_ctx&);
 
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     

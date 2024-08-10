@@ -26,7 +26,8 @@
 #include <atomic>
 
 namespace fbw {
-class key_schedule {  
+
+class handshake_ctx {  
     unsigned short cipher {};
     std::array<uint8_t,32> client_public_key {};
 public:
@@ -37,8 +38,9 @@ public:
     std::unique_ptr<const hash_base> hash_ctor = nullptr;
     std::array<uint8_t,32> server_private_key_ephem {};
     
-    ustring master_secret {};
-    ustring server_handshake_hash {};
+    key_schedule key_sch;
+    ustring tls12_master_secret;
+
     std::string alpn;
     bool tls13_available = false;
 
@@ -57,17 +59,16 @@ public:
     tls_record server_hello_done_record();
     
 
-    std::pair<ustring, ustring> tls13_key_calc() const;
     void client_hello_record(tls_record record, bool& can_heartbeat);
     ustring client_key_exchange_receipt(tls_record record);
 
     bool is_middlebox_compatibility_mode();
 
     void client_handshake_finished12_record(tls_record record);
-    ustring client_handshake_finished13_record(tls_record record);
+    void client_handshake_finished13_record(tls_record record);
 
     tls_record server_handshake_finished12_record();
-    void server_handshake_finished13_record();
+    tls_record server_handshake_finished13_record();
 
 private:
     unsigned short cipher_choice(const std::span<const uint8_t>& s);

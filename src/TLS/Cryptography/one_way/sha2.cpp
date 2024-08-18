@@ -110,22 +110,22 @@ template<typename RADIX, size_t BLOCK_SIZE, size_t INTERNAL_STATE_SIZE>
 void sha2_transform(std::array<RADIX, 8 >& state, const std::array<uint8_t, BLOCK_SIZE>& data) noexcept {
     std::array<RADIX, INTERNAL_STATE_SIZE> m{};
     constexpr auto init_blocks = BLOCK_SIZE/sizeof(RADIX);
-    for(int i = 0; i < init_blocks; i++) {
+    for(size_t i = 0; i < init_blocks; i++) {
         auto idx = i * sizeof(RADIX);
-        for(int j = 0; j < sizeof(RADIX); j++) {
+        for(size_t j = 0; j < sizeof(RADIX); j++) {
             m[i] |= RADIX(data[idx + j]) << ((CHAR_BIT * (sizeof(RADIX) - 1)) - (j * CHAR_BIT));
         }
     }
-    for(int i = init_blocks; i < INTERNAL_STATE_SIZE; i++) {
+    for(size_t i = init_blocks; i < INTERNAL_STATE_SIZE; i++) {
         m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
     }
     auto vars = state;
-    for(int i = 0; i < INTERNAL_STATE_SIZE; i++) {
+    for(size_t i = 0; i < INTERNAL_STATE_SIZE; i++) {
         RADIX k = prime_cbrts[i] >> ((sizeof(prime_cbrts[0]) - sizeof(RADIX))*CHAR_BIT);
         RADIX t1 = vars[7] + EP1(vars[4]) + CH(vars[4], vars[5], vars[6]) + k + m[i];
         RADIX t2 = EP0(vars[0]) + MAJ(vars[0], vars[1], vars[2]);
-        for(int i = 7; i > 0; i--) {
-            vars[i] = vars[i-1];
+        for(int j = 7; j > 0; j--) {
+            vars[j] = vars[j-1];
         }
         vars[4] += t1;
         vars[0] = t1 + t2;

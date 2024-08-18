@@ -335,7 +335,7 @@ ustring make_additional_13(const tls_record& record, bool record_is_plaintext) {
 std::array<uint8_t, IV_SIZE> number_once(std::array<uint8_t, IV_SIZE> IV, uint64_t seq) {
     std::array<uint8_t,sizeof(uint64_t)> sequence_no;
     checked_bigend_write(seq, sequence_no, 0, sizeof(uint64_t));
-    for(int i = 0; i < sizeof(uint64_t); i ++) {
+    for(size_t i = 0; i < sizeof(uint64_t); i ++) {
         IV[i+IV_SIZE-sizeof(uint64_t)] ^= sequence_no[i];
     }
     return IV;

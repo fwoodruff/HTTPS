@@ -390,8 +390,10 @@ void handshake_ctx::hello_extensions(tls_record& record) {
     if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {
         write_supported_versions(record);
     }
-    if(client_hello.parsed_extensions.contains(ExtensionType::renegotiation_info) and *p_tls_version == TLS12) {
-        write_renegotiation_info(record);
+    if(auto it = std::find(client_hello.cipher_su.begin(), client_hello.cipher_su.end(), cipher_suites::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+        (it != client_hello.cipher_su.end() or
+        client_hello.parsed_extensions.contains(ExtensionType::renegotiation_info)) and *p_tls_version == TLS12)  {
+            write_renegotiation_info(record);
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation) and *p_tls_version == TLS12) {
         write_alpn_extension(record, alpn);

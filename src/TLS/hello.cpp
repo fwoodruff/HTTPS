@@ -174,7 +174,7 @@ hello_record_data parse_client_hello(const ustring& hello) {
 
     // cipher suites
     auto cipher_bytes = der_span_read(hello, idx, 2);
-    for(int i = 0; i < cipher_bytes.size()-1; i+= 2) {
+    for(size_t i = 0; i < cipher_bytes.size()-1; i+= 2) {
         auto suite_value = try_bigend_read(cipher_bytes, i, 2);
         record.cipher_su.push_back(static_cast<cipher_suites>(suite_value));
     }

@@ -135,18 +135,16 @@ key_share choose_client_public_key(const std::vector<key_share>& keys) {
     return *it;
 }
 
-void handshake_ctx::client_hello_record(tls_record record) {
-    client_hello = parse_client_hello(record.m_contents);
+void handshake_ctx::client_hello_record(ustring handshake_message) {
+    client_hello = parse_client_hello(handshake_message);
     client_public_key = choose_client_public_key(client_hello.shared_keys);
     auto [cipher_id, version] = choose_version_cipher(client_hello, client_public_key.key);
     set_cipher_ctx(cipher_id);
     CRIME_compression(client_hello);
-    if(!client_hello.client_session_id.empty() and version == TLS13) {
-        middlebox_compatibility = true;
-    }
+    middlebox_compatibility = (!client_hello.client_session_id.empty() and version == TLS13);
     alpn = choose_alpn(client_hello.application_layer_protocols);
     m_SNI = choose_server_name(client_hello.server_names);
-    handshake_hasher->update(record.m_contents);
+    handshake_hasher->update(handshake_message);
 
     if(*p_tls_version == TLS13) {
         auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
@@ -195,7 +193,6 @@ tls_record handshake_ctx::server_hello_record() {
         auto shared_secret = fbw::curve25519::multiply(server_private_key_ephem, cli_pub);
         tls13_handshake_key_calc(*hash_ctor, tls13_key_schedule, ustring(shared_secret.begin(), shared_secret.end()), handshake_hasher->hash());
     }
-
     return hello_record;
 }
 
@@ -204,6 +201,9 @@ tls_record handshake_ctx::server_encrypted_extensions_record() {
     out.write1(HandshakeType::encrypted_extensions);
     out.start_size_header(3);
     out.start_size_header(2);
+    if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation)) {
+        write_alpn_extension(out, alpn);
+    }
     out.end_size_header();
     out.end_size_header();
     handshake_hasher->update(out.m_contents);
@@ -268,15 +268,15 @@ tls_record handshake_ctx::server_handshake_finished13_record() {
     return record;
 }
 
-void handshake_ctx::client_handshake_finished13_record(tls_record record) {
+void handshake_ctx::client_handshake_finished13_record(const ustring& handshake_message) {
     auto server_finished_hash = handshake_hasher->hash();
     auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
     auto verify_data = do_hmac(*hash_ctor, client_finished_key, server_finished_hash);
 
-    if(verify_data != record.m_contents.substr(4)){
+    if(verify_data != handshake_message.substr(4)){
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    handshake_hasher->update(record.m_contents);
+    handshake_hasher->update(handshake_message);
     auto client_finished_hash = handshake_hasher->hash();
     tls13_resumption_key_calc(*hash_ctor, tls13_key_schedule, client_finished_hash);
 }
@@ -380,60 +380,30 @@ std::optional<tls_record> try_extract_record(ustring& input) {
     return out;
 }
 
-// todo: review this function: placeholder
 void handshake_ctx::hello_extensions(tls_record& record) {
     record.start_size_header(2);
-
-    if(*p_tls_version == TLS13) {
-        // announces we will use TLS 1.3
-        record.write2(ExtensionType::supported_versions);
-        record.start_size_header(2);
-        uint16_t tls_13_support = TLS13;
-        record.write2(tls_13_support);
-        record.end_size_header();
-
-        // x25519 key share
-        record.write2(ExtensionType::key_share);
-        record.start_size_header(2);
-        record.write2(NamedGroup::x25519);
-        record.start_size_header(2);
+    if(client_hello.parsed_extensions.contains(ExtensionType::key_share) and *p_tls_version == TLS13) {
         randomgen.randgen(server_private_key_ephem);
         std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
-        record.write(pubkey_ephem);
-        record.end_size_header();
-        record.end_size_header();
-    } else {
-        // announces no support for vulnerable handshake renegotiation attacks
-        const uint16_t handshake_reneg = 0xff01;
-        record.write2(handshake_reneg);
-        record.start_size_header(2);
-        record.write1(0);
-        record.end_size_header();
-
-        // announces application layer will use http/1.1
-        ustring alpn_protocol_data { 0x00, 0x10 };
-        record.write(alpn_protocol_data);
-        record.start_size_header(2);
-        record.start_size_header(2);
-        record.start_size_header(1);
-        record.write(to_unsigned("http/1.1"));
-        record.end_size_header();
-        record.end_size_header();
-        record.end_size_header();
+        write_key_share(record, pubkey_ephem);
     }
-
-    if (client_hello.client_heartbeat) {
-        record.write2(ExtensionType::heartbeat);
-        record.start_size_header(2);
-        record.write1(0);
-        record.end_size_header();
+    if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {
+        write_supported_versions(record);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::renegotiation_info) and *p_tls_version == TLS12) {
+        write_renegotiation_info(record);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation) and *p_tls_version == TLS12) {
+        write_alpn_extension(record, alpn);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::heartbeat)) {
+        write_heartbeat(record);
     }
     record.end_size_header();
 }
 
 
-ustring handshake_ctx::client_key_exchange_receipt(tls_record record) {
-    const auto& key_exchange = record.m_contents;
+ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) {
     
     static_cast<void>(key_exchange.at(0));
     assert(key_exchange[0] == static_cast<uint8_t>(HandshakeType::client_key_exchange));
@@ -456,33 +426,33 @@ ustring handshake_ctx::client_key_exchange_receipt(tls_record record) {
     ustring client_hello_str(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
     tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", client_hello_str + m_server_random, 48);
 
-    handshake_hasher->update(record.m_contents);
+    handshake_hasher->update(key_exchange);
 
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes
     auto key_material = prf(*hash_ctor,  tls12_master_secret, "key expansion", m_server_random + client_hello_str, 128);
     return key_material;
 }
 
-void handshake_ctx::client_handshake_finished12_record(tls_record record) {
+void handshake_ctx::client_handshake_finished12_record(const ustring& handshake_message) {
     
-    static_cast<void>(record.m_contents.at(0));
-    if(record.m_contents[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
+    static_cast<void>(handshake_message.at(0));
+    if(handshake_message[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     
-    const size_t len = try_bigend_read(record.m_contents, 1, 3);
+    const size_t len = try_bigend_read(handshake_message, 1, 3);
     if(len != 12) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 
-    auto finish = record.m_contents.substr(4);
+    auto finish = handshake_message.substr(4);
     auto handshake_hash = handshake_hasher->hash();
     ustring expected_finished = prf(*hash_ctor, tls12_master_secret, "client finished", handshake_hash, 12);
 
     if(expected_finished != finish) [[unlikely]] {
         throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    handshake_hasher->update(record.m_contents);
+    handshake_hasher->update(handshake_message);
 }
 
 

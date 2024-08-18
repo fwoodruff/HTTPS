@@ -314,12 +314,43 @@ task<stream_result> TLS::write_record(tls_record record, std::optional<milliseco
     co_return co_await m_client->write(record.serialise(), timeout);
 }
 
+std::vector<ustring> extract_handshake_messages(tls_record handshake_record, ustring& fragment) {
+    std::vector<ustring> messages;
+    fragment.append(handshake_record.m_contents.begin(), handshake_record.m_contents.end());
+
+    size_t offset = 0;
+    while(offset + 4 <= fragment.size()) {
+        size_t message_size = try_bigend_read(fragment, offset + 1, 3);
+        if (offset + 4 + message_size > fragment.size()) {
+            fragment.assign(fragment.begin() + offset, fragment.end());
+            break;
+        }
+        messages.emplace_back(fragment.begin() + offset, fragment.begin() + offset + 4 + message_size);
+        offset += 4 + message_size;
+    }
+    if (offset == fragment.size()) {
+        fragment.clear();
+    }
+    return { handshake_record.m_contents };
+}
+
 task<stream_result> TLS::client_handshake_record(handshake_ctx& handshake, tls_record record) {
-    switch (record.m_contents.at(0)) {
+    auto messages = extract_handshake_messages(std::move(record), m_handshake_fragment);
+    for(const auto& message : messages) {
+        auto res = co_await client_handshake_message(handshake, message);
+        if(res != stream_result::ok) {
+            co_return res;
+        }
+    }
+    co_return stream_result::ok;
+}
+
+task<stream_result> TLS::client_handshake_message(handshake_ctx& handshake, const ustring& handshake_message) {
+    switch (handshake_message.at(0)) {
         [[unlikely]] case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
         case static_cast<uint8_t>(HandshakeType::client_hello):
-            client_hello(handshake, std::move(record));
+            client_hello(handshake, std::move(handshake_message));
             if(auto result = co_await server_hello(handshake); result != stream_result::ok) {
                 co_return result;
             }
@@ -355,13 +386,13 @@ task<stream_result> TLS::client_handshake_record(handshake_ctx& handshake, tls_r
             }
             break;
         case static_cast<uint8_t>(HandshakeType::client_key_exchange):
-            client_key_exchange(handshake, std::move(record));
+            client_key_exchange(handshake, std::move(handshake_message));
             break;
         case static_cast<uint8_t>(HandshakeType::finished):
             if(tls_protocol_version == TLS13) {
-                client_handshake_finished13(handshake, std::move(record));
+                client_handshake_finished13(handshake, std::move(handshake_message));
             } else {
-                client_handshake_finished12(handshake, std::move(record));
+                client_handshake_finished12(handshake, std::move(handshake_message));
                 if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
                     co_return std::move(result);
                 }
@@ -376,11 +407,11 @@ task<stream_result> TLS::client_handshake_record(handshake_ctx& handshake, tls_r
     co_return stream_result::ok;
 }
 
-void TLS::client_hello(handshake_ctx& handshake, tls_record record) {
+void TLS::client_hello(handshake_ctx& handshake, const ustring& handshake_message) {
     if(m_expected_record != HandshakeStage::client_hello) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    handshake.client_hello_record(record);
+    handshake.client_hello_record(handshake_message);
     
     m_expected_record = HandshakeStage::server_hello;
 }
@@ -435,12 +466,12 @@ task<stream_result> TLS::server_handshake_finished13(handshake_ctx& handshake) {
     co_return res;
 }
 
-void TLS::client_handshake_finished13(handshake_ctx& handshake, tls_record record) {
+void TLS::client_handshake_finished13(handshake_ctx& handshake, const ustring& handshake_message) {
     if(m_expected_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     assert(tls_protocol_version == TLS13);
-    handshake.client_handshake_finished13_record(record);
+    handshake.client_handshake_finished13_record(handshake_message);
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
     tls13_context.set_key_material_13_application(handshake.tls13_key_schedule);
     m_expected_record = HandshakeStage::application_data;
@@ -462,12 +493,12 @@ task<stream_result> TLS::server_hello_done(handshake_ctx& handshake) {
     co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
-void TLS::client_key_exchange(handshake_ctx& handshake, tls_record record) {
+void TLS::client_key_exchange(handshake_ctx& handshake, ustring handshake_message) {
     if(m_expected_record != HandshakeStage::client_key_exchange) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     assert(tls_protocol_version == TLS12);
-    auto key_material = handshake.client_key_exchange_receipt(record);
+    auto key_material = handshake.client_key_exchange_receipt(handshake_message);
     auto& tls12_context = dynamic_cast<cipher_base_tls12&>(*cipher_context);
     tls12_context.set_key_material_12(key_material);
     m_expected_record = HandshakeStage::client_change_cipher_spec;
@@ -487,11 +518,11 @@ void TLS::client_change_cipher_spec( tls_record record) {
     m_expected_record = HandshakeStage::client_handshake_finished;
 }
 
-void TLS::client_handshake_finished12(handshake_ctx& handshake, tls_record record) {
+void TLS::client_handshake_finished12(handshake_ctx& handshake, const ustring& handshake_message) {
     if(m_expected_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    handshake.client_handshake_finished12_record(record);
+    handshake.client_handshake_finished12_record(handshake_message);
     m_expected_record = HandshakeStage::server_change_cipher_spec;
 }
 

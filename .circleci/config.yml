@@ -17,7 +17,10 @@ jobs:
           background: true
       - run:
           name: Test server
-          command: curl --insecure https://localhost
+          command: |
+            sleep 0.01 # wait for server
+            curl -kv https://localhost
+            curl -kv --tlsv1.2 --tls-max 1.2 https://localhost
 
 workflows:
   run_tests:

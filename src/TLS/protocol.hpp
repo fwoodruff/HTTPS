@@ -54,6 +54,8 @@ private:
     bool server_cipher_spec = false;
     bool client_cipher_spec = false;
 
+    ustring m_handshake_fragment {};
+
 
     std::deque<tls_record> encrypt_send;
 
@@ -63,14 +65,15 @@ private:
     [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
     
     [[nodiscard]] task<stream_result> client_handshake_record(handshake_ctx&, tls_record);
+    [[nodiscard]] task<stream_result> client_handshake_message(handshake_ctx& handshake, const ustring& handshake_message);
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     
     
-    void client_hello(handshake_ctx& handshake, tls_record);
-    void client_key_exchange(handshake_ctx&, tls_record key_exchange);
-    void client_handshake_finished12(handshake_ctx& handshake, tls_record finish); 
-    void client_handshake_finished13(handshake_ctx& handshake, tls_record finish);
+    void client_hello(handshake_ctx& handshake, const ustring& handshake_message);
+    void client_key_exchange(handshake_ctx&, ustring key_exchange);
+    void client_handshake_finished12(handshake_ctx& handshake, const ustring& finish); 
+    void client_handshake_finished13(handshake_ctx& handshake, const ustring& finish);
     
     [[nodiscard]] task<stream_result> server_hello_request();
     

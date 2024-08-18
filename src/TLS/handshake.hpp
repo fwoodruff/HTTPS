@@ -43,7 +43,6 @@ public:
     ustring tls12_master_secret;
 
     std::string alpn;
-    bool tls13_available = false;
 
     uint16_t* p_tls_version = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;
@@ -62,11 +61,11 @@ public:
     tls_record server_hello_done_record();
     
 
-    void client_hello_record(tls_record record);
-    ustring client_key_exchange_receipt(tls_record record);
+    void client_hello_record(ustring handshake_message);
+    ustring client_key_exchange_receipt(const ustring& handshake_message);
 
-    void client_handshake_finished12_record(tls_record record);
-    void client_handshake_finished13_record(tls_record record);
+    void client_handshake_finished12_record(const ustring& handshake_message);
+    void client_handshake_finished13_record(const ustring& handshake_message);
 
     tls_record server_handshake_finished12_record();
     tls_record server_handshake_finished13_record();

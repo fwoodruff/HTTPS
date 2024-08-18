@@ -4,6 +4,7 @@
 #include <array>
 #include "../global.hpp"
 #include "TLS_enums.hpp"
+#include <unordered_set>
 
 namespace fbw {
 
@@ -18,6 +19,8 @@ struct key_share {
 };
 
 struct hello_record_data {
+    std::unordered_set<ExtensionType> parsed_extensions;
+
     uint16_t legacy_client_version = 0;
     std::array<uint8_t, 32> m_client_random {};
     ustring client_session_id {};
@@ -40,10 +43,16 @@ struct hello_record_data {
     std::vector<key_share> shared_keys{};
 
     bool truncated_hmac = false;
-
 };
 
 hello_record_data parse_client_hello(const ustring& hello_contents);
+
+// server hello extensions
+void write_alpn_extension(tls_record& record, std::string alpn);
+void write_renegotiation_info(tls_record& record);
+void write_heartbeat(tls_record& record);
+void write_key_share(tls_record& record, const std::array<uint8_t, 32>& pubkey_ephem);
+void write_supported_versions(tls_record& record);
 
 }
 

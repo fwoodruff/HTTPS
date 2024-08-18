@@ -109,26 +109,39 @@ std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t
 void parse_extension(hello_record_data& record, extension ext) {
     switch(ext.type) {
         case ExtensionType::server_name:
+            record.parsed_extensions.insert(ext.type);
             record.server_names = get_SNI(ext.data);
             break;
         case ExtensionType::supported_groups:
+            record.parsed_extensions.insert(ext.type);
             record.supported_groups = get_supported_groups(ext.data);
             break;
         case ExtensionType::heartbeat:
         {
+            record.parsed_extensions.insert(ext.type);
             auto [server_heartbeat, client_heartbeat] = get_server_client_heartbeat(ext.data);
             record.server_heartbeat = server_heartbeat;
             record.client_heartbeat = client_heartbeat;
             break;
         }
         case ExtensionType::supported_versions:
+            record.parsed_extensions.insert(ext.type);
             record.supported_versions = get_supported_versions(ext.data);
             break;
         case ExtensionType::key_share:
+            record.parsed_extensions.insert(ext.type);
             record.shared_keys = get_named_groups(ext.data);
             break;
         case ExtensionType::application_layer_protocol_negotiation:
+            record.parsed_extensions.insert(ext.type);
             record.application_layer_protocols = get_application_layer_protocols(ext.data);
+            break;
+        case ExtensionType::renegotiation_info:
+            record.parsed_extensions.insert(ext.type);
+            break;
+        case ExtensionType::signed_certificate_timestamp:
+            record.parsed_extensions.insert(ext.type);
+            break;
         default:
             break;
     }
@@ -193,6 +206,51 @@ hello_record_data parse_client_hello(const ustring& hello) {
         parse_extension(record, ext);
     }
     return record;
+}
+
+void write_alpn_extension(tls_record& record, std::string alpn) {
+    ustring alpn_protocol_data { 0x00, 0x10 };
+    record.write(alpn_protocol_data);
+    record.start_size_header(2);
+    record.start_size_header(2);
+    record.start_size_header(1);
+    record.write(to_unsigned(alpn));
+    record.end_size_header();
+    record.end_size_header();
+    record.end_size_header();
+}
+
+void write_renegotiation_info(tls_record& record) {
+    const uint16_t handshake_reneg = 0xff01;
+    record.write2(handshake_reneg);
+    record.start_size_header(2);
+    record.write1(0);
+    record.end_size_header();
+}
+
+void write_heartbeat(tls_record& record) {
+    record.write2(ExtensionType::heartbeat);
+    record.start_size_header(2);
+    record.write1(0);
+    record.end_size_header();
+}
+
+void write_key_share(tls_record& record, const std::array<uint8_t, 32>& pubkey_ephem) {
+    record.write2(ExtensionType::key_share);
+    record.start_size_header(2);
+    record.write2(NamedGroup::x25519);
+    record.start_size_header(2);
+    record.write(pubkey_ephem);
+    record.end_size_header();
+    record.end_size_header();
+}
+
+void write_supported_versions(tls_record& record) {
+    record.write2(ExtensionType::supported_versions);
+    record.start_size_header(2);
+    uint16_t tls_13_support = TLS13;
+    record.write2(tls_13_support);
+    record.end_size_header();
 }
 
 } // namespace

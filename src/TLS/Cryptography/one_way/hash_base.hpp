@@ -37,6 +37,13 @@ public:
     [[nodiscard]] virtual size_t get_hash_size() const noexcept = 0;
 };
 
+template<typename T> 
+ustring do_hash(const hash_base& hash_ctor, const T& data) {
+    auto ctx = hash_ctor.clone();
+    ctx->update(data);
+    return ctx->hash();
+}
+
 
 } // namespace fbw
 

@@ -18,26 +18,38 @@
 
 namespace fbw::cha {
 
-class ChaCha20_Poly1305 : public cipher_base {
-private:
-    
-    std::array<uint8_t, 32> client_write_key;
-    std::array<uint8_t, 32> server_write_key;
-    
-    std::array<uint8_t, 12> client_implicit_write_IV;
-    std::array<uint8_t, 12> server_implicit_write_IV;
-    
+constexpr size_t TAG_SIZE = 16;
+constexpr size_t IV_SIZE = 12;
+constexpr size_t KEY_SIZE = 32;
+
+struct ChaCha20_Poly1305_ctx {
+    std::array<uint8_t, KEY_SIZE> client_write_key;
+    std::array<uint8_t, KEY_SIZE> server_write_key;
+    std::array<uint8_t, IV_SIZE> client_implicit_write_IV;
+    std::array<uint8_t, IV_SIZE> server_implicit_write_IV;
     uint64_t seqno_server = 0;
     uint64_t seqno_client = 0;
+    ustring encrypt(ustring plaintext, ustring additional_data);
+    ustring decrypt(ustring ciphertext, ustring additional_data);
+};
 
-    bool tls_13_aad = false;
-    
+class ChaCha20_Poly1305_tls13 : public cipher_base_tls13 {
+private:
+    ChaCha20_Poly1305_ctx ctx;
 public:
-    ChaCha20_Poly1305() = default;
-    
+    ChaCha20_Poly1305_tls13() = default;
+    void set_key_material_13_handshake(const key_schedule& key_sche) override;
+    void set_key_material_13_application(const key_schedule& key_sche) override;
+    tls_record encrypt(tls_record record) noexcept override;
+    tls_record decrypt(tls_record record) override;
+};
+
+class ChaCha20_Poly1305_tls12 : public cipher_base_tls12 {
+private:
+    ChaCha20_Poly1305_ctx ctx;
+public:
+    ChaCha20_Poly1305_tls12() = default;
     void set_key_material_12(ustring material) override;
-    void set_key_material_13_handshake(ustring handshake_secret, ustring handshake_context_hash) override;
-    void set_key_material_13_application(ustring master_secret, ustring application_context_hash) override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };

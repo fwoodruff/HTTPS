@@ -17,7 +17,7 @@
 
 namespace fbw::aes {
 
-class AES_CBC_SHA : public cipher_base {
+class AES_CBC_SHA : public cipher_base_tls12 {
 private:
     roundkey server_write_round_keys;
     roundkey client_write_round_keys;

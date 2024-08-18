@@ -24,47 +24,52 @@ void remove_whitespace(std::string& str) {
     str.erase(std::remove_if(str.begin(), str.end(), ::isspace), str.end());
 }
 
-// Function to convert comma-separated string to vector of strings
-std::vector<std::string> split_string(const std::string& input, char delimiter) {
-    std::vector<std::string> tokens;
-    std::stringstream ss(input);
-    std::string token;
-    while (std::getline(ss, token, delimiter)) {
-        remove_whitespace(token);
-        tokens.push_back(token);
+std::vector<std::string> split(const std::string& line, const std::string& delim) {
+    std::vector<std::string> out;
+    size_t start = 0;
+    size_t end = 0;
+    while ((end = line.find(delim, start)) != std::string::npos) {
+        if (start != end) {
+            out.push_back(line.substr(start, end - start));
+        }
+        start = end + delim.size(); 
     }
-    return tokens;
+    if (start != line.size()) {
+        out.push_back(line.substr(start));
+    }
+    return out;
 }
 
-const options& option_singleton() {
-    const std::filesystem::path config_file = "config.txt";
-    static options project_options;
-    static std::once_flag flag;
-    std::call_once(flag, [&] {
-        auto file = std::ifstream(config_file);
-        if(! file.good()) {
-            throw std::runtime_error("no config file at " + config_file.string());
-        }
-        std::string key;
-        std::string value;
-        std::unordered_map<std::string, std::string> option_map;
-        while(  std::getline(file, key, '=') && std::getline(file, value)) {
-            remove_whitespace(key);
-            remove_whitespace(value);
-            option_map.insert({key, value});
-        }
-        project_options.redirect_port = option_map.at("REDIRECT_PORT");
-        project_options.server_port = option_map.at("SERVER_PORT");
-        project_options.domain_names = split_string(option_map.at("DOMAIN_NAMES"), ',');
-        project_options.key_folder = option_map.at("KEY_FOLDER");
-        project_options.certificate_file = option_map.at("CERTIFICATE_FILE");
-        project_options.key_file = option_map.at("KEY_FILE");
-        project_options.webpage_folder = option_map.at("WEBPAGE_FOLDER");
-        project_options.default_subfolder = option_map.at("DEFAULT_SUBFOLDER");
-        project_options.tld_file = option_map.at("TLD_FILE");
-        project_options.mime_folder = option_map.at("MIME_FOLDER");
-        project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
-    });
+
+options project_options;
+
+void init_options() {
+    const std::filesystem::path config_file = "config.txt"; // todo: make this a command line argument
+    
+    auto file = std::ifstream(config_file);
+    if(! file.good()) {
+        throw std::runtime_error("no config.txt file at " + (std::filesystem::current_path()/config_file.relative_path()).string());
+    }
+    std::string key;
+    std::string value;
+    std::unordered_map<std::string, std::string> option_map;
+    while(  std::getline(file, key, '=') && std::getline(file, value)) {
+        remove_whitespace(key);
+        remove_whitespace(value);
+        option_map.insert({key, value});
+    }
+    project_options.redirect_port = option_map.at("REDIRECT_PORT");
+    project_options.server_port = option_map.at("SERVER_PORT");
+    project_options.domain_names = split(option_map.at("DOMAIN_NAMES"), ",");
+    project_options.key_folder = option_map.at("KEY_FOLDER");
+    project_options.certificate_file = option_map.at("CERTIFICATE_FILE");
+    project_options.key_file = option_map.at("KEY_FILE");
+    project_options.webpage_folder = option_map.at("WEBPAGE_FOLDER");
+    project_options.default_subfolder = option_map.at("DEFAULT_SUBFOLDER");
+    project_options.tld_file = option_map.at("TLD_FILE");
+    project_options.mime_folder = option_map.at("MIME_FOLDER");
+    project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
+
 
     using namespace std::chrono_literals;
     // static configurables
@@ -73,24 +78,8 @@ const options& option_singleton() {
     project_options.keep_alive = 5s;
     project_options.error_timeout = 2s;
 
-    return project_options;
 }
 
-
-std::unordered_map<std::string, std::string> get_options(std::filesystem::path filename) {
-    auto file = std::ifstream(filename);
-    if(! file.good()) {
-        throw std::runtime_error("no config file at " + filename.string());
-    }
-    std::unordered_map<std::string, std::string> options;
-    std::pair<std::string, std::string> option;
-    while(  std::getline(file, option.first, '=') && std::getline(file, option.second)) {
-        remove_whitespace(option.first);
-        remove_whitespace(option.second);
-        options.insert(option);
-    }
-    return options;
-}
 
 
 

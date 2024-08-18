@@ -13,7 +13,7 @@
 #include "Cryptography/one_way/hash_base.hpp"
 #include "Cryptography/cipher/block_chain.hpp"
 #include "../global.hpp"
-#include "Cryptography/one_way/secure_hash.hpp"
+#include "Cryptography/one_way/sha2.hpp"
 
 #include "TLS_enums.hpp"
 #include "../TCP/tcp_stream.hpp"
@@ -28,10 +28,7 @@
 
 namespace fbw {
 
-[[nodiscard]] std::array<uint8_t, 32> extract_x25519_key(std::span<const uint8_t> extension);
 void certificates_serial(tls_record& record, std::string domain, bool use_tls13);
-bool is_tls13_supported(std::span<const uint8_t> extension);
-std::string check_SNI(std::span<const uint8_t> servernames);
 std::optional<tls_record> try_extract_record(ustring& input);
 
 } // namespace

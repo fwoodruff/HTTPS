@@ -17,124 +17,161 @@
 #include "Cryptography/cipher/galois_counter.hpp"
 #include "Cryptography/cipher/chacha20poly1305.hpp"
 #include "TLS_utils.hpp"
+#include "hello.hpp"
 
 namespace fbw {
 
-void key_schedule::client_hello_record(tls_record record, bool& can_heartbeat) {
-    const auto& hello = record.m_contents;
-    if(hello.empty()) {
-        throw ssl_error("record is just a header", AlertLevel::fatal, AlertDescription::decode_error);
+// once client sends over their supported ciphers
+// if client supports ChaCha20 we enforce that, ideally with TLS 1.3
+// otherwise if client supports AES-GCM/AES-CBC, we pick whichever their preference is
+std::pair<cipher_suites, uint16_t> choose_version_cipher(const hello_record_data& rec, const ustring& client_key) {
+     if(rec.legacy_client_version > TLS12) {
+        throw ssl_error("legacy TLS version should always be TLS 1.2 or earlier", AlertLevel::fatal, AlertDescription::decode_error);
     }
-    assert(hello.size() >= 1 and hello[0] == 1);
-
-    size_t len = try_bigend_read(hello,1,3);
-    if(len + 4 != hello.size()) {
-        throw ssl_error("record length overflows", AlertLevel::fatal, AlertDescription::decode_error);
+    if(rec.legacy_client_version < TLS11) {
+        throw ssl_error("TLS 1.0 and earlier are insecure", AlertLevel::fatal, AlertDescription::protocol_version);
     }
-    // client random
-    m_client_random.resize(32);
-    std::copy(&hello.at(6), &hello.at(38), m_client_random.begin());
-    // session ID
-    size_t idx = 38;
-    size_t session_id_len = try_bigend_read(hello, idx, 1);
-    if(session_id_len == 32) {
-        client_session_id = std::array<uint8_t, 32>{};
-        std::copy(&hello.at(idx+1), &hello.at(idx+33), client_session_id->begin());
-    }
-
-    idx += (session_id_len + 1);
-    // cipher suites
-    auto ciphers = der_span_read(hello, idx, 2);
-    cipher = cipher_choice(ciphers);
-    if(cipher == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) {
-        throw ssl_error("unnecessary TLS 1.1 fallback", AlertLevel::fatal, AlertDescription::inappropriate_fallback);
-    }
-
-    // client version
-    if ( hello.at(4) != 3 or hello.at(5) != 3 ) {
-        throw ssl_error("unsupported version handshake", AlertLevel::fatal, AlertDescription::handshake_failure);
-    }
-    assert(hash_ctor);
-    assert(handshake_hasher);
-
-    idx += ciphers.size() + 2;
-    // compression
-    auto compression_methods = der_span_read(hello, idx, 1);
-    if(std::find(compression_methods.begin(), compression_methods.end(), 0) == compression_methods.end()) {
-        throw ssl_error("compression not supported", AlertLevel::fatal, AlertDescription::handshake_failure);
-    }
-    idx += (compression_methods.size() + 1);
-    // extensions
-    auto extensions = der_span_read(hello, idx, 2);
-    ssize_t extensions_len = extensions.size();
-    idx += 2;
-
-    alpn = "http/1.1";
-
-    while(extensions_len > 0) {
-        size_t extension_type = try_bigend_read(hello, idx, 2);
-        auto extension = der_span_read(hello, idx + 2, 2);
-        extensions_len -= extension.size() + 4;
-        if(extensions_len < 0) {
-            throw ssl_error("record length overflows", AlertLevel::fatal, AlertDescription::decode_error);
+    if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_FALLBACK_SCSV); it != rec.cipher_su.end()) {
+        switch(rec.legacy_client_version) {
+            case TLS12:
+                throw ssl_error("client supports TLS 1.2 but offers TLS 1.1 downgrade", AlertLevel::fatal, AlertDescription::inappropriate_fallback);
+            case TLS13:
+                throw ssl_error("inconsistent description of client version", AlertLevel::fatal, AlertDescription::decode_error);
         }
-        switch(extension_type) {
-            case 0x000a:
-                break;
-            case 0x0000: // SNI
-                m_SNI = check_SNI(extension);
-                break;
-            case 0x000f: // Heartbeat
-                {
-                    ustring peer_may_send {0x00, 0x01, 0x00};
-                    ustring peer_no_send { 0x00, 0x01, 0x02};
-                    if(extension.size() == 3) [[likely]] {
-                        if(std::equal(extension.begin(), extension.end(), peer_may_send.begin()) or
-                            std::equal(extension.begin(), extension.end(), peer_no_send.begin())) {
-                                can_heartbeat = true;
-                        }
-                    } else {
-                        throw ssl_error("invalid heartbeat extension", AlertLevel::fatal, AlertDescription::illegal_parameter);
-                    }
-                }
-                break;
-            case 0x002b: // TLS 1.3
-                tls13_available = is_tls13_supported(extension);
-                if(tls13_available) {
-                    // todo: ignore TLS 1.3 ciphers if this extension not present
-                }
-                break;
-            case 0x0033: // key share
-                client_public_key = extract_x25519_key(extension);
-                break;
-            default:
-                break;
-        }
-        idx += extension.size() + 4;
     }
-    handshake_hasher->update(hello);
+    if(rec.legacy_client_version == TLS11) {
+        throw ssl_error("TLS 1.1 not supported", AlertLevel::fatal, AlertDescription::protocol_version);
+    }
+    if(auto it = std::find(rec.supported_versions.begin(), rec.supported_versions.end(), TLS13); it != rec.supported_versions.end()) {
+        if(!client_key.empty()) { // todo: hello retry
+            if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_CHACHA20_POLY1305_SHA256); it != rec.cipher_su.end()) {
+                return {cipher_suites::TLS_CHACHA20_POLY1305_SHA256, TLS13};
+            }
+        }
+    }
+    if(auto it = std::find(rec.supported_versions.begin(), rec.supported_versions.end(), TLS12); it != rec.supported_versions.end() or rec.supported_versions.empty()) {
+        if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256); it != rec.cipher_su.end()) {
+            return {cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, TLS12} ;
+        }
+        if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256); it != rec.cipher_su.end()) {
+            return {cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS12};
+        }
+        if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA); it != rec.cipher_su.end()) {
+            return {cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA, TLS12};
+        }
+    }
+    throw ssl_error("no supported ciphers", AlertLevel::fatal, AlertDescription::handshake_failure );
 }
 
-tls_record key_schedule::server_hello_record(bool use_tls13, bool can_heartbeat ) {
+void CRIME_compression(const hello_record_data& client_hello) {
+    if(std::find(client_hello.compression_types.begin(), client_hello.compression_types.end(), 0) == client_hello.compression_types.end()) {
+        throw ssl_error("compression not supported", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
+}
+
+void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
+    cipher = cipher_suite;
+    switch(cipher_suite) {
+        case cipher_suites::TLS_CHACHA20_POLY1305_SHA256:
+            *p_tls_version = TLS13;
+            *p_cipher_context = std::make_unique<cha::ChaCha20_Poly1305_tls13>();
+            hash_ctor = std::make_unique<sha256>();
+            break;
+        case cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:
+            *p_tls_version = TLS12;
+            *p_cipher_context = std::make_unique<cha::ChaCha20_Poly1305_tls12>();
+            hash_ctor = std::make_unique<sha256>();
+            break;
+        case cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
+            *p_tls_version = TLS12;
+            *p_cipher_context = std::make_unique<aes::AES_128_GCM_SHA256>();
+            hash_ctor = std::make_unique<sha256>();
+            break;
+        case cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:
+            *p_tls_version = TLS12;
+            *p_cipher_context = std::make_unique<aes::AES_CBC_SHA>();
+            hash_ctor = std::make_unique<sha256>();
+            break;
+        default:
+            assert(false);
+    }
+    handshake_hasher = hash_ctor->clone();
+}
+
+std::string choose_alpn(const std::vector<std::string>& client_alpn) {
+    if(client_alpn.empty()) {
+        return "http/1.1";
+    }
+    if(std::find(client_alpn.begin(), client_alpn.end(), "h2") != client_alpn.end()) {
+        // todo
+        // return "h2";
+    }
+    if(std::find(client_alpn.begin(), client_alpn.end(), "http/1.1") == client_alpn.end()) {
+        throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
+    }
+    return "http/1.1";
+}
+
+std::string choose_server_name(const std::vector<std::string>& server_names) {
+    if(server_names.empty() or project_options.domain_names.empty()) {
+        return "";
+    }
+    for(const auto& n : project_options.domain_names) {
+        for(const auto& m :server_names) {
+            if(n == m) {
+                return n;
+            }
+        }
+    }
+    throw ssl_error("unrecognised name", AlertLevel::fatal, AlertDescription::unrecognized_name);
+}
+
+key_share choose_client_public_key(const std::vector<key_share>& keys) {
+    auto it = std::find_if(keys.begin(), keys.end(), [](const key_share& key){ return key.key_type == NamedGroup::x25519; });
+    if(it == keys.end()) {
+        // for now, rather than implementing hello retry requests, if an appropriate key isn't found we just pretend to be a TLS 1.2 server
+        return {};
+    }
+    return *it;
+}
+
+void handshake_ctx::client_hello_record(ustring handshake_message) {
+    client_hello = parse_client_hello(handshake_message);
+    client_public_key = choose_client_public_key(client_hello.shared_keys);
+    auto [cipher_id, version] = choose_version_cipher(client_hello, client_public_key.key);
+    set_cipher_ctx(cipher_id);
+    CRIME_compression(client_hello);
+    middlebox_compatibility = (!client_hello.client_session_id.empty() and version == TLS13);
+    alpn = choose_alpn(client_hello.application_layer_protocols);
+    m_SNI = choose_server_name(client_hello.server_names);
+    handshake_hasher->update(handshake_message);
+
+    if(*p_tls_version == TLS13) {
+        auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
+        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, null_psk, handshake_hasher->hash());
+    }
+}
+
+tls_record handshake_ctx::server_hello_record() {
     auto hello_record = tls_record(ContentType::Handshake);
     
     // handshake header and server version
-    hello_record.m_contents.reserve(49); // fix me
+    hello_record.m_contents.reserve(49); // todo: fix me
 
     // server random
     m_server_random.resize(32);
     randomgen.randgen(m_server_random);
 
     hello_record.write1(HandshakeType::server_hello);
-    hello_record.push_der(3);
+    hello_record.start_size_header(3);
     hello_record.write({3, 3});
 
     hello_record.write(m_server_random);
 
     // session_id
-    if(use_tls13 and client_session_id.has_value()) {
+    if(middlebox_compatibility) {
         hello_record.write1(32);
-        hello_record.write(*client_session_id); // session ID
+        hello_record.write(client_hello.client_session_id); // session ID
     } else {
         hello_record.write1(0); // session ID
     }
@@ -142,83 +179,109 @@ tls_record key_schedule::server_hello_record(bool use_tls13, bool can_heartbeat 
     hello_record.write2(cipher);
     hello_record.write1(0); // no compression
 
-    hello_extensions(hello_record, use_tls13, can_heartbeat); // todo: store each of the extensions sent by the client in a map, and then only return those
+    hello_extensions(hello_record);
 
-    hello_record.pop_der();
+    hello_record.end_size_header();
 
     assert(hello_record.m_contents.size() >= 4);
     assert(handshake_hasher != nullptr);
     handshake_hasher->update(hello_record.m_contents);
 
+    if(*p_tls_version == TLS13) {
+        std::array<uint8_t, 32> cli_pub;
+        std::copy_n(client_public_key.key.begin(), 32, cli_pub.begin());
+        auto shared_secret = fbw::curve25519::multiply(server_private_key_ephem, cli_pub);
+        tls13_handshake_key_calc(*hash_ctor, tls13_key_schedule, ustring(shared_secret.begin(), shared_secret.end()), handshake_hasher->hash());
+    }
     return hello_record;
 }
 
-tls_record key_schedule::server_encrypted_extensions_record() {
+tls_record handshake_ctx::server_encrypted_extensions_record() {
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::encrypted_extensions);
-    out.push_der(3);
-    out.push_der(2);
-    out.pop_der();
-    out.pop_der();
+    out.start_size_header(3);
+    out.start_size_header(2);
+    if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation)) {
+        write_alpn_extension(out, alpn);
+    }
+    out.end_size_header();
+    out.end_size_header();
+    handshake_hasher->update(out.m_contents);
     return out;
 }
 
-tls_record key_schedule::server_certificate_record(bool use_tls13) {
+tls_record handshake_ctx::server_certificate_record() {
     tls_record certificate_record(ContentType::Handshake);
     certificate_record.write1(HandshakeType::certificate);
-    certificate_record.push_der(3);
-    if(use_tls13) {
+    certificate_record.start_size_header(3);
+    if(*p_tls_version == TLS13) {
         certificate_record.write1(0);
     }
-    certificates_serial(certificate_record, m_SNI, use_tls13);
-    certificate_record.pop_der();
+    certificates_serial(certificate_record, m_SNI, *p_tls_version == TLS13);
+    certificate_record.end_size_header();
     handshake_hasher->update(certificate_record.m_contents);
     return certificate_record;
 }
 
-[[nodiscard]] tls_record key_schedule::server_certificate_verify_record() const {
-    tls_record record(ContentType::Handshake);
-    record.write1(HandshakeType::server_key_exchange);
-    record.push_der(3);
- 
+[[nodiscard]] tls_record handshake_ctx::server_certificate_verify_record() {
     auto certificate_private = privkey_for_domain(m_SNI);
-
     auto hash_verify_context = handshake_hasher->hash();
-    std::array<uint8_t, 32> signature_digest;
-    std::copy_n(hash_verify_context.begin(), signature_digest.size(), signature_digest.begin());
 
+    sha256 ctx;
+    ctx.update(ustring(64, 0x20));
+    ctx.update(to_unsigned("TLS 1.3, server CertificateVerify"));
+    ctx.update(ustring{0});
+    ctx.update(hash_verify_context);
+    auto hash_out = ctx.hash();
+
+    std::array<uint8_t, 32> signature_digest;
+    std::copy(hash_out.begin(), hash_out.end(), signature_digest.begin());
     std::array<uint8_t, 32> csrn;
     randomgen.randgen(csrn);
     ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
 
+    tls_record record(ContentType::Handshake);
+    record.write1(HandshakeType::certificate_verify);
+    record.start_size_header(3);
+    record.write2(SignatureScheme::ecdsa_secp256r1_sha256);
+    record.start_size_header(2);
     record.write(signature);
-    record.pop_der();
+    record.end_size_header();
+    record.end_size_header();
+    handshake_hasher->update(record.m_contents);
     return record;
 }
 
+tls_record handshake_ctx::server_handshake_finished13_record() {
+    auto server_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.server_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
+    auto verify_record_hash = handshake_hasher->hash();
+    auto verify_data = do_hmac(*hash_ctor, server_finished_key, verify_record_hash);
 
-void key_schedule::server_handshake_finished13_record() {
-    server_handshake_hash = handshake_hasher->hash();
+    tls_record record(ContentType::Handshake);
+    record.write1(HandshakeType::finished);
+    record.start_size_header(3);
+    record.write(verify_data);
+    record.end_size_header();
+
+    handshake_hasher->update(record.m_contents);
+    tls13_application_key_calc(*hash_ctor, tls13_key_schedule, handshake_hasher->hash());
+    return record;
 }
 
-ustring key_schedule::client_handshake_finished13_record(tls_record record) {
-    auto finished_hash = handshake_hasher->hash();
+void handshake_ctx::client_handshake_finished13_record(const ustring& handshake_message) {
+    auto server_finished_hash = handshake_hasher->hash();
+    auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
+    auto verify_data = do_hmac(*hash_ctor, client_finished_key, server_finished_hash);
 
-    // todo: scope
-    auto client_application_traffic_secret = hkdf_expand_label(*hash_ctor, master_secret, "c ap traffic", server_handshake_hash, hash_ctor->get_hash_size());
-    auto finished_key = hkdf_expand_label(*hash_ctor, client_application_traffic_secret, "finished", ustring{}, hash_ctor->get_hash_size());
-    
-    auto resumption_master_secret = hkdf_expand_label(*hash_ctor, master_secret, "res master", finished_hash, hash_ctor->get_hash_size());
-
-    auto verify_data = do_hmac(*hash_ctor, finished_key, finished_hash);
-
-    if(verify_data != record.m_contents.substr(4)){
+    if(verify_data != handshake_message.substr(4)){
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    return resumption_master_secret;
+    handshake_hasher->update(handshake_message);
+    auto client_finished_hash = handshake_hasher->hash();
+    tls13_resumption_key_calc(*hash_ctor, tls13_key_schedule, client_finished_hash);
 }
 
-tls_record key_schedule::server_key_exchange_record() {
+tls_record handshake_ctx::server_key_exchange_record() {
     randomgen.randgen(server_private_key_ephem);
     std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
     
@@ -228,7 +291,7 @@ tls_record key_schedule::server_key_exchange_record() {
     // Handshake Header
     record.m_contents.reserve(116);
     record.write1(HandshakeType::server_key_exchange);
-    record.push_der(3);
+    record.start_size_header(3);
 
     // Curve Info
     std::array<uint8_t,3> curve_info({static_cast<uint8_t>(ECCurveType::named_curve), 0x00, 0x00});
@@ -243,7 +306,7 @@ tls_record key_schedule::server_key_exchange_record() {
     assert(hash_ctor != nullptr);
     auto hashctx = hash_ctor->clone();
     
-    hashctx->update(m_client_random);
+    hashctx->update(client_hello.m_client_random);
     hashctx->update(m_server_random);
     hashctx->update(signed_empheral_key);
     
@@ -259,49 +322,44 @@ tls_record key_schedule::server_key_exchange_record() {
     randomgen.randgen(csrn);
     ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
     ustring sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
-    static_cast<uint8_t>(SignatureAlgorithm::ecdsa), 0x00, 0x00});
-    
-    checked_bigend_write(signature.size(), sig_header, 2, 2);
+        static_cast<uint8_t>(SignatureAlgorithm::ecdsa)});
     
     record.write(signed_empheral_key);
     record.write(sig_header);
+    record.start_size_header(2);
     record.write(signature);
+    record.end_size_header();
 
     assert(record.m_contents.size() >= 4);
-    record.pop_der();
+    record.end_size_header();
 
     handshake_hasher->update(record.m_contents);
     return record;
 }
 
-tls_record key_schedule::server_hello_done_record() {
+tls_record handshake_ctx::server_hello_done_record() {
     tls_record record(ContentType::Handshake);
     record.write1(HandshakeType::server_hello_done);
-    record.push_der(3);
-    record.pop_der();
+    record.start_size_header(3);
+    record.end_size_header();
     handshake_hasher->update(record.m_contents);
     return record;
 }
 
-tls_record key_schedule::server_handshake_finished12_record() {
+tls_record handshake_ctx::server_handshake_finished12_record() {
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::finished);
-    out.push_der(3);
+    out.start_size_header(3);
     
     assert(handshake_hasher);
     auto handshake_hash = handshake_hasher->hash();
     assert(handshake_hash.size() == 32);
     
-    ustring server_finished = prf(*hash_ctor, master_secret, "server finished", handshake_hash, 12);
+    ustring server_finished = prf(*hash_ctor, tls12_master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
-    out.pop_der();
+    out.end_size_header();
     return out;
-}
-
-bool key_schedule::is_middlebox_compatibility_mode() {
-    assert(p_use_tls13);
-    return (*p_use_tls13 and client_session_id != std::nullopt);
 }
 
 std::optional<tls_record> try_extract_record(ustring& input) {
@@ -322,59 +380,32 @@ std::optional<tls_record> try_extract_record(ustring& input) {
     return out;
 }
 
-void key_schedule::hello_extensions(tls_record& record, bool use_tls13, bool can_heartbeat) {
-    record.push_der(2);
-
-    if(use_tls13) {
-        // announces we will use TLS 1.3
-        record.write2(ExtensionType::supported_versions);
-        record.push_der(2);
-        uint16_t tls_13_support = 0x0304;
-        record.write2(tls_13_support);
-        record.pop_der();
-
-        // x25519 key share
-        record.write2(ExtensionType::key_share);
-        record.push_der(2);
-        record.write2(NamedGroup::x25519);
-        record.push_der(2);
+void handshake_ctx::hello_extensions(tls_record& record) {
+    record.start_size_header(2);
+    if(client_hello.parsed_extensions.contains(ExtensionType::key_share) and *p_tls_version == TLS13) {
         randomgen.randgen(server_private_key_ephem);
         std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
-        record.write(pubkey_ephem);
-        record.pop_der();
-        record.pop_der();
-    } else {
-        // announces no support for vulnerable handshake renegotiation attacks
-        const uint16_t handshake_reneg = 0xff01;
-        record.write2(handshake_reneg);
-        record.push_der(2);
-        record.write1(0);
-        record.pop_der();
-
-        // announces application layer will use http/1.1
-        ustring alpn_protocol_data { 0x00, 0x10 };
-        record.write(alpn_protocol_data);
-        record.push_der(2);
-        record.push_der(2);
-        record.push_der(1);
-        record.write(to_unsigned("http/1.1"));
-        record.pop_der();
-        record.pop_der();
-        record.pop_der();
+        write_key_share(record, pubkey_ephem);
     }
-
-    if (can_heartbeat) {
-        record.write2(ExtensionType::heartbeat);
-        record.push_der(2);
-        record.write1(0);
-        record.pop_der();
+    if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {
+        write_supported_versions(record);
     }
-    record.pop_der();
+    if(auto it = std::find(client_hello.cipher_su.begin(), client_hello.cipher_su.end(), cipher_suites::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+        (it != client_hello.cipher_su.end() or
+        client_hello.parsed_extensions.contains(ExtensionType::renegotiation_info)) and *p_tls_version == TLS12)  {
+            write_renegotiation_info(record);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation) and *p_tls_version == TLS12) {
+        write_alpn_extension(record, alpn);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::heartbeat)) {
+        write_heartbeat(record);
+    }
+    record.end_size_header();
 }
 
 
-ustring key_schedule::client_key_exchange_receipt(tls_record record) {
-    const auto& key_exchange = record.m_contents;
+ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) {
     
     static_cast<void>(key_exchange.at(0));
     assert(key_exchange[0] == static_cast<uint8_t>(HandshakeType::client_key_exchange));
@@ -388,102 +419,42 @@ ustring key_schedule::client_key_exchange_receipt(tls_record record) {
     if(key_exchange.size() < 37) [[unlikely]] {
         throw ssl_error("bad public key", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    std::copy(&key_exchange[5], &key_exchange[37], client_public_key.begin());
-    auto premaster_secret = fbw::curve25519::multiply(server_private_key_ephem, client_public_key);
-    master_secret = prf(*hash_ctor, premaster_secret, "master secret", m_client_random + m_server_random, 48);
+    client_public_key.key.resize(32);
+    client_public_key.key_type = NamedGroup::x25519;
+    std::copy(&key_exchange[5], &key_exchange[37], client_public_key.key.begin());
+    std::array<uint8_t, 32> client_pub{};
+    std::copy_n(client_public_key.key.begin(), 32, client_pub.begin());
+    auto premaster_secret = fbw::curve25519::multiply(server_private_key_ephem, client_pub);
+    ustring client_hello_str(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
+    tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", client_hello_str + m_server_random, 48);
 
-    handshake_hasher->update(record.m_contents);
+    handshake_hasher->update(key_exchange);
 
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes
-    auto key_material = prf(*hash_ctor,  master_secret, "key expansion", m_server_random + m_client_random, 128);
+    auto key_material = prf(*hash_ctor,  tls12_master_secret, "key expansion", m_server_random + client_hello_str, 128);
     return key_material;
 }
 
-
-std::pair<ustring, ustring> key_schedule::tls13_key_calc() const {
-    auto handshake_context_hash = handshake_hasher->hash();
-    auto shared_secret = fbw::curve25519::multiply(server_private_key_ephem, client_public_key);
-    auto zero_hash = do_hash(*hash_ctor, ustring{});
-    assert(hash_ctor != nullptr);
-    auto early_secret = hkdf_extract(*hash_ctor, ustring{}, ustring(hash_ctor->get_hash_size(), 0) );
-    auto derived_secret = hkdf_expand_label(*hash_ctor, early_secret, "derived", zero_hash, hash_ctor->get_hash_size());
-    auto handshake_secret = hkdf_extract(*hash_ctor, derived_secret, shared_secret);
+void handshake_ctx::client_handshake_finished12_record(const ustring& handshake_message) {
     
-    return { handshake_secret, handshake_context_hash };
-}
-
-// once client sends over their supported ciphers
-// if client supports ChaCha20 we enforce that
-// otherwise if client supports AES-GCM/AES-CBC, we pick whichever their preference is
-unsigned short key_schedule::cipher_choice(const std::span<const uint8_t>& s) {
-    for(size_t i = 0; i < s.size(); i += 2) {
-        uint16_t x = try_bigend_read(s, i, 2);
-        if(x == static_cast<uint16_t>(cipher_suites::TLS_FALLBACK_SCSV)) [[unlikely]] {
-            return x;
-        }
-    }
-
-    /*
-    for(size_t i = 0; i < s.size(); i += 2) {
-        uint16_t x = try_bigend_read(s, i, 2);
-        if(x == static_cast<uint16_t>(cipher_suites::TLS_CHACHA20_POLY1305_SHA256)) {
-            *p_use_tls13 = true;
-            *p_cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
-            hash_ctor = std::make_unique<sha256>();
-            handshake_hasher = hash_ctor->clone();
-            return x;
-        }
-    }
-    */
-    
-    for(size_t i = 0; i < s.size(); i += 2) {
-        uint16_t x = try_bigend_read(s, i, 2);
-        if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256)) {
-            *p_cipher_context = std::make_unique<cha::ChaCha20_Poly1305>();
-            hash_ctor = std::make_unique<sha256>();
-            handshake_hasher = hash_ctor->clone();
-            return x;
-        }
-    }
-    for(size_t i = 0; i < s.size(); i += 2) {
-        uint16_t x = try_bigend_read(s, i, 2);
-        if(x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)) {
-            *p_cipher_context = std::make_unique<aes::AES_128_GCM_SHA256>();
-            hash_ctor = std::make_unique<sha256>();
-            handshake_hasher = hash_ctor->clone();
-            return x;
-        }
-        if (x == static_cast<uint16_t>(cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA)) {
-            *p_cipher_context = std::make_unique<aes::AES_CBC_SHA>();
-            hash_ctor = std::make_unique<sha256>();
-            handshake_hasher = hash_ctor->clone();
-            return x;
-        }
-
-    }
-    throw ssl_error("no supported ciphers", AlertLevel::fatal, AlertDescription::handshake_failure );
-}
-
-void key_schedule::client_handshake_finished12_record(tls_record record) {
-    
-    static_cast<void>(record.m_contents.at(0));
-    if(record.m_contents[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
+    static_cast<void>(handshake_message.at(0));
+    if(handshake_message[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     
-    const size_t len = try_bigend_read(record.m_contents, 1, 3);
+    const size_t len = try_bigend_read(handshake_message, 1, 3);
     if(len != 12) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 
-    auto finish = record.m_contents.substr(4);
+    auto finish = handshake_message.substr(4);
     auto handshake_hash = handshake_hasher->hash();
-    ustring expected_finished = prf(*hash_ctor, master_secret, "client finished", handshake_hash, 12);
+    ustring expected_finished = prf(*hash_ctor, tls12_master_secret, "client finished", handshake_hash, 12);
 
     if(expected_finished != finish) [[unlikely]] {
         throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    handshake_hasher->update(record.m_contents);
+    handshake_hasher->update(handshake_message);
 }
 
 

@@ -6,7 +6,8 @@
 //
 
 #include "block_chain.hpp"
-#include "../one_way/secure_hash.hpp"
+#include "../one_way/sha1.hpp"
+#include "../one_way/hmac.hpp"
 #include "AES.hpp"
 #include "../../../global.hpp"
 #include "../one_way/keccak.hpp"

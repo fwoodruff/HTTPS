@@ -107,7 +107,7 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
             break;
         }
         assert(m_stream != nullptr);
-        stream_result connection_alive = co_await m_stream->read_append(m_buffer, option_singleton().keep_alive);
+        stream_result connection_alive = co_await m_stream->read_append(m_buffer, project_options.keep_alive);
         if (connection_alive == stream_result::read_timeout) {
             co_await m_stream->close_notify();
             co_return std::nullopt;
@@ -126,7 +126,7 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         if(body) {
             break;
         }
-        stream_result connection_alive = co_await m_stream->read_append(m_buffer, option_singleton().session_timeout);
+        stream_result connection_alive = co_await m_stream->read_append(m_buffer, project_options.session_timeout);
         // todo: size check on m_buffer
         if(connection_alive != stream_result::ok) [[unlikely]] {
             co_return std::nullopt;
@@ -149,7 +149,7 @@ task<void> HTTP::send_error(http_error http_err) {
     << "\r\n"
     << error_html;
     ustring output = to_unsigned(oss.str());
-    auto res = co_await m_stream->write(output, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(output, project_options.session_timeout);
     if(res == stream_result::ok) {
         co_await m_stream->close_notify();
     }
@@ -203,7 +203,7 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
     if(http_request.header.protocol != "HTTP/1.0" and http_request.header.protocol != "HTTP/1.1" and http_request.header.protocol != "HTTP/0.9") {
         throw http_error("505 HTTP Version Not Supported");
     }
-    std::string subfolder = option_singleton().default_subfolder;
+    std::string subfolder = project_options.default_subfolder;
     if(auto it = http_request.header.headers.find("host"); it != http_request.header.headers.end()) {
         const auto domain = parse_domain(it->second);
         if(std::filesystem::exists(rootdirectory/domain)) {
@@ -245,7 +245,7 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 // Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
 void HTTP::write_body(ustring frame) {
     auto body = to_signed(std::move(frame));
-    std::ofstream fout(option_singleton().webpage_folder/"final.html", std::ios_base::app);
+    std::ofstream fout(project_options.webpage_folder/"final.html", std::ios_base::app);
     body = replace_all(std::move(body), "username=", "username: ");
     body = replace_all(std::move(body), "&password=", ", password: ");
     body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
@@ -276,11 +276,11 @@ std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_
         {"Content-Type", MIME + (MIME.substr(0, 4) == "text" ? "; charset=UTF-8" : "")},
         {"Content-Length", std::to_string(file_size)},
         {"Connection", "Keep-Alive"},
-        {"Keep-Alive", "timeout=" + std::to_string(option_singleton().keep_alive.count())},
+        {"Keep-Alive", "timeout=" + std::to_string(project_options.keep_alive.count())},
         {"Server", make_server_name()},
         {"X-Served-By", domain }
     };
-    if(option_singleton().http_strict_transport_security) {
+    if(project_options.http_strict_transport_security) {
         headers.insert({"Strict-Transport-Security", "max-age=31536000"});
     }
     return headers;
@@ -299,7 +299,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
     }
     auto status_code = (file_size != 0)? "200 OK": "206 No Content";
     ustring header_str = make_header(status_code, headers);
-    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
@@ -331,7 +331,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdirectory,
     headers.insert({"Content-Range", "bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size)});
 
     ustring header_str = make_header("206 Partial Content", headers);
-    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
@@ -375,14 +375,14 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
     headers["Content-Type"] = "multipart/byteranges; boundary=" + boundary_string;
     
     ustring header_str = make_header("206 Partial Content", headers);
-    auto res = co_await m_stream->write(header_str, option_singleton().session_timeout);
+    auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;
     }
     for(auto& range : ranges) {
         auto [begin, end] = get_range_bounds(file_size, range);
         auto delimi = mid_bound + range_header(range, file_size);
-        auto result = co_await m_stream->write(to_unsigned(delimi), option_singleton().session_timeout);
+        auto result = co_await m_stream->write(to_unsigned(delimi), project_options.session_timeout);
         if(result != stream_result::ok) {
             co_return result;
         }
@@ -392,12 +392,12 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
                 co_return result;
             }
         }
-        result = co_await m_stream->write(to_unsigned("\r\n"), option_singleton().session_timeout);
+        result = co_await m_stream->write(to_unsigned("\r\n"), project_options.session_timeout);
         if(result != stream_result::ok) {
             co_return result;
         }
     }
-    co_return co_await m_stream->write(to_unsigned(end_bound), option_singleton().session_timeout);
+    co_return co_await m_stream->write(to_unsigned(end_bound), project_options.session_timeout);
 }
 
 task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end) {
@@ -411,7 +411,7 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read((char*)buffer.data(), buffer.size());
-        auto res = co_await m_stream->write(buffer, option_singleton().session_timeout);
+        auto res = co_await m_stream->write(buffer, project_options.session_timeout);
         if(res != stream_result::ok) [[unlikely]] {
             co_return res;
         }
@@ -440,7 +440,7 @@ task<void> HTTP::redirect(http_frame request) {
     std::string MIME = Mime_from_file(filename);
     std::string body = moved_301();
 
-    std::string domain = option_singleton().default_subfolder;
+    std::string domain = project_options.default_subfolder;
     if(auto it = request.header.headers.find("host"); it != request.header.headers.end()) {
         domain = it->second;
     }
@@ -449,7 +449,7 @@ task<void> HTTP::redirect(http_frame request) {
         domain = domain_parts[0];
     }
     
-    std::string https_port = option_singleton().server_port;
+    std::string https_port = project_options.server_port;
     std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
 
     std::string location_resource = request.header.resource == "/" ? "" : request.header.resource;
@@ -465,7 +465,7 @@ task<void> HTTP::redirect(http_frame request) {
         << body;
     
     std::string var = oss.str();
-    co_await m_stream->write(to_unsigned(var), option_singleton().session_timeout);
+    co_await m_stream->write(to_unsigned(var), project_options.session_timeout);
     co_await m_stream->close_notify();
 }
 

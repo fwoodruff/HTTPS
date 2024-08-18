@@ -15,7 +15,7 @@
 
 namespace fbw::secp256r1 {
 
-// Signs the message digest with the certificates privte key and a secret random number
+// Signs the message digest with the certificates privte key and a secret random number in DER encoded format
 [[nodiscard]] ustring DER_ECDSA(
                      std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,

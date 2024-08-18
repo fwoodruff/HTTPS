@@ -9,7 +9,7 @@
 #include "TLS/PEMextract.hpp"
 #include "HTTP/string_utils.hpp"
 #include "limiter.hpp"
-#include "TLS/Cryptography/one_way/secure_hash.hpp"
+#include "TLS/Cryptography/one_way/sha2.hpp"
 #include "TLS/Cryptography/one_way/hash_base.hpp"
 
 #include <memory>
@@ -20,38 +20,35 @@
 #include <unordered_map>
 
 // todo:
-// secp256k1 and x25519, get the point at infinity behaviour right
 // implement TLS 1.3
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
 // Implement a map between HTTP 'host' header and webroot (with default)
 // Implement an HTTP webroot (with 301 not 404) - this is so we can use HTTP ACME challenges
 // Implement a map between SNI host and TLS certificate (with default)
-// fix the SHA-384 implementations
 // AES-256
-// add a health check to the docker image
 // implement HTTP/1.1 compression encodings
 // review unnecessary buffer copies, more subspan, less substr
 // HTTP codes should be a map code -> { title, blurb }
-// errors in server config should output to stderr
 // HTTP/2
 // use master key rather than expanded key material for TLS 1.2 handshakes
 // mostly lock-free runtime
 // check all 'expected record' logic (asserts, etc.)
 // unhandled exception when running exec outside of root folder
-// 'split' and 'split_string' functions are redundant
 // more functions should take const& and return a value
-// when content length is zero status code is 204 No Content
-// GET request to /readiness should return 206 below brownout threshold, 
+// GET request to /readiness should return 206 below brownout threshold, 429 above
 // options singleton, let's just use a global static
+// deserialise hello record into a struct before further parsing
+// memory pool of common objects (records) - view calls to malloc
+// improve interface for signature and key exchange
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
     try {
         if(alpn == "http/1.1") {
-            fbw::HTTP http_handler { std::move(client_stream), fbw::option_singleton().webpage_folder, redirect };
+            fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
             co_await http_handler.client();
         } if(alpn == "h2") {
-            fbw::HTTP2 http_handler { std::move(client_stream), fbw::option_singleton().webpage_folder };
+            fbw::HTTP2 http_handler { std::move(client_stream), fbw::project_options.webpage_folder };
             co_await http_handler.client();
         }
     } catch(const std::exception& e) {
@@ -112,10 +109,10 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
 
 task<void> async_main(fbw::tcplistener https_listener, std::string https_port, fbw::tcplistener http_listener, std::string http_port) {
     try {
-        fbw::MIMEmap = fbw::MIMES(fbw::option_singleton().mime_folder);
-        static_cast<void>(fbw::der_cert_for_domain(fbw::option_singleton().default_subfolder));
-        static_cast<void>(fbw::privkey_for_domain(fbw::option_singleton().default_subfolder));
-        fbw::parse_tlds(fbw::option_singleton().tld_file);
+        fbw::MIMEmap = fbw::MIMES(fbw::project_options.mime_folder);
+        static_cast<void>(fbw::der_cert_for_domain(fbw::project_options.default_subfolder));
+        static_cast<void>(fbw::privkey_for_domain(fbw::project_options.default_subfolder));
+        fbw::parse_tlds(fbw::project_options.tld_file);
 
         std::stringstream ss;
         std::clog << ss.str() << std::flush;
@@ -131,18 +128,19 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
-        std::cerr << "Mime folder: " << std::filesystem::absolute(fbw::option_singleton().mime_folder) << std::endl;
-        std::cerr << "Key file: " << std::filesystem::absolute(fbw::option_singleton().key_file) << std::endl;
-        std::cerr << "Certificate file: " << std::filesystem::absolute(fbw::option_singleton().certificate_file) << std::endl;
+        std::cerr << "Mime folder: " << std::filesystem::absolute(fbw::project_options.mime_folder) << std::endl;
+        std::cerr << "Key file: " << std::filesystem::absolute(fbw::project_options.key_file) << std::endl;
+        std::cerr << "Certificate file: " << std::filesystem::absolute(fbw::project_options.certificate_file) << std::endl;
     }
     co_return;
 }
 
 int main(int argc, const char * argv[]) {
-     try {
-        auto http_port = fbw::option_singleton().redirect_port ;
+    try {
+        fbw::init_options();
+        auto http_port = fbw::project_options.redirect_port ;
         auto http_listener = fbw::tcplistener::bind(http_port);
-        auto https_port = fbw::option_singleton().server_port;
+        auto https_port = fbw::project_options.server_port;
         auto https_listener = fbw::tcplistener::bind(https_port);
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {

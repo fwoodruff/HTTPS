@@ -11,6 +11,8 @@
 #include "../one_way/keccak.hpp"
 #include "../assymetric/bignum.hpp"
 
+#include "../one_way/sha2.hpp"
+
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <cstring>
@@ -18,6 +20,8 @@
 #include <array>
 
 namespace fbw::cha {
+
+
 
 constexpr uint32_t ROT32(uint32_t x, int shift) {
     return (x << shift) | (x >> (32 - shift));
@@ -71,7 +75,7 @@ std::array<uint8_t, 64> chacha20_inner(const std::array<uint32_t, 16>& state_ori
     return out;
 }
 
-std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, 32>& key, const std::array<uint8_t, 12>& nonce) {
+std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& nonce) {
     std::array<uint32_t, 16> state {0};
     state[0] = 0x61707865;
     state[1] = 0x3320646e;
@@ -88,14 +92,14 @@ std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, 32>& key, cons
     return state;
 }
 
-std::array<uint8_t, 64> chacha20(const std::array<uint8_t, 32>& key, const std::array<uint8_t, 12>& nonce, uint32_t block_count) {
+std::array<uint8_t, 64> chacha20(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& nonce, uint32_t block_count) {
     auto state = chacha20_state(key, nonce);
     return chacha20_inner(state, block_count);
 }
 
-ustring chacha20_xorcrypt(   const std::array<uint8_t, 32>& key,
+ustring chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             uint32_t blockid,
-                            const std::array<uint8_t, 12>& nonce,
+                            const std::array<uint8_t, IV_SIZE>& nonce,
                             const ustring& message) {
     
     ustring out;
@@ -182,7 +186,7 @@ ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
 }
 
 
-std::array<uint8_t, 16> poly1305_mac(const ustring& message, const std::array<uint8_t, 32>& key) {
+std::array<uint8_t, TAG_SIZE> poly1305_mac(const ustring& message, const std::array<uint8_t, KEY_SIZE>& key) {
     
     std::array<uint8_t, 24> r_bytes {0};
     std::copy_n(&key[0], 16, r_bytes.begin());
@@ -216,23 +220,23 @@ std::array<uint8_t, 16> poly1305_mac(const ustring& message, const std::array<ui
     
     accumulator += s;
     auto out = accumulator.serialise();
-    std::array<uint8_t, 16> out_str;
-    std::copy_n(out.rbegin(), 16, out_str.begin());
+    std::array<uint8_t, TAG_SIZE> out_str;
+    std::copy_n(out.rbegin(), TAG_SIZE, out_str.begin());
     return out_str;
 }
 
-std::array<uint8_t, 32> poly1305_key_gen(const std::array<uint8_t, 32>& key, const std::array<uint8_t, 12>& nonce) {
+std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& nonce) {
     std::array<uint8_t, 64> bl = chacha20(key, nonce, 0);
-    std::array<uint8_t, 32> out;
-    std::copy_n(bl.begin(), 32, out.begin());
+    std::array<uint8_t, KEY_SIZE> out;
+    std::copy_n(bl.begin(), KEY_SIZE, out.begin());
     return out;
 }
 
 
 
 // encrypt or decrypt
-std::pair<ustring, std::array<uint8_t, 16>>
-chacha20_aead_crypt(ustring aad, std::array<uint8_t, 32> key, std::array<uint8_t, 12> nonce, ustring text, bool do_encrypt) {
+std::pair<ustring, std::array<uint8_t, TAG_SIZE>>
+chacha20_aead_crypt(ustring aad, std::array<uint8_t, KEY_SIZE> key, std::array<uint8_t, IV_SIZE> nonce, ustring text, bool do_encrypt) {
     
     auto otk = poly1305_key_gen(key, nonce);
     auto xortext = chacha20_xorcrypt(key, 1, nonce, text);
@@ -262,59 +266,56 @@ chacha20_aead_crypt(ustring aad, std::array<uint8_t, 32> key, std::array<uint8_t
     return {xortext, tag};
 }
 
-// todo: refactor and combine
-void ChaCha20_Poly1305::set_key_material_13_handshake(ustring handshake_secret, ustring handshake_context_hash) {
-    auto client_handshake_traffic_secret = hkdf_expand_label(sha256(), handshake_secret, "c hs traffic", handshake_context_hash, 32);
-    auto server_handshake_traffic_secret = hkdf_expand_label(sha256(), handshake_secret, "s hs traffic", handshake_context_hash, 32);
-    auto client_handshake_key = hkdf_expand_label(sha256(), client_handshake_traffic_secret, "key", std::string(""), 32);
-    auto client_handshake_iv = hkdf_expand_label(sha256(), client_handshake_traffic_secret, "iv", std::string(""), 12);
-    auto server_handshake_key = hkdf_expand_label(sha256(), server_handshake_traffic_secret, "key", std::string(""), 32);
-    auto server_handshake_iv = hkdf_expand_label(sha256(), server_handshake_traffic_secret, "iv", std::string(""), 12);
+void ChaCha20_Poly1305_tls13::set_key_material_13_handshake(const key_schedule& key_sche) {
 
-    std::copy(client_handshake_key.begin(), client_handshake_key.end(), client_write_key.begin());
-    std::copy(server_handshake_key.begin(), server_handshake_key.end(), server_write_key.begin());
-    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), client_implicit_write_IV.begin());
-    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), server_implicit_write_IV.begin());
+    auto client_handshake_key = hkdf_expand_label(sha256(), key_sche.client_handshake_traffic_secret, "key", std::string(""), KEY_SIZE);
+    auto client_handshake_iv = hkdf_expand_label(sha256(), key_sche.client_handshake_traffic_secret, "iv", std::string(""), IV_SIZE);
+    auto server_handshake_key = hkdf_expand_label(sha256(), key_sche.server_handshake_traffic_secret, "key", std::string(""), KEY_SIZE);
+    auto server_handshake_iv = hkdf_expand_label(sha256(), key_sche.server_handshake_traffic_secret, "iv", std::string(""), IV_SIZE);
 
-    seqno_server = 0;
-    seqno_client = 0;
-    tls_13_aad = true;
+    std::copy(client_handshake_key.begin(), client_handshake_key.end(), ctx.client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.end(), ctx.server_write_key.begin());
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), ctx.client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), ctx.server_implicit_write_IV.begin());
+
+    ctx.seqno_server = 0;
+    ctx.seqno_client = 0;
 }
 
-void ChaCha20_Poly1305::set_key_material_13_application(ustring master_secret, ustring application_context_hash) {
-    auto client_application_traffic_secret = hkdf_expand_label(sha256(), master_secret, "c ap traffic", application_context_hash, 32);
-    auto server_application_traffic_secret = hkdf_expand_label(sha256(), master_secret, "s ap traffic", application_context_hash, 32);
-    auto client_handshake_key = hkdf_expand_label(sha256(), client_application_traffic_secret, "key", std::string(""), 32);
-    auto client_handshake_iv = hkdf_expand_label(sha256(), client_application_traffic_secret, "iv", std::string(""), 12);
-    auto server_handshake_key = hkdf_expand_label(sha256(), server_application_traffic_secret, "key", std::string(""), 32);
-    auto server_handshake_iv = hkdf_expand_label(sha256(), server_application_traffic_secret, "iv", std::string(""), 12);
+void ChaCha20_Poly1305_tls13::set_key_material_13_application(const key_schedule& key_sche) {
+    auto client_handshake_key = hkdf_expand_label(sha256(), key_sche.client_application_traffic_secret, "key", std::string(""), KEY_SIZE);
+    auto client_handshake_iv = hkdf_expand_label(sha256(), key_sche.client_application_traffic_secret, "iv", std::string(""), IV_SIZE);
+    auto server_handshake_key = hkdf_expand_label(sha256(), key_sche.server_application_traffic_secret, "key", std::string(""), KEY_SIZE);
+    auto server_handshake_iv = hkdf_expand_label(sha256(), key_sche.server_application_traffic_secret, "iv", std::string(""), IV_SIZE);
 
-    std::copy(client_handshake_key.begin(), client_handshake_key.end(), client_write_key.begin());
-    std::copy(server_handshake_key.begin(), server_handshake_key.end(), server_write_key.begin());
-    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), client_implicit_write_IV.begin());
-    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), server_implicit_write_IV.begin());
-    // seqno not reset
+    std::copy(client_handshake_key.begin(), client_handshake_key.end(), ctx.client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.end(), ctx.server_write_key.begin());
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), ctx.client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), ctx.server_implicit_write_IV.begin());
+
+    ctx.seqno_server = 0;
+    ctx.seqno_client = 0;
 }
 
 
-void ChaCha20_Poly1305::set_key_material_12(ustring material) {
+void ChaCha20_Poly1305_tls12::set_key_material_12(ustring material) {
     
     auto it = material.begin();
-    std::copy_n(it, client_write_key.size(), client_write_key.begin());
-    it += client_write_key.size();
-    std::copy_n(it, server_write_key.size(), server_write_key.begin());
-    it += server_write_key.size();
-    std::copy_n(it, client_implicit_write_IV.size(), client_implicit_write_IV.begin());
-    it += client_implicit_write_IV.size();
-    std::copy_n(it, server_implicit_write_IV.size(), server_implicit_write_IV.begin());
-    it += server_implicit_write_IV.size();
+    std::copy_n(it, ctx.client_write_key.size(), ctx.client_write_key.begin());
+    it += ctx.client_write_key.size();
+    std::copy_n(it, ctx.server_write_key.size(), ctx.server_write_key.begin());
+    it += ctx.server_write_key.size();
+    std::copy_n(it, ctx.client_implicit_write_IV.size(), ctx.client_implicit_write_IV.begin());
+    it += ctx.client_implicit_write_IV.size();
+    std::copy_n(it, ctx.server_implicit_write_IV.size(), ctx.server_implicit_write_IV.begin());
+    it += ctx.server_implicit_write_IV.size();
 }
 
-ustring make_additional_12(tls_record& record, std::array<uint8_t,8>& sequence_no, size_t tag_size) {
+ustring make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_size) {
     assert(record.m_contents.size() >= tag_size);
     uint16_t msglen = htons(record.m_contents.size() - tag_size);
-    ustring additional_data;
-    additional_data.append(sequence_no.begin(), sequence_no.end());
+    ustring additional_data(8, 0);
+    checked_bigend_write(sequence_no, additional_data, 0, 8);
     additional_data.append({record.get_type(), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
     std::memcpy(&additional_data[11], &msglen, 2);
@@ -331,72 +332,69 @@ ustring make_additional_13(const tls_record& record, bool record_is_plaintext) {
     return additional_data;
 }
 
-tls_record ChaCha20_Poly1305::encrypt(tls_record record) noexcept {
-    std::array<uint8_t,8> sequence_no;
-    checked_bigend_write(seqno_server, sequence_no, 0, 8);
-    seqno_server++;
-    
-    ustring additional_data;
-    if(tls_13_aad) {
-        additional_data = make_additional_13(record, true);
-        record.m_contents.push_back(record.get_type());
-        record.m_type = static_cast<uint8_t>(ContentType::Application);
-    } else {
-        additional_data = make_additional_12(record, sequence_no, 0);
+std::array<uint8_t, IV_SIZE> number_once(std::array<uint8_t, IV_SIZE> IV, uint64_t seq) {
+    std::array<uint8_t,sizeof(uint64_t)> sequence_no;
+    checked_bigend_write(seq, sequence_no, 0, sizeof(uint64_t));
+    for(size_t i = 0; i < sizeof(uint64_t); i ++) {
+        IV[i+IV_SIZE-sizeof(uint64_t)] ^= sequence_no[i];
     }
-    
-    std::array<uint8_t, 12> nonce = server_implicit_write_IV;
-    for(int i = 0; i < 8; i ++) {
-        nonce[i+4] ^= sequence_no[i];
-    }
-    auto [ciphertext, tag] = chacha20_aead_crypt(additional_data, server_write_key, nonce, record.m_contents, true);
-    record.m_contents = ciphertext;
-    record.m_contents.append(tag.begin(), tag.end());
-    return record;
+    return IV;
 }
 
-tls_record ChaCha20_Poly1305::decrypt(tls_record record) {
-    if(record.m_contents.size() < 16) {
-        throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
-    }
+ustring ChaCha20_Poly1305_ctx::encrypt(ustring plaintext, ustring additional_data) {
+    auto nonce = number_once(server_implicit_write_IV, seqno_server);
+    seqno_server++;
+    auto [ciphertext, tag] = chacha20_aead_crypt(additional_data, server_write_key, nonce, std::move(plaintext), true);
+    ciphertext.append(tag.begin(), tag.end());
+    return ciphertext;
+}
 
-    std::array<uint8_t, 8> sequence_no {};
-    checked_bigend_write(seqno_client, sequence_no, 0, 8);
+ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, ustring additional_data) {
+    assert(ciphertext.size() >= TAG_SIZE);
+    std::array<uint8_t, TAG_SIZE> tag;
+    std::copy(ciphertext.end() - TAG_SIZE, ciphertext.end(), tag.begin());
+    ciphertext.resize(ciphertext.size() - TAG_SIZE);
+    auto nonce = number_once(client_implicit_write_IV, seqno_client);
     seqno_client++;
-    
-    ustring additional_data;
-    if(tls_13_aad) {
-        additional_data = make_additional_13(record, false);
-    } else {
-        additional_data = make_additional_12(record, sequence_no, 16);
-    }
-    ustring ciphertext;
-    ciphertext.append(record.m_contents.begin(), record.m_contents.end()-16);
-    
-    std::array<uint8_t, 16> tag;
-    assert(std::distance(record.m_contents.begin(), record.m_contents.end()) >= 16);
-    std::copy(record.m_contents.end()-16, record.m_contents.end(), tag.begin());
-    
-    std::array<uint8_t,12> nonce = client_implicit_write_IV;
-    for(int i = 0; i < 8; i++) {
-        nonce[i+4] ^= sequence_no[i];
-    }
-    
     auto [plaintext, tag_recalc] = chacha20_aead_crypt(additional_data, client_write_key, nonce, ciphertext, false);
-
     if(tag != tag_recalc) [[unlikely]] {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
-    record.m_contents = plaintext;
-
-    if(tls_13_aad) {
-        record.m_type = record.m_contents.back();
-        record.m_contents.pop_back();
-    }
-
-    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
+    if(plaintext.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }
+    return plaintext;
+}
+
+tls_record ChaCha20_Poly1305_tls13::encrypt(tls_record record) noexcept {
+    ustring additional_data = make_additional_13(record, true);
+    record = wrap13(std::move(record));
+    record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
+    return record;
+}
+
+tls_record ChaCha20_Poly1305_tls12::encrypt(tls_record record) noexcept {
+    ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
+    record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
+    return record;
+}
+
+tls_record ChaCha20_Poly1305_tls13::decrypt(tls_record record) {
+    if(record.m_contents.size() < TAG_SIZE) {
+        throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
+    }
+    ustring additional_data = make_additional_13(record, false);
+    record.m_contents = ctx.decrypt(std::move(record.m_contents), additional_data);
+    record = unwrap13(std::move(record));
+    return record;
+}
+
+tls_record ChaCha20_Poly1305_tls12::decrypt(tls_record record) {
+    if(record.m_contents.size() < TAG_SIZE) {
+        throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
+    }
+    ustring additional_data = make_additional_12(record, ctx.seqno_client, TAG_SIZE);
+    record.m_contents = ctx.decrypt(std::move(record.m_contents), additional_data);
     return record;
 }
 

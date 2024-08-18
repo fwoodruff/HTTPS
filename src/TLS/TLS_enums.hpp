@@ -12,6 +12,35 @@
 #include "../global.hpp"
 #include <span>
 
+template<typename EnumType, EnumType... Values>
+class EnumCheck;
+
+template<typename EnumType>
+class EnumCheck<EnumType>
+{
+public:
+    template<typename IntType>
+    static bool constexpr is_value(IntType) { return false; }
+};
+
+template<typename EnumType, EnumType V, EnumType... Next>
+class EnumCheck<EnumType, V, Next...> : private EnumCheck<EnumType, Next...>
+{
+    using super = EnumCheck<EnumType, Next...>;
+
+public:
+    template<typename IntType>
+    static bool constexpr is_value(IntType v)
+    {
+        return v == static_cast<IntType>(V) || super::is_value(v);
+    }
+};
+
+constexpr uint16_t TLS10 = 0x0301;
+constexpr uint16_t TLS11 = 0x0302;
+constexpr uint16_t TLS12 = 0x0303;
+constexpr uint16_t TLS13 = 0x0304;
+
 enum class HandshakeStage {
     client_hello,
     server_hello,
@@ -49,6 +78,29 @@ enum class PskKeyExchangeMode : uint8_t {
     psk_dhe_ke = 1
 };
 
+// rfc 6066 - Maximum Fragment Length Negotiation
+enum class MaxFragmentLength : uint8_t {
+    s2_9 = 1,
+    s2_10 = 2,
+    s2_11 = 3,
+    s2_12 = 4
+};
+
+// rfc 6066 - Client Certificate URLs
+enum class CertChainType : uint8_t {
+    individual_certs = 0,
+    pkipath = 1
+};
+struct URLAndHash{
+    ustring url;
+    // uint8_t padding;
+    std::array<uint8_t, 20> SHA1Hash;
+};
+struct CertificateURL {
+    CertChainType type;
+    std::vector<URLAndHash> url_and_hash_list;
+};
+
 enum class CertificateType : uint8_t {
     X509 = 0,
     RawPublicKey = 2,
@@ -81,6 +133,32 @@ enum class AlertLevel : uint8_t {
     fatal = 2
 };
 
+enum class IdentifierType : uint8_t {
+    pre_agreed = 0,
+    key_sha1_hash = 1,
+    x509_name = 2,
+    cert_sha1_hash = 3
+};
+
+struct OCSPStatusRequest {
+    std::vector<ustring> responderID;
+    ustring extensions;
+};
+
+enum class CertificateStatusType : uint8_t {
+    ocsp = 1
+};
+
+struct CertificateStatusRequest {
+    CertificateStatusType status_type;
+    OCSPStatusRequest request;
+};
+
+struct CertificateStatus {
+    CertificateStatusType status_type;
+    ustring response;
+};
+
 enum class AlertDescription : uint8_t {
     close_notify = 0,
     unexpected_message = 10,
@@ -107,7 +185,12 @@ enum class AlertDescription : uint8_t {
     inappropriate_fallback = 86,
     user_canceled = 90,
     no_renegotiation = 100,
-    unsupported_extension = 110
+    unsupported_extension = 110,
+    certificate_unobtainable = 111,
+    unrecognized_name = 112,
+    bad_certificate_status_response = 113,
+    bad_certificate_hash_value = 114,
+    no_application_protocol = 120,
 };
 
 enum class HandshakeType : uint8_t {
@@ -127,26 +210,66 @@ enum class HandshakeType : uint8_t {
 enum class ExtensionType : uint16_t{
     server_name = 0,
     max_fragment_length = 1,
+    client_certificate_url = 2,
+    trusted_ca_keys = 3,
+    truncated_hmac = 4,
     status_request = 5,
+    user_mapping = 6,
+    client_authz = 7,
+    server_authz = 8,
+    cert_type = 9,
     supported_groups = 10,
+    ec_point_formats = 11,
+    srp = 12,
     signature_algorithms = 13,
     use_srtp = 14,
     heartbeat = 15,
     application_layer_protocol_negotiation = 16,
+    status_request_v2 = 17,
     signed_certificate_timestamp = 18,
     client_certificate_type = 19,
     server_certificate_type= 20,
-    padding= 21,
-    pre_shared_key=41,
-    early_data=42,
-    supported_versions=43,
-    cookie=44,
-    psk_key_exchange_modes=45,
-    certificate_authorities=47,
-    oid_filters=48,
-    post_handshake_auth=49,
-    signature_algorithms_cert=50,
-    key_share=51,
+    padding = 21,
+    encrypt_then_mac = 22,
+    extended_master_secret = 23,
+    token_binding = 24,
+    cached_info = 25,
+    tls_lts = 26,
+    compressed_certificate = 27,
+    record_size_limit = 28,
+    pwd_protect = 29,
+    pwd_clear = 30,
+    password_salt = 31,
+    ticket_pinning = 32,
+    tls_cert_with_extern_psk = 33,
+    delegated_credential = 34,
+    session_ticket = 35,
+    TLMSP = 36,
+    TLMSP_proxying = 37,
+    TLMSP_delegate = 38,
+    supported_ekt_ciphers = 39,
+    pre_shared_key = 41,
+    early_data = 42,
+    supported_versions = 43,
+    cookie = 44,
+    psk_key_exchange_modes = 45,
+    certificate_authorities = 47,
+    oid_filters = 48,
+    post_handshake_auth = 49,
+    signature_algorithms_cert = 50,
+    key_share = 51,
+    transparency_info = 52,
+    connection_id_deprecated = 53,
+    connection_id = 54,
+    external_id_hash = 55,
+    external_session_id = 56,
+    quic_transport_parameters = 57,
+    ticket_request = 58,
+    dnssec_chain = 59,
+    sequence_number_encryption_algorithms = 60,
+    rrc = 61,
+    ech_outer_extesions = 64768,
+    renegotiation_info = 65281
 };
 
 enum class HashAlgorithm : uint8_t {
@@ -276,13 +399,13 @@ public:
 
     // record items with variable length include a header and are sometimes nested
     // append data and then figure out the header size
-    inline void push_der(ssize_t bytes) {
+    inline void start_size_header(ssize_t bytes) {
         heads.push_back({static_cast<ssize_t>(m_contents.size()), bytes});
         auto size = ustring(bytes, 0);
         m_contents.append(size);
     }
 
-    inline void pop_der() {
+    inline void end_size_header() {
         auto [idx_start, num_bytes] = heads.back();
         heads.pop_back();
         checked_bigend_write(m_contents.size() - idx_start - num_bytes, m_contents, idx_start, num_bytes);

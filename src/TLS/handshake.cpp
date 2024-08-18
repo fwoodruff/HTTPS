@@ -154,9 +154,7 @@ void handshake_ctx::client_hello_record(ustring handshake_message) {
 
 tls_record handshake_ctx::server_hello_record() {
     auto hello_record = tls_record(ContentType::Handshake);
-    
-    // handshake header and server version
-    hello_record.m_contents.reserve(49); // todo: fix me
+    hello_record.m_contents.reserve(128);
 
     // server random
     m_server_random.resize(32);

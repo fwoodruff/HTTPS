@@ -316,7 +316,7 @@ ustring make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_
     uint16_t msglen = htons(record.m_contents.size() - tag_size);
     ustring additional_data(8, 0);
     checked_bigend_write(sequence_no, additional_data, 0, 8);
-    additional_data.append({record.get_type(), record.get_major_version(), record.get_minor_version()});
+    additional_data.append({static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
     std::memcpy(&additional_data[11], &msglen, 2);
     return additional_data;

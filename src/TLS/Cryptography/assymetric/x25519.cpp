@@ -101,10 +101,6 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) {
     return REDC(ct_u512(ladder));
 }
 
-
-
-
-
 // computes lhs + rhs mod P
 constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) { // todo: CT
     assert(lhs < Prime and rhs < Prime);
@@ -135,7 +131,7 @@ constexpr point256 point_add(const point256& P, const point256& Q, const point25
 
 // finds point R on the line tangent to point P on the curve, reflected in x-axis
 constexpr point256 point_double(const point256& P) {
-    // todo: consider point at infinity 
+    // todo: consider point at infinity
     ct_u256 point_xz = REDC(P.xcoord * P.affine);
     ct_u256 point_xx = REDC(P.xcoord * P.xcoord);
     ct_u256 point_zz = REDC(P.affine * P.affine);

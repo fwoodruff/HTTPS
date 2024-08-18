@@ -24,7 +24,7 @@ class hmac : public hash_base {
     std::unique_ptr<hash_base> m_hasher;
     std::vector<uint8_t> KeyPrime;
 
-    hmac(const hash_base& hasher, const uint8_t* key, size_t key_len); // todo: pass hash_base by const ref not unique_ptr
+    hmac(const hash_base& hasher, const uint8_t* key, size_t key_len);
 public:
     template<typename T> hmac(const hash_base& hasher, const T& key);
     std::unique_ptr<hash_base> clone() const override;

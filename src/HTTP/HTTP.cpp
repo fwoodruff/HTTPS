@@ -115,7 +115,9 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         if(connection_alive != stream_result::ok) [[unlikely]] {
             co_return std::nullopt;
         }
-        // todo: size check on m_buffer
+        if(m_buffer.size() > MAX_HEADER_SIZE) {
+            co_return std::nullopt;
+        }
     }
     assert(header != std::nullopt);
     if(!is_body_required(*header)) {
@@ -127,8 +129,10 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
             break;
         }
         stream_result connection_alive = co_await m_stream->read_append(m_buffer, project_options.session_timeout);
-        // todo: size check on m_buffer
         if(connection_alive != stream_result::ok) [[unlikely]] {
+            co_return std::nullopt;
+        }
+        if(m_buffer.size() > MAX_BODY_SIZE) {
             co_return std::nullopt;
         }
         continue;

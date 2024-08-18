@@ -316,7 +316,7 @@ tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
 
     ustring additional_data = sequence_no;
     
-    additional_data.append({record.get_type(), record.get_major_version(), record.get_minor_version()});
+    additional_data.append({static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     
     additional_data.resize(13);
     std::memcpy(&additional_data[11], &msglen, 2);
@@ -355,7 +355,7 @@ tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
     
     ustring additional_data;
     additional_data.append(sequence);
-    additional_data.append({record.get_type(), record.get_major_version(), record.get_minor_version()});
+    additional_data.append({static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
     assert(record.m_contents.size() >= auth_tag.size() + explicit_IV.size());
     uint16_t msglen = htons(record.m_contents.size() - auth_tag.size() - explicit_IV.size());

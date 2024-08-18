@@ -374,14 +374,10 @@ ustring raw_ECDSA(std::array<uint8_t,32> k_random,
     return out;
 }
 
-
-// todo: use span
 ustring DER_ECDSA(
                      std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,
                      std::array<uint8_t,32> private_key) {
-    
-    
     
     auto signature = ECDSA_impl(std::move(k_random), std::move(digest), std::move(private_key));
     auto r = signature.r.serialise();

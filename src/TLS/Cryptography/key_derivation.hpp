@@ -59,7 +59,7 @@ ustring P_hash(const hash_base& hash_ctor, const T& secret, const ustring& seed,
 }
 
 // TLS 1.2 PRF function
-template<typename T, typename U> // todo: label always std::string
+template<typename T, typename U>
 ustring prf(const hash_base& hash_ctor, const T& secret, const std::string& label, const U& seed, size_t len) {
     // Concatenate label and seed
     ustring label_seed(label.cbegin(), label.cend());

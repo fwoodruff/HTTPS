@@ -346,7 +346,7 @@ public:
 
 struct tls_record {
 public:
-    uint8_t m_type; // todo: should be a content type not a byte
+    ContentType m_type;
 private:
     uint8_t m_major_version;
     uint8_t m_minor_version;
@@ -356,15 +356,14 @@ private:
     };
     std::vector<der_headers> heads;
 public:
-    tls_record() = default; // remove this line then fix task.hpp
     ustring m_contents;
     
-    inline uint8_t get_type() const { return m_type; }
+    inline ContentType get_type() const { return static_cast<ContentType>(m_type); }
     inline uint8_t get_major_version() const { return m_major_version; }
     inline uint8_t get_minor_version() const { return m_minor_version; }
 
-    inline tls_record(ContentType type, uint8_t major_version = 3, uint8_t minor_version = 3) :
-        m_type(static_cast<uint8_t>(type)),
+    inline tls_record(ContentType type = ContentType::Invalid, uint8_t major_version = 3, uint8_t minor_version = 3) :
+        m_type(type),
         m_major_version(major_version),
         m_minor_version(minor_version),
         m_contents()
@@ -414,7 +413,7 @@ public:
     inline ustring serialise() const {
         assert(m_contents.size() != 0);
         ustring out;
-        out.append({m_type, m_major_version, m_minor_version, 0,0});
+        out.append({static_cast<uint8_t>(m_type), m_major_version, m_minor_version, 0,0});
         checked_bigend_write(m_contents.size(), out, 3, 2);
         out.append(m_contents);
         return out;

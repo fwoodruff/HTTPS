@@ -19,16 +19,30 @@ class cipher_base {
     // A cipher is chosen in TLS Handshake Hello.
     // Ciphers share an interface
 public:
-    virtual void set_key_material_12(ustring material) = 0;
-    virtual void set_key_material_13_handshake(const key_schedule& key_sche) {};
-    virtual void set_key_material_13_application(const key_schedule& key_sche) {};
     virtual tls_record encrypt(tls_record record) noexcept = 0;
     virtual tls_record decrypt(tls_record record) = 0;
     virtual ~cipher_base() noexcept = default;
-    cipher_base() = default;
-    cipher_base(const cipher_base& other) = default; // rule of 3
-    cipher_base& operator=(const cipher_base& other) = default;
 };
+
+class cipher_base_tls12 : public cipher_base {
+public:
+    virtual void set_key_material_12(ustring material) = 0;
+};
+
+class cipher_base_tls13 : public cipher_base {
+public:
+    virtual void set_key_material_13_handshake(const key_schedule& key_sche) = 0;
+    virtual void set_key_material_13_application(const key_schedule& key_sche) = 0;
+};
+
+
+
+tls_record wrap13(tls_record record);
+
+tls_record unwrap13(tls_record record);
+
+
 } // namespace fbw
+
 
 #endif // cipher_base_hpp

@@ -12,6 +12,35 @@
 #include "../global.hpp"
 #include <span>
 
+template<typename EnumType, EnumType... Values>
+class EnumCheck;
+
+template<typename EnumType>
+class EnumCheck<EnumType>
+{
+public:
+    template<typename IntType>
+    static bool constexpr is_value(IntType) { return false; }
+};
+
+template<typename EnumType, EnumType V, EnumType... Next>
+class EnumCheck<EnumType, V, Next...> : private EnumCheck<EnumType, Next...>
+{
+    using super = EnumCheck<EnumType, Next...>;
+
+public:
+    template<typename IntType>
+    static bool constexpr is_value(IntType v)
+    {
+        return v == static_cast<IntType>(V) || super::is_value(v);
+    }
+};
+
+constexpr uint16_t TLS10 = 0x0301;
+constexpr uint16_t TLS11 = 0x0302;
+constexpr uint16_t TLS12 = 0x0303;
+constexpr uint16_t TLS13 = 0x0304;
+
 enum class HandshakeStage {
     client_hello,
     server_hello,
@@ -49,6 +78,29 @@ enum class PskKeyExchangeMode : uint8_t {
     psk_dhe_ke = 1
 };
 
+// rfc 6066 - Maximum Fragment Length Negotiation
+enum class MaxFragmentLength : uint8_t {
+    s2_9 = 1,
+    s2_10 = 2,
+    s2_11 = 3,
+    s2_12 = 4
+};
+
+// rfc 6066 - Client Certificate URLs
+enum class CertChainType : uint8_t {
+    individual_certs = 0,
+    pkipath = 1
+};
+struct URLAndHash{
+    ustring url;
+    // uint8_t padding;
+    std::array<uint8_t, 20> SHA1Hash;
+};
+struct CertificateURL {
+    CertChainType type;
+    std::vector<URLAndHash> url_and_hash_list;
+};
+
 enum class CertificateType : uint8_t {
     X509 = 0,
     RawPublicKey = 2,
@@ -81,6 +133,32 @@ enum class AlertLevel : uint8_t {
     fatal = 2
 };
 
+enum class IdentifierType : uint8_t {
+    pre_agreed = 0,
+    key_sha1_hash = 1,
+    x509_name = 2,
+    cert_sha1_hash = 3
+};
+
+struct OCSPStatusRequest {
+    std::vector<ustring> responderID;
+    ustring extensions;
+};
+
+enum class CertificateStatusType : uint8_t {
+    ocsp = 1
+};
+
+struct CertificateStatusRequest {
+    CertificateStatusType status_type;
+    OCSPStatusRequest request;
+};
+
+struct CertificateStatus {
+    CertificateStatusType status_type;
+    ustring response;
+};
+
 enum class AlertDescription : uint8_t {
     close_notify = 0,
     unexpected_message = 10,
@@ -107,7 +185,12 @@ enum class AlertDescription : uint8_t {
     inappropriate_fallback = 86,
     user_canceled = 90,
     no_renegotiation = 100,
-    unsupported_extension = 110
+    unsupported_extension = 110,
+    certificate_unobtainable = 111,
+    unrecognized_name = 112,
+    bad_certificate_status_response = 113,
+    bad_certificate_hash_value = 114,
+    no_application_protocol = 120,
 };
 
 enum class HandshakeType : uint8_t {

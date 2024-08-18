@@ -8,7 +8,7 @@ ifeq ($(shell uname -s),Linux)
 	CXXFLAGS += -flto=6 -static 
     LDFLAGS += # -static-libstdc++ -static-libgcc
 else
- 	CXXFLAGS += -flto
+ 	#CXXFLAGS += -flto
 endif
 
 # Directories

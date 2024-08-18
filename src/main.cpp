@@ -39,6 +39,7 @@
 // options singleton, let's just use a global static
 // deserialise hello record into a struct before further parsing
 // memory pool of common objects (records) - view calls to malloc
+// improve interface for signature and key exchange
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

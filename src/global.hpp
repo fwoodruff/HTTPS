@@ -71,7 +71,7 @@ template<typename T>
 template<typename T>
 [[nodiscard]] inline std::span<const uint8_t> der_span_read(const T& container, size_t idx, size_t nbytes) {
     auto size = try_bigend_read(container, idx, nbytes );
-    if(container.size() < idx + nbytes) {
+    if(container.size() < idx + nbytes + size) {
         throw std::out_of_range{"out of range"};
     }
     std::span<const uint8_t> a_view( container.begin() + idx + nbytes, size);

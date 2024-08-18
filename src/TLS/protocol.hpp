@@ -48,7 +48,7 @@ private:
     HandshakeStage m_expected_record = HandshakeStage::client_hello;
     ustring m_buffer;
     bool can_heartbeat = false;
-    bool use_tls13 = false;
+    uint16_t tls_protocol_version = 0;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
 
     bool server_cipher_spec = false;

@@ -9,7 +9,7 @@
 #define cipher_base_hpp
 
 #include "../../../global.hpp"
-#include "../../TLS_enums.hpp"
+#include "../../TLS_utils.hpp"
 #include "../key_derivation.hpp"
 
 #include <cstdio>
@@ -26,6 +26,7 @@ tls_record wrap13(tls_record record) {
 }
 
 tls_record unwrap13(tls_record record) {
+    assert(record.m_contents.size() > 1);
     while(record.m_contents.size() > 1 and record.m_contents.back() == 0) {
         record.m_contents.pop_back();
     }

@@ -9,7 +9,7 @@
 #define cipher_base_hpp
 
 #include "../../../global.hpp"
-#include "../../TLS_enums.hpp"
+#include "../../TLS_utils.hpp"
 #include "../key_derivation.hpp"
 
 #include <cstdio>

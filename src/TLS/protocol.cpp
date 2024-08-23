@@ -354,7 +354,7 @@ task<stream_result> TLS::client_handshake_message(handshake_ctx& handshake, cons
                 co_return result;
             }
             if(tls_protocol_version == TLS13) {
-                if(handshake.middlebox_compatibility) {
+                if(handshake.middlebox_compatibility()) {
                     if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
                         co_return result;
                     }
@@ -411,7 +411,6 @@ void TLS::client_hello(handshake_ctx& handshake, const ustring& handshake_messag
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     handshake.client_hello_record(handshake_message);
-    
     m_expected_record = HandshakeStage::server_hello;
 }
 
@@ -421,11 +420,15 @@ task<stream_result> TLS::server_hello(handshake_ctx& handshake) {
     auto result = co_await write_record(hello_record, project_options.handshake_timeout);
 
     if(tls_protocol_version == TLS13) {
-        auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
-        tls13_context.set_key_material_13_handshake(handshake.tls13_key_schedule);
-        server_cipher_spec = true;
-        client_cipher_spec = true;
-        m_expected_record = HandshakeStage::server_encrypted_extensions;
+        if(handshake.is_hello_retry()) {
+            m_expected_record = HandshakeStage::client_hello;
+        } else {
+            auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
+            tls13_context.set_key_material_13_handshake(handshake.tls13_key_schedule);
+            server_cipher_spec = true;
+            client_cipher_spec = true;
+            m_expected_record = HandshakeStage::server_encrypted_extensions;
+        }
     } else {
         m_expected_record = HandshakeStage::server_certificate;
     }
@@ -575,6 +578,7 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
                     record.m_contents = { static_cast<uint8_t>(AlertLevel::warning), static_cast<uint8_t>(AlertDescription::close_notify) };
                     co_await write_record(record, timeout);
                 }
+                break;
                 default:
                     co_return;
             }

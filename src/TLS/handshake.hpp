@@ -49,7 +49,9 @@ public:
 
     cipher_suites cipher;
 
-    bool middlebox_compatibility = true;
+    bool middlebox_compatibility();
+
+    int hello_retry_count = 0;
 
     std::string m_SNI {};
 
@@ -61,7 +63,7 @@ public:
     tls_record server_hello_done_record();
     
 
-    void client_hello_record(ustring handshake_message);
+    void client_hello_record(const ustring& handshake_message);
     ustring client_key_exchange_receipt(const ustring& handshake_message);
 
     void client_handshake_finished12_record(const ustring& handshake_message);
@@ -70,8 +72,10 @@ public:
     tls_record server_handshake_finished12_record();
     tls_record server_handshake_finished13_record();
 
+    bool is_hello_retry();
 private:
     void hello_extensions(tls_record& buffer);
+    void hello_retry_extensions(tls_record& record);
 
     void set_cipher_ctx(cipher_suites cipher_suite);
     

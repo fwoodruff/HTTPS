@@ -23,7 +23,11 @@ namespace fbw::secp256r1 {
 
 // converts a private key to a public key
 // Similar to x25519 base_multiply
-[[nodiscard]] std::array<uint8_t,65> get_public_key(std::array<uint8_t,32> private_key) noexcept;
+[[nodiscard]] std::array<uint8_t,65> get_public_key(const std::array<uint8_t,32>& private_key) noexcept;
+
+[[nodiscard]] std::array<unsigned char, 65>
+    multiply(const std::array<unsigned char,32>& private_key,
+                                  const std::array<unsigned char, 65>& peer_public_key) noexcept;
 
 }
 

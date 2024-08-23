@@ -20,9 +20,11 @@ jobs:
           command: |
             sleep 0.01 # wait for server
             curl -kv https://localhost
-            curl -kv --tlsv1.2 --tls-max 1.2 https://localhost
+            curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost
+            curl http://localhost
 
 workflows:
   run_tests:
     jobs:
       - test
+      - test_docker

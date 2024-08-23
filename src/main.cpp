@@ -9,8 +9,6 @@
 #include "TLS/PEMextract.hpp"
 #include "HTTP/string_utils.hpp"
 #include "limiter.hpp"
-#include "TLS/Cryptography/one_way/sha2.hpp"
-#include "TLS/Cryptography/one_way/hash_base.hpp"
 
 #include <memory>
 #include <fstream>
@@ -22,7 +20,6 @@
 // todo:
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
 // Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
-// AES-256
 // review unnecessary buffer copies, more subspan, less substr
 // HTTP codes should be a map code -> { title, blurb }
 // HTTP/2
@@ -30,6 +27,9 @@
 // GET request to /readiness should return 206 below brownout threshold, 429 above
 // memory pool of common objects (records) - view calls to malloc
 // improve interface for signature and key exchange
+// docker in CI with curlimages/curl to docker network
+// nail down constant time-ness - look at RFC for x25519
+// find a client that sends x25519 in supported groups extension but not in key share extension or implement x448 so we can test HRR
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

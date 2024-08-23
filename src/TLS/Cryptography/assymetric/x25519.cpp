@@ -146,7 +146,7 @@ constexpr point256 point_double(const point256& P) {
 // computes P + P + ... + P (N times) and returns the x coordinate.
 // x_coord is the x coordinate of P, and N is some secret number.
 // note that we assume that the y coordinate of P is the same as G's.
-ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) { // is this using the wrong endianness??
+ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) {
     const point256 base_point = {x_coord,"0x1"_xl};
     auto current_point = base_point;
     auto current_double = point_double(base_point);
@@ -187,6 +187,14 @@ std::array<unsigned char,32> multiply(std::array<unsigned char,32> secret,
     std::reverse(serial_point.begin(), serial_point.end());
     auto clamped_secret = clamp(ct_u256(secret));
     auto curve_point_x = ct_u256(serial_point);
+    // Note: 
+    // It is possible to perform input validation on P by checking P*8 =/= O.
+    // Exotic protocols where multiple clients combine their public keys are conceivable, where this check would protect clients.
+    // In TLS, public keys are sent plaintext, and then signed by authenticated peers.
+    // In TLS, it is the authenticating peer's responsibility to check that the signed payload contains a valid public key.
+    // In TLS, input validation therefore provides no additional formal security guarantees.
+    // A rigid, branchless definition of x25519 improves robustness and testing.
+    // Input validation is therefore not recommended for TLS.
     auto out_point = point_multiply(clamped_secret, curve_point_x);
     return out_point.serialise_le();
 }

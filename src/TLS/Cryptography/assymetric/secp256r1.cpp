@@ -284,7 +284,26 @@ std::pair<ct_u256,ct_u256> point_multiply(const ct_u256& secret, const ct_u256& 
     return project(out);
 }
 
-std::array<unsigned char,65> get_public_key(std::array<unsigned char,32> private_key) noexcept {
+std::array<uint8_t, 65> multiply(const std::array<uint8_t, 32>& private_key, const std::array<uint8_t, 65>& peer_public_key) noexcept {
+    // convert point to x and y coords
+    std::array<uint8_t, 32> x_coord {};
+    std::array<uint8_t, 32> y_coord {};
+    std::copy(peer_public_key.begin() + 1, peer_public_key.begin() + 33, x_coord.begin());
+    std::copy(peer_public_key.begin() + 33, peer_public_key.end(), y_coord.begin());
+
+    auto [ x, y ] = point_multiply(private_key, x_coord, y_coord);
+    const auto xser = x.serialise();
+    const auto yser = y.serialise();
+    std::array<uint8_t, 65> out;
+    out[0] = 0x04;
+    std::copy(xser.cbegin(), xser.cend(), out.begin()+ 1);
+    std::copy(yser.cbegin(), yser.cend(), out.begin() + 33);
+    return out;
+}
+
+
+
+std::array<unsigned char,65> get_public_key(const std::array<unsigned char,32>& private_key) noexcept {
     
     auto [x, y] = point_multiply(ct_u256(private_key), secp256r1_gx, secp256r1_gy);
     std::array<unsigned char,65> out;

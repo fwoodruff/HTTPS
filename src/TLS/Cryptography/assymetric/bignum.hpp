@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <climits>
 #include <cstdint>
+#include <span>
 
 namespace fbw {
 /*
@@ -121,17 +122,17 @@ public:
             v[x/rchars] += mod;
         }
     }
+    
     constexpr uVar(std::array<unsigned char, INTBYTES> s) noexcept {
-        std::reverse(s.begin(), s.end());
         for(size_t i = 0; i < v.size(); i++) {
             for(size_t j = 0; j < sizeof(radix); j++) {
-                radix x = s[i*sizeof(radix) +j];
-                v[i] |= (x << (j*CHAR_BIT));
+                radix x = s[(v.size() * sizeof(radix)) - 1 - (i * sizeof(radix) + j)];
+                v[i] |= (x << (j * CHAR_BIT));
             }
         }
     }
+
     constexpr uVar& operator+=(const uVar& rhs) noexcept {
-        
         radix carry = 0;
         for(size_t i = 0; i < v.size(); i++) {
             const radix2 c = static_cast<radix2>(v[i]) + static_cast<radix2>(rhs.v[i]) + static_cast<radix2>(carry);
@@ -140,6 +141,7 @@ public:
         }
         return *this;
     }
+    
     constexpr uVar& operator-=(const uVar& rhs) noexcept {
         radix carry = 0;
         for(size_t i = 0; i < v.size(); i++) {

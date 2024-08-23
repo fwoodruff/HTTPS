@@ -2,6 +2,7 @@
 
 #include "hello.hpp"
 #include "TLS_enums.hpp"
+#include "TLS_utils.hpp"
 #include "../global.hpp"
 #include <vector>
 #include <span>
@@ -39,7 +40,17 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
     return {};
 }
 
-std::vector<SignatureScheme> get_supported_groups(std::span<const uint8_t> extension_data) {
+std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_data) {
+    std::vector<NamedGroup> out;
+    auto supported_groups_data = extension_data.subspan(2);
+    for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
+        auto group = try_bigend_read(supported_groups_data, i, 2);
+        out.push_back(static_cast<NamedGroup>(group));
+    }
+    return out;
+}
+
+std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> extension_data) {
     std::vector<SignatureScheme> out;
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
@@ -76,7 +87,7 @@ std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_
     return out;
 }
 
-std::vector<key_share> get_named_groups(std::span<const uint8_t> extension_data) {
+std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_data) {
     size_t ext_len = try_bigend_read(extension_data, 0, 2);
     if(ext_len + 2 != extension_data.size()) {
         throw ssl_error("malformed TLS version extension", AlertLevel::fatal, AlertDescription::decode_error);
@@ -130,7 +141,7 @@ void parse_extension(hello_record_data& record, extension ext) {
             break;
         case ExtensionType::key_share:
             record.parsed_extensions.insert(ext.type);
-            record.shared_keys = get_named_groups(ext.data);
+            record.shared_keys = get_named_group_keys(ext.data);
             break;
         case ExtensionType::application_layer_protocol_negotiation:
             record.parsed_extensions.insert(ext.type);
@@ -235,21 +246,41 @@ void write_heartbeat(tls_record& record) {
     record.end_size_header();
 }
 
-void write_key_share(tls_record& record, const std::array<uint8_t, 32>& pubkey_ephem) {
+void write_key_share(tls_record& record, const key_share& pubkey_ephem) {
     record.write2(ExtensionType::key_share);
     record.start_size_header(2);
-    record.write2(NamedGroup::x25519);
+    record.write2(pubkey_ephem.key_type);
     record.start_size_header(2);
-    record.write(pubkey_ephem);
+    record.write(pubkey_ephem.key);
     record.end_size_header();
     record.end_size_header();
 }
 
-void write_supported_versions(tls_record& record) {
+void write_key_share_request(tls_record& record, NamedGroup chosen_group) {
+    record.write2(ExtensionType::key_share);
+    record.start_size_header(2);
+    record.write2(chosen_group);
+    record.end_size_header();
+}
+
+void write_supported_versions(tls_record& record, uint16_t version) {
     record.write2(ExtensionType::supported_versions);
     record.start_size_header(2);
-    uint16_t tls_13_support = TLS13;
-    record.write2(tls_13_support);
+    record.write2(version);
+    record.end_size_header();
+}
+
+void write_supported_groups(tls_record& record) {
+    record.write2(ExtensionType::supported_groups);
+    record.start_size_header(2);
+    record.write2(NamedGroup::x25519);
+    record.end_size_header();
+}
+
+void write_cookie(tls_record& record) {
+    record.write2(ExtensionType::cookie);
+    record.start_size_header(2);
+    record.write(to_unsigned("cookie"));
     record.end_size_header();
 }
 

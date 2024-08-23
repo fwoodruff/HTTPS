@@ -8,8 +8,6 @@
 #include "key_derivation.hpp"
 #include "one_way/hash_base.hpp"
 
-
-
 namespace fbw {
 
 void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, ustring psk, ustring client_hello_hash) {
@@ -36,7 +34,7 @@ void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, ustr
 
 void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, ustring server_finished_hash) {
     const auto empty_hash = do_hash(base, ustring{});
-    const auto zero_key = ustring(32, 0);
+    const auto zero_key = ustring(base.get_hash_size(), 0);
 
     key_sch.master_secret = hkdf_extract(base, key_sch.handshake_derived_secret, zero_key);
     key_sch.server_application_traffic_secret = hkdf_expand_label(base, key_sch.master_secret, "s ap traffic", server_finished_hash, base.get_hash_size());

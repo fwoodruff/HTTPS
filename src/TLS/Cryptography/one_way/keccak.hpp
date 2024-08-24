@@ -12,6 +12,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 
 namespace fbw {
 
@@ -34,7 +35,7 @@ public:
 };
 
 class cprng : keccak_sponge {
-    bool init = false;
+    std::once_flag init{};
 public:
     void randgen(uint8_t* const output, size_t N);
     [[nodiscard]] uint64_t randgen64();

@@ -14,12 +14,17 @@
 
 // get secret
 namespace fbw::curve25519 {
-[[nodiscard]] std::array<unsigned char,32>
-    multiply(std::array<unsigned char,32> num,
-                                  std::array<unsigned char,32> pnt) noexcept;
+
+constexpr size_t PUBKEY_SIZE = 32;
+constexpr size_t PRIVKEY_SIZE = 32;
+constexpr size_t SECRET_SIZE = 32;
+
+[[nodiscard]] std::array<unsigned char, SECRET_SIZE>
+    multiply(std::array<unsigned char, PRIVKEY_SIZE> num,
+                                  std::array<unsigned char, PUBKEY_SIZE> pnt) noexcept;
 // make key pair
-[[nodiscard]] std::array<unsigned char,32>
-    base_multiply(std::array<unsigned char,32> num) noexcept;
+[[nodiscard]] std::array<unsigned char, PUBKEY_SIZE>
+    base_multiply(std::array<unsigned char, PRIVKEY_SIZE> num) noexcept;
 
 }
 

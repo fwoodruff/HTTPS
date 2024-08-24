@@ -78,7 +78,7 @@ tls_record AES_CBC_SHA::encrypt(tls_record record) noexcept {
     std::array<uint8_t,13> sequence {};
     checked_bigend_write(seqno_server, sequence, 0, 8);
     seqno_server++;
-    sequence[8] = record.get_type();
+    sequence[8] = static_cast<uint8_t>(record.get_type());
     sequence[9] = record.get_major_version();
     sequence[10] = record.get_minor_version();
     checked_bigend_write(record.m_contents.size(), sequence, 11, 2);
@@ -160,7 +160,7 @@ tls_record AES_CBC_SHA::decrypt(tls_record record) {
     auto ctx = hmac(sha1(), client_MAC_key);
     std::array<uint8_t,13> mac_hash_header {};
     checked_bigend_write(seqno_client, mac_hash_header, 0, 8);
-    mac_hash_header[8] = record.get_type();
+    mac_hash_header[8] = static_cast<uint8_t>(record.get_type());
     mac_hash_header[9] = record.get_major_version();
     mac_hash_header[10] = record.get_minor_version();
 

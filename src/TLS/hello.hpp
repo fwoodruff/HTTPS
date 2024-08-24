@@ -3,6 +3,7 @@
 
 #include <array>
 #include "../global.hpp"
+#include "TLS_utils.hpp"
 #include "TLS_enums.hpp"
 #include <unordered_set>
 
@@ -29,7 +30,8 @@ struct hello_record_data {
 
     std::vector<std::string> server_names{};
     std::vector<std::string> application_layer_protocols{};
-    std::vector<SignatureScheme> supported_groups{};
+    std::vector<NamedGroup> supported_groups{};
+    std::vector<SignatureScheme> signature_schemes{};
     std::vector<uint8_t> ec_point_formats{};
     ustring session_ticket{};
     bool encrypt_then_mac = true;
@@ -51,8 +53,13 @@ hello_record_data parse_client_hello(const ustring& hello_contents);
 void write_alpn_extension(tls_record& record, std::string alpn);
 void write_renegotiation_info(tls_record& record);
 void write_heartbeat(tls_record& record);
-void write_key_share(tls_record& record, const std::array<uint8_t, 32>& pubkey_ephem);
-void write_supported_versions(tls_record& record);
+void write_key_share(tls_record& record, const key_share& pubkey_ephem);
+void write_key_share_request(tls_record& record, NamedGroup chosen_group);
+void write_supported_versions(tls_record& record, uint16_t version);
+void write_cookie(tls_record& record);
+ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
+std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype);
+ustring make_hello_random(uint16_t version, bool requires_hello_retry);
 
 }
 

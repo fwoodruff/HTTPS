@@ -5,15 +5,11 @@
 //  Created by Frederick Benjamin Woodruff on 17/12/2021.
 //
 
-// Abridged from
-// https://github.com/michaeljclark/aes-gcm/blob/master/src/aes-gcm.c
-// I added a GCM cipher because Chrome does not support CBC ciphers, which are slightly insecure
-
-
 #include "galois_counter.hpp"
 #include "../../../global.hpp"
 #include "AES.hpp"
 #include "../../TLS_enums.hpp"
+#include "../one_way/sha2.hpp"
 
 #include <cstdlib>
 #include <array>
@@ -23,14 +19,9 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 
-
-
 constexpr int AES_BLOCK_SIZE = 16;
 
-
-
 namespace fbw::aes {
-
 
 static inline uint32_t AES_GET_BE32(const uint8_t *a) {
     return (a[0] << 24) | (a[1] << 16) | (a[2] << 8) | a[3];
@@ -261,10 +252,8 @@ ustring aes_gcm_ad(roundkey rk, ustring iv,
     if(!std::equal(tag.begin(), tag.end(), T.begin())) [[unlikely]] {
         throw ssl_error("bad tag", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
-    
     return plain;
 }
-
 
 [[maybe_unused]] ustring aes_gmac(roundkey key, const ustring& iv,
          const ustring& aad) {
@@ -273,9 +262,6 @@ ustring aes_gcm_ad(roundkey rk, ustring iv,
     return tag;
 }
 
-
-
-
 void AES_128_GCM_SHA256::set_key_material_12(ustring material) {
 
     std::vector<uint8_t> client_write_key;
@@ -283,92 +269,214 @@ void AES_128_GCM_SHA256::set_key_material_12(ustring material) {
     std::vector<uint8_t> server_write_key;
     server_write_key.resize(16);
     
-    client_implicit_write_IV.resize(4);
-    server_implicit_write_IV.resize(4);
+    ctx.client_implicit_write_IV.resize(4);
+    ctx.server_implicit_write_IV.resize(4);
     
     auto it = material.begin();
     std::copy_n(it, client_write_key.size(), client_write_key.begin());
     it += client_write_key.size();
     std::copy_n(it, server_write_key.size(), server_write_key.begin());
     it += server_write_key.size();
-    std::copy_n(it, client_implicit_write_IV.size(), client_implicit_write_IV.begin());
-    it += client_implicit_write_IV.size();
-    std::copy_n(it, server_implicit_write_IV.size(), server_implicit_write_IV.begin());
-    it += server_implicit_write_IV.size();
+    std::copy_n(it, ctx.client_implicit_write_IV.size(), ctx.client_implicit_write_IV.begin());
+    it += ctx.client_implicit_write_IV.size();
+    std::copy_n(it, ctx.server_implicit_write_IV.size(), ctx.server_implicit_write_IV.begin());
+    it += ctx.server_implicit_write_IV.size();
     
-    
+    ctx.client_write_round_keys = aes_key_schedule(client_write_key);
+    ctx.server_write_round_keys = aes_key_schedule(server_write_key);
+}
+
+void AES_GCM_SHA2_ctx::set_keys_handshake(const key_schedule& key_sche, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
+    auto client_handshake_key = hkdf_expand_label(hash_ctor, key_sche.client_handshake_traffic_secret, "key", std::string(""), key_size);
+    auto client_handshake_iv = hkdf_expand_label(hash_ctor, key_sche.client_handshake_traffic_secret, "iv", std::string(""), iv_size);
+    auto server_handshake_key = hkdf_expand_label(hash_ctor, key_sche.server_handshake_traffic_secret, "key", std::string(""), key_size);
+    auto server_handshake_iv = hkdf_expand_label(hash_ctor, key_sche.server_handshake_traffic_secret, "iv", std::string(""), iv_size);
+
+    std::vector<uint8_t> client_write_key(key_size);
+    std::vector<uint8_t> server_write_key(key_size);
+
+    std::copy(client_handshake_key.begin(), client_handshake_key.end(), client_write_key.begin());
+    std::copy(server_handshake_key.begin(), server_handshake_key.end(), server_write_key.begin());
+
     client_write_round_keys = aes_key_schedule(client_write_key);
     server_write_round_keys = aes_key_schedule(server_write_key);
 
+    client_implicit_write_IV.resize(iv_size);
+    server_implicit_write_IV.resize(iv_size);
+
+    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), client_implicit_write_IV.begin());
+    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), server_implicit_write_IV.begin());
+
+    seqno_client = 0;
+    seqno_server = 0;
 }
 
+void AES_GCM_SHA2_ctx::set_keys_application(const key_schedule& key_sche, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
+    auto client_application_key = hkdf_expand_label(hash_ctor, key_sche.client_application_traffic_secret, "key", std::string(""), key_size);
+    auto client_application_iv = hkdf_expand_label(hash_ctor, key_sche.client_application_traffic_secret, "iv", std::string(""), iv_size);
+    auto server_application_key = hkdf_expand_label(hash_ctor, key_sche.server_application_traffic_secret, "key", std::string(""), key_size);
+    auto server_application_iv = hkdf_expand_label(hash_ctor, key_sche.server_application_traffic_secret, "iv", std::string(""), iv_size);
 
-tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
+    std::vector<uint8_t> client_write_key(key_size);
+    std::vector<uint8_t> server_write_key(key_size);
 
-    
-    ustring sequence_no;
-    sequence_no.resize(8);
-    
-    checked_bigend_write(seqno_server, sequence_no, 0, 8);
-    seqno_server++;
+    assert(client_implicit_write_IV.size() == iv_size);
+    assert(server_implicit_write_IV.size() == iv_size);
 
-    uint16_t msglen = htons(record.m_contents.size());
+    std::copy(client_application_key.begin(), client_application_key.end(), client_write_key.begin());
+    std::copy(server_application_key.begin(), server_application_key.end(), server_write_key.begin());
 
-    ustring additional_data = sequence_no;
-    
-    additional_data.append({record.get_type(), record.get_major_version(), record.get_minor_version()});
-    
+    std::copy(client_application_iv.begin(), client_application_iv.end(), client_implicit_write_IV.begin());
+    std::copy(server_application_iv.begin(), server_application_iv.end(), server_implicit_write_IV.begin());
+
+    client_write_round_keys = aes_key_schedule(client_write_key);
+    server_write_round_keys = aes_key_schedule(server_write_key);
+
+    seqno_client = 0;
+    seqno_server = 0;
+}
+
+void AES_128_GCM_SHA256_tls13::set_key_material_13_handshake(const key_schedule& key_sche) {
+    ctx.set_keys_handshake(key_sche, KEY_SIZE, IV_SIZE, sha256());
+}
+
+void AES_128_GCM_SHA256_tls13::set_key_material_13_application(const key_schedule& key_sche) {
+    ctx.set_keys_application(key_sche, KEY_SIZE, IV_SIZE, sha256());
+}
+
+void AES_256_GCM_SHA384::set_key_material_13_handshake(const key_schedule& key_sche) {
+   ctx.set_keys_handshake(key_sche, KEY_SIZE, IV_SIZE, sha384());
+}
+
+void AES_256_GCM_SHA384::set_key_material_13_application(const key_schedule& key_sche) {
+   ctx.set_keys_application(key_sche, KEY_SIZE, IV_SIZE, sha384());
+}
+
+ustring make_additional_12(const tls_record& record, uint64_t sequence_no, size_t tag_size) {
+    assert(record.m_contents.size() >= tag_size);
+    uint16_t msglen = htons(record.m_contents.size() - tag_size);
+    ustring additional_data(sizeof(uint64_t), 0);
+    checked_bigend_write(sequence_no, additional_data, 0, sizeof(uint64_t));
+    additional_data.append({static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
     std::memcpy(&additional_data[11], &msglen, 2);
-    
-    ustring iv = server_implicit_write_IV + sequence_no;
+    return additional_data;
+}
 
-    auto [ciphertext, auth_tag] = aes_gcm_ae(server_write_round_keys, iv, record.m_contents, additional_data);
-    
-    assert(auth_tag.size() == 16);
-    assert(sequence_no.size() == 8);
-    
+tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
+    ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
+    ustring sequence_no;
+    sequence_no.resize(8);
+    checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
+    ctx.seqno_server++;
+
+    ustring iv = ctx.server_implicit_write_IV + sequence_no;
+    auto [ciphertext, auth_tag] = aes_gcm_ae(ctx.server_write_round_keys, iv, record.m_contents, additional_data);
+    assert(auth_tag.size() == TAG_SIZE);
+    assert(sequence_no.size() == sizeof(uint64_t));
     record.m_contents = sequence_no + ciphertext + auth_tag;
     return record;
 }
 
+tls_record AES_128_GCM_SHA256_tls13::encrypt(tls_record record) noexcept {
+    record = wrap13(std::move(record));
+    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
+    ustring sequence_no;
+    sequence_no.resize(sizeof(uint64_t));
+    checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
+    ctx.seqno_server++;
+
+    ustring iv = ctx.server_implicit_write_IV;
+    for (size_t i = 0; i < 8; ++i) {
+        iv[i + IV_SIZE - sizeof(ctx.seqno_server)] ^= sequence_no[i];
+    }
+    auto [ciphertext, auth_tag] = aes_gcm_ae(ctx.server_write_round_keys, iv, record.m_contents, additional_data);
+    assert(auth_tag.size() == TAG_SIZE);
+    record.m_contents = ciphertext + auth_tag;
+    return record;
+}
+
+tls_record AES_256_GCM_SHA384::encrypt(tls_record record) noexcept {
+    record = wrap13(std::move(record));
+    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
+    ustring sequence_no;
+    sequence_no.resize(sizeof(uint64_t));
+    checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
+    ctx.seqno_server++;
+
+    ustring iv = ctx.server_implicit_write_IV;
+    for (size_t i = 0; i < 8; ++i) {
+        iv[i + IV_SIZE - sizeof(ctx.seqno_server)] ^= sequence_no[i];
+    }
+    auto [ciphertext, auth_tag] = aes_gcm_ae(ctx.server_write_round_keys, iv, record.m_contents, additional_data);
+    assert(auth_tag.size() == TAG_SIZE);
+    record.m_contents = ciphertext + auth_tag;
+    return record;
+}
+
 tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
-    
-    if(record.m_contents.size() < 24) [[unlikely]] {
+    if(record.m_contents.size() < TAG_SIZE + sizeof(uint64_t)) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    
-    ustring sequence;
-    sequence.resize(8);
-    checked_bigend_write(seqno_client, sequence, 0, 8);
-    seqno_client++;
-
-    ustring explicit_IV;
-    explicit_IV.append({record.m_contents.begin(), record.m_contents.begin() + 8});
-    ustring ciphertext;
-    ciphertext.append({record.m_contents.begin() + 8, record.m_contents.end() - 16});
-    ustring auth_tag;
-    auth_tag.append({record.m_contents.end() - 16, record.m_contents.end()});
-    
-    assert(auth_tag.size() == 16);
-    assert(explicit_IV.size() == 8);
-    
-    ustring additional_data;
-    additional_data.append(sequence);
-    additional_data.append({record.get_type(), record.get_major_version(), record.get_minor_version()});
-    additional_data.resize(13);
+    ustring explicit_IV(8, 0);
+    checked_bigend_write(ctx.seqno_client, explicit_IV, 0, 8);
+    ustring ciphertext(record.m_contents.begin() + sizeof(uint64_t), record.m_contents.end() - TAG_SIZE);
+    ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
+    ustring additional_data = make_additional_12(record, ctx.seqno_client, 24);
+    ctx.seqno_client++;
     assert(record.m_contents.size() >= auth_tag.size() + explicit_IV.size());
-    uint16_t msglen = htons(record.m_contents.size() - auth_tag.size() - explicit_IV.size());
-    std::memcpy(&additional_data[11], &msglen, 2);
-
-    auto iv = client_implicit_write_IV + explicit_IV;
-    
-    ustring plain = aes_gcm_ad(client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
+    auto iv = ctx.client_implicit_write_IV + explicit_IV;
+    ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
     record.m_contents = plain;
-    
     if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }
+    return record;
+}
+
+tls_record AES_128_GCM_SHA256_tls13::decrypt(tls_record record) {
+    if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
+        throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
+    }
+    ustring iv(12, 0);
+    checked_bigend_write(ctx.seqno_client, iv, 4, 8);
+    for (size_t i = 0; i < 12; ++i) {
+        iv[i] ^= ctx.client_implicit_write_IV[i];
+    }
+    ustring ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
+    ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
+    ustring additional_data = make_additional_13(record.m_contents, 0);
+    ctx.seqno_client++;
+    assert(record.m_contents.size() >= auth_tag.size() + 1);
+    ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
+    record.m_contents = plain;
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
+        throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
+    }
+    record = unwrap13(std::move(record));
+    return record;
+}
+
+tls_record AES_256_GCM_SHA384::decrypt(tls_record record) {
+    if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
+        throw ssl_error("record too short for tag and wrap", AlertLevel::fatal, AlertDescription::decrypt_error);
+    }
+    ustring iv(12, 0);
+    checked_bigend_write(ctx.seqno_client, iv, 4, 8);
+    for (size_t i = 0; i < 12; ++i) {
+        iv[i] ^= ctx.client_implicit_write_IV[i];
+    }
+    ustring ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
+    ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
+    ustring additional_data = make_additional_13(record.m_contents, 0);
+    ctx.seqno_client++;
+    assert(record.m_contents.size() >= auth_tag.size() + 1);
+    ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
+    record.m_contents = plain;
+    if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
+        throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
+    }
+    record = unwrap13(std::move(record));
     return record;
 }
 

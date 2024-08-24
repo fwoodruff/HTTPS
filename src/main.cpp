@@ -9,8 +9,6 @@
 #include "TLS/PEMextract.hpp"
 #include "HTTP/string_utils.hpp"
 #include "limiter.hpp"
-#include "TLS/Cryptography/one_way/sha2.hpp"
-#include "TLS/Cryptography/one_way/hash_base.hpp"
 
 #include <memory>
 #include <fstream>
@@ -20,26 +18,18 @@
 #include <unordered_map>
 
 // todo:
-// implement TLS 1.3
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
-// Implement a map between HTTP 'host' header and webroot (with default)
-// Implement an HTTP webroot (with 301 not 404) - this is so we can use HTTP ACME challenges
-// Implement a map between SNI host and TLS certificate (with default)
-// AES-256
-// implement HTTP/1.1 compression encodings
+// Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
 // review unnecessary buffer copies, more subspan, less substr
 // HTTP codes should be a map code -> { title, blurb }
 // HTTP/2
-// use master key rather than expanded key material for TLS 1.2 handshakes
-// mostly lock-free runtime
-// check all 'expected record' logic (asserts, etc.)
-// unhandled exception when running exec outside of root folder
 // more functions should take const& and return a value
 // GET request to /readiness should return 206 below brownout threshold, 429 above
-// options singleton, let's just use a global static
-// deserialise hello record into a struct before further parsing
 // memory pool of common objects (records) - view calls to malloc
 // improve interface for signature and key exchange
+// docker in CI with curlimages/curl to docker network
+// nail down constant time-ness - look at RFC for x25519
+// offload state to TLS HRR cookie
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -89,9 +79,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
 }
 
 task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
-    try {
-        // todo: have a folder for HTTP connections so we can implement HTTP-01 acme challenges
-        
+    try {        
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);

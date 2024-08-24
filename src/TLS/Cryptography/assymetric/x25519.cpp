@@ -101,10 +101,6 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) {
     return REDC(ct_u512(ladder));
 }
 
-
-
-
-
 // computes lhs + rhs mod P
 constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) { // todo: CT
     assert(lhs < Prime and rhs < Prime);
@@ -135,7 +131,7 @@ constexpr point256 point_add(const point256& P, const point256& Q, const point25
 
 // finds point R on the line tangent to point P on the curve, reflected in x-axis
 constexpr point256 point_double(const point256& P) {
-    // todo: consider point at infinity 
+    // todo: consider point at infinity
     ct_u256 point_xz = REDC(P.xcoord * P.affine);
     ct_u256 point_xx = REDC(P.xcoord * P.xcoord);
     ct_u256 point_zz = REDC(P.affine * P.affine);
@@ -150,7 +146,7 @@ constexpr point256 point_double(const point256& P) {
 // computes P + P + ... + P (N times) and returns the x coordinate.
 // x_coord is the x coordinate of P, and N is some secret number.
 // note that we assume that the y coordinate of P is the same as G's.
-ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) { // is this using the wrong endianness??
+ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) {
     const point256 base_point = {x_coord,"0x1"_xl};
     auto current_point = base_point;
     auto current_double = point_double(base_point);
@@ -185,18 +181,31 @@ constexpr ct_u256 clamp(ct_u256 any_value) {
 
 // point multiplies serial_point by secret.
 // only takes the x coordinate of the point as input to avoid an invalid curve attack
-std::array<unsigned char,32> multiply(std::array<unsigned char,32> secret,
-                                                          std::array<unsigned char,32> serial_point) noexcept {
+std::array<unsigned char,32> multiply(std::array<unsigned char, 32> secret,
+                                                          std::array<unsigned char, 32> serial_point) noexcept {
+    const auto nullarray = std::array<unsigned char, 32>();
+    assert(secret != nullarray);      
+    assert(serial_point != nullarray);
     std::reverse(secret.begin(), secret.end());
     std::reverse(serial_point.begin(), serial_point.end());
     auto clamped_secret = clamp(ct_u256(secret));
     auto curve_point_x = ct_u256(serial_point);
+    // Note: 
+    // It is possible to perform input validation on P by checking P*8 =/= O.
+    // Exotic protocols where multiple clients combine their public keys are conceivable, where this check would protect clients.
+    // In TLS, public keys are sent plaintext, and then signed by authenticated peers.
+    // In TLS, it is the authenticating peer's responsibility to check that the signed payload contains a valid public key.
+    // In TLS, input validation therefore provides no additional formal security guarantees.
+    // A rigid, branchless definition of x25519 improves robustness and testing.
+    // Input validation is therefore not recommended for TLS.
     auto out_point = point_multiply(clamped_secret, curve_point_x);
     return out_point.serialise_le();
 }
 
 // point multiplies the base point by secret.
 std::array<unsigned char,32> base_multiply(std::array<unsigned char,32> secret) noexcept {
+    const auto nullarray = std::array<unsigned char, 32>();
+    assert(secret != nullarray);
     std::reverse(secret.begin(), secret.end());
     auto clamped_secret = clamp(ct_u256(secret));
     auto output_point = point_multiply(clamped_secret, Base.xcoord);

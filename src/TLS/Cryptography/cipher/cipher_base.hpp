@@ -9,7 +9,7 @@
 #define cipher_base_hpp
 
 #include "../../../global.hpp"
-#include "../../TLS_enums.hpp"
+#include "../../TLS_utils.hpp"
 #include "../key_derivation.hpp"
 
 #include <cstdio>
@@ -38,9 +38,8 @@ public:
 
 
 tls_record wrap13(tls_record record);
-
 tls_record unwrap13(tls_record record);
-
+ustring make_additional_13(const ustring& record, size_t tag_size);
 
 } // namespace fbw
 

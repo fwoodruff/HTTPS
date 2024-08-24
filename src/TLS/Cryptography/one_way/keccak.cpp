@@ -201,7 +201,7 @@ int LFSR86540(uint8_t& LFSR) noexcept {
 
 
 void cprng::randgen(uint8_t*  output, size_t N) {
-    if(!init) {
+    std::call_once(init, [&]{
         std::random_device rd;
         unsigned char bucket[4];
         for(int i = 0; i < 50; i ++) {
@@ -209,8 +209,7 @@ void cprng::randgen(uint8_t*  output, size_t N) {
             std::memcpy(bucket, &val, 4);
             absorb(bucket, 4);
         }
-        init = true;
-    }
+    });
     squeeze(output, N);
 };
 

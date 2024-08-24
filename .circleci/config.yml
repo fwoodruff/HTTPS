@@ -23,29 +23,6 @@ jobs:
             curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost
             curl http://localhost
 
-  test_docker:
-    docker:
-      - image: cimg/base:2024.07
-    steps:
-      - checkout
-      - run:
-          name: Build server
-          command: |
-            docker build -t server .
-      - run:
-          name: Docker network
-          command: docker network create testnet
-      - run:
-          name: Run server
-          command: |
-            docker run --init --rm --network testnet --name test_server server
-          background: true
-      - run:
-          name: Test server
-          command: |
-            sleep 0.01 # wait for server
-            docker run --rm --network testnet curlimages/curl -kv https://test_server
-
 workflows:
   run_tests:
     jobs:

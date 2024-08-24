@@ -7,6 +7,10 @@
 #include <vector>
 #include <span>
 #include <memory>
+#include <algorithm>
+#include "Cryptography/assymetric/secp256r1.hpp"
+#include "Cryptography/assymetric/x25519.hpp"
+#include "Cryptography/one_way/keccak.hpp"
 
 namespace fbw {
 
@@ -270,18 +274,92 @@ void write_supported_versions(tls_record& record, uint16_t version) {
     record.end_size_header();
 }
 
-void write_supported_groups(tls_record& record) {
-    record.write2(ExtensionType::supported_groups);
-    record.start_size_header(2);
-    record.write2(NamedGroup::x25519);
-    record.end_size_header();
-}
-
 void write_cookie(tls_record& record) {
     record.write2(ExtensionType::cookie);
     record.start_size_header(2);
+    record.start_size_header(2);
     record.write(to_unsigned("cookie"));
     record.end_size_header();
+    record.end_size_header();
+}
+
+ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
+    assert(!peer_key.key.empty());
+    switch(peer_key.key_type) {
+        case NamedGroup::x25519:
+        {
+            assert(peer_key.key.size() == curve25519::PUBKEY_SIZE);
+            std::array<uint8_t, curve25519::PUBKEY_SIZE> cli_pub;
+            std::copy(peer_key.key.begin(), peer_key.key.end(), cli_pub.begin());
+            auto shared_secret = curve25519::multiply(server_private_key_ephem, cli_pub);
+            auto shared_secret_str = ustring(shared_secret.begin(), shared_secret.end());
+            return shared_secret_str;
+        }
+        case NamedGroup::secp256r1:
+        {
+            assert(peer_key.key.size() == secp256r1::PUBKEY_SIZE);
+            std::array<uint8_t, secp256r1::PUBKEY_SIZE> cli_pub;
+            std::copy_n(peer_key.key.begin(), secp256r1::PUBKEY_SIZE, cli_pub.begin());
+            auto shared_secret = secp256r1::multiply(server_private_key_ephem, cli_pub);
+            auto shared_secret_str = ustring(shared_secret.begin(), shared_secret.end());
+            return shared_secret_str;
+        }
+        default:
+            assert(false);
+            break;
+    }
+}
+
+std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype) {
+    switch(client_keytype) {
+        case NamedGroup::x25519:
+        {
+            std::array<uint8_t, 32> server_privkey;
+            randomgen.randgen(server_privkey);
+            std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_privkey);
+            ustring server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
+            key_share server_key { client_keytype, server_pub };
+            return { server_privkey, server_key };
+        }
+        case NamedGroup::secp256r1:
+        {
+            std::array<uint8_t, 32> server_privkey;
+            randomgen.randgen(server_privkey);
+            std::array<uint8_t, 65> pubkey_ephem = secp256r1::get_public_key(server_privkey);
+            ustring server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
+            key_share server_key { client_keytype, server_pub };
+            return { server_privkey, server_key };
+        }
+        default:
+            assert(false);
+    }
+}
+
+ustring make_hello_random(uint16_t version, bool requires_hello_retry) {
+    constexpr std::array<uint8_t, 8> tls_11_downgrade_protection_sentinel = { 0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x00 };
+    constexpr std::array<uint8_t, 8> tls_12_downgrade_protection_sentinel = { 0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x01 };
+    constexpr std::array<uint8_t, 32> tls13_hello_retry_sentinel = { 0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11,
+                                                                     0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
+                                                                     0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
+                                                                     0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c };
+    ustring server_random(32, 0);
+    do {
+        randomgen.randgen(server_random);
+        if(std::equal(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.begin() + 4, server_random.begin()+24)) {
+            continue;
+        }
+    } while(false);
+    assert(server_random != ustring(32, 0));
+    if(version < TLS12) {
+        std::copy(tls_11_downgrade_protection_sentinel.begin(), tls_11_downgrade_protection_sentinel.end(), server_random.begin()+24);
+    }
+    if(version == TLS12) {
+        std::copy(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.end(), server_random.begin()+24);
+    }
+    if(version == TLS13 and requires_hello_retry) {
+        std::copy(tls13_hello_retry_sentinel.begin(), tls13_hello_retry_sentinel.end(), server_random.begin());
+    }
+    return server_random;
 }
 
 } // namespace

@@ -354,6 +354,9 @@ task<stream_result> TLS::client_handshake_message(handshake_ctx& handshake, cons
                 co_return result;
             }
             if(tls_protocol_version == TLS13) {
+                if(handshake.is_hello_retry()) {
+                    co_return stream_result::ok;
+                }
                 if(handshake.middlebox_compatibility()) {
                     if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
                         co_return result;

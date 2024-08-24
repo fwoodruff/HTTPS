@@ -4,6 +4,7 @@
 #include <array>
 #include "../global.hpp"
 #include "TLS_utils.hpp"
+#include "TLS_enums.hpp"
 #include <unordered_set>
 
 namespace fbw {
@@ -55,8 +56,10 @@ void write_heartbeat(tls_record& record);
 void write_key_share(tls_record& record, const key_share& pubkey_ephem);
 void write_key_share_request(tls_record& record, NamedGroup chosen_group);
 void write_supported_versions(tls_record& record, uint16_t version);
-void write_supported_groups(tls_record& record);
 void write_cookie(tls_record& record);
+ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
+std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype);
+ustring make_hello_random(uint16_t version, bool requires_hello_retry);
 
 }
 

@@ -363,13 +363,6 @@ ustring make_additional_12(const tls_record& record, uint64_t sequence_no, size_
     return additional_data;
 }
 
-ustring make_additional_13(const tls_record& record, size_t protection_size) {
-    ustring additional_data { 0x17, 0x03, 0x03, 0, 0};
-    auto size = record.m_contents.size() + protection_size;
-    checked_bigend_write(size, additional_data, 3, 2);
-    return additional_data;
-}
-
 tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
     ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
     ustring sequence_no;
@@ -386,8 +379,8 @@ tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
 }
 
 tls_record AES_128_GCM_SHA256_tls13::encrypt(tls_record record) noexcept {
-    ustring additional_data = make_additional_13(record, TAG_SIZE + 1);
     record = wrap13(std::move(record));
+    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     ustring sequence_no;
     sequence_no.resize(sizeof(uint64_t));
     checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
@@ -404,8 +397,8 @@ tls_record AES_128_GCM_SHA256_tls13::encrypt(tls_record record) noexcept {
 }
 
 tls_record AES_256_GCM_SHA384::encrypt(tls_record record) noexcept {
-    ustring additional_data = make_additional_13(record, TAG_SIZE + 1);
     record = wrap13(std::move(record));
+    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     ustring sequence_no;
     sequence_no.resize(sizeof(uint64_t));
     checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
@@ -452,7 +445,7 @@ tls_record AES_128_GCM_SHA256_tls13::decrypt(tls_record record) {
     }
     ustring ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
     ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
-    ustring additional_data = make_additional_13(record, 0);
+    ustring additional_data = make_additional_13(record.m_contents, 0);
     ctx.seqno_client++;
     assert(record.m_contents.size() >= auth_tag.size() + 1);
     ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
@@ -475,7 +468,7 @@ tls_record AES_256_GCM_SHA384::decrypt(tls_record record) {
     }
     ustring ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
     ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
-    ustring additional_data = make_additional_13(record, 0);
+    ustring additional_data = make_additional_13(record.m_contents, 0);
     ctx.seqno_client++;
     assert(record.m_contents.size() >= auth_tag.size() + 1);
     ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);

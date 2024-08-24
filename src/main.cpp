@@ -29,7 +29,7 @@
 // improve interface for signature and key exchange
 // docker in CI with curlimages/curl to docker network
 // nail down constant time-ness - look at RFC for x25519
-// find a client that sends x25519 in supported groups extension but not in key share extension or implement x448 so we can test HRR
+// offload state to TLS HRR cookie
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

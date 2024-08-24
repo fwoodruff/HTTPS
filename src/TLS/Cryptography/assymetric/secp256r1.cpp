@@ -233,7 +233,7 @@ affine_point256 point_double(const affine_point256& P) noexcept {
 }
 
 affine_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
-    assert(secret < secp256r1_p);
+    assert(secret <= secp256r1_q);
     assert(secret != "0x0"_xl);
 
     
@@ -279,12 +279,15 @@ std::pair<ct_u256,ct_u256> project(affine_point256 P) noexcept {
 // computes P + P + ... + P (N times) and returns the x coordinate.
 // x_coord is the x coordinate of P, and N is some secret number.
 // note that we assume that the y coordinate of P is the same as G's.
-std::pair<ct_u256,ct_u256> point_multiply(const ct_u256& secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
+std::pair<ct_u256,ct_u256> point_multiply(ct_u256 secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
+    if(secret > secp256r1_q) [[unlikely]] {
+        secret = secret - secp256r1_q;
+    }
     affine_point256 out = point_multiply_affine(secret, x_coord, y_coord);
     return project(out);
 }
 
-std::array<uint8_t, 65> multiply(const std::array<uint8_t, 32>& private_key, const std::array<uint8_t, 65>& peer_public_key) noexcept {
+std::array<uint8_t, 32> multiply(const std::array<uint8_t, 32>& private_key, const std::array<uint8_t, 65>& peer_public_key) noexcept {
     // convert point to x and y coords
     std::array<uint8_t, 32> x_coord {};
     std::array<uint8_t, 32> y_coord {};
@@ -293,18 +296,13 @@ std::array<uint8_t, 65> multiply(const std::array<uint8_t, 32>& private_key, con
 
     auto [ x, y ] = point_multiply(private_key, x_coord, y_coord);
     const auto xser = x.serialise();
-    const auto yser = y.serialise();
-    std::array<uint8_t, 65> out;
-    out[0] = 0x04;
-    std::copy(xser.cbegin(), xser.cend(), out.begin()+ 1);
-    std::copy(yser.cbegin(), yser.cend(), out.begin() + 33);
+    std::array<uint8_t, 32> out;
+    std::copy(xser.cbegin(), xser.cend(), out.begin());
     return out;
 }
 
+std::array<unsigned char,65> get_public_key(std::array<uint8_t,32> private_key) noexcept {
 
-
-std::array<unsigned char,65> get_public_key(const std::array<unsigned char,32>& private_key) noexcept {
-    
     auto [x, y] = point_multiply(ct_u256(private_key), secp256r1_gx, secp256r1_gy);
     std::array<unsigned char,65> out;
     out[0] = 0x04;
@@ -347,7 +345,7 @@ bool verify_signature(const ct_u256& h,
 
 
 ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const ct_u256& private_key) {
-    if(k_random == "0x0"_xl or k_random >= secp256r1_q) [[unlikely]] {
+    if(k_random == "0x0"_xl) [[unlikely]] {
         throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     

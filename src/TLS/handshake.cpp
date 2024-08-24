@@ -24,7 +24,7 @@ namespace fbw {
 // once client sends over their supported ciphers
 // if client supports ChaCha20 we enforce that, ideally with TLS 1.3
 // otherwise if client supports AES-GCM/AES-CBC, we pick whichever their preference is
-std::pair<cipher_suites, uint16_t> choose_version_cipher(const hello_record_data& rec) {
+cipher_suites choose_cipher(const hello_record_data& rec) {
      if(rec.legacy_client_version > TLS12) {
         throw ssl_error("legacy TLS version should always be TLS 1.2 or earlier", AlertLevel::fatal, AlertDescription::decode_error);
     }
@@ -56,13 +56,13 @@ std::pair<cipher_suites, uint16_t> choose_version_cipher(const hello_record_data
     // RFC 8446 4.1.2:
     //      If the list contains cipher suites that the server does not recognize, support, or wish to use,
     //      the server MUST ignore those cipher suites and process the remaining ones as usual.
-    // How much freedom this gives the server is open to interpretation:
-    //      Is the server allowed to decide which ciphers it 'wishes to use' after receiving the client hello?
+    // How much freedom this gives the server is open to interpretation.
+    // Is the server allowed to decide which ciphers it 'wishes to use' *after* receiving the client hello?
     // - This gets flagged as noncompliant by https://github.com/drwetter/testssl.sh
     // - This results in an observed ~2x download speed improvement on various machines
     if(TLS13_support) {
         if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_CHACHA20_POLY1305_SHA256); it != rec.cipher_su.end()) {
-            return {cipher_suites::TLS_CHACHA20_POLY1305_SHA256, TLS13};
+            return cipher_suites::TLS_CHACHA20_POLY1305_SHA256;
         }
     }
 
@@ -72,14 +72,14 @@ std::pair<cipher_suites, uint16_t> choose_version_cipher(const hello_record_data
             case cipher_suites::TLS_AES_128_GCM_SHA256: [[fallthrough]];
             case cipher_suites::TLS_AES_256_GCM_SHA384:
                 if(TLS13_support) {
-                    return { ciph, TLS13 };
+                    return ciph;
                 }
                 break;
             case cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: [[fallthrough]];
-            case cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256: [[fallthrough]];
+            case cipher_suites::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:
             case cipher_suites::TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA:
                 if(TLS12_support) {
-                    return { ciph, TLS12 };
+                    return ciph;
                 }
                 break;
             default:
@@ -175,7 +175,14 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
     for(const auto& key : keys) {
         switch(key.key_type) {
             case NamedGroup::x25519:
-            //case NamedGroup::secp256r1:
+                if(key.key.size() != 32) {
+                    throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
+                }
+                return key;
+            case NamedGroup::secp256r1:
+                if(key.key.size() != 65) {
+                    throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
+                }
                 return key;
             default:
                 break;
@@ -184,6 +191,7 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
     for(const auto& group : groups) {
         switch(group) {
             case NamedGroup::x25519:
+            case NamedGroup::secp256r1:
                 return key_share{ group, {} };
             default:
                 break;
@@ -192,14 +200,25 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
     throw ssl_error("named group mismatch", AlertLevel::fatal, AlertDescription::handshake_failure);
 }
 
+tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& client_hello) {
+    tls_record record(ContentType::Handshake);
+    record.write1(HandshakeType::message_hash);
+    record.start_size_header(3);
+    auto ctx = hash_ctor.clone();
+    ctx->update(client_hello);
+    record.write(ctx->hash());
+    record.end_size_header();
+    return record;
+}
+
 void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     client_hello = parse_client_hello(handshake_message);
-    auto [cipher_id, version] = choose_version_cipher(client_hello);
-     if(hello_retry_count == 0) {
+    if(hello_retry_count == 0) {
+        auto cipher_id = choose_cipher(client_hello);
         set_cipher_ctx(cipher_id); 
     }
     
-    if(version == TLS13) {
+    if(*p_tls_version == TLS13) {
         if(!client_hello.parsed_extensions.contains(ExtensionType::supported_groups)) {
             throw ssl_error("supported groups are required for TLS 1.3", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
@@ -215,62 +234,23 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     CRIME_compression(client_hello);
     alpn = choose_alpn(client_hello.application_layer_protocols);
     m_SNI = choose_server_name(client_hello.server_names);
-    handshake_hasher->update(handshake_message);
-    if(*p_tls_version == TLS13) {
+
+    if(is_hello_retry()) {
+        auto message_hash_record = synthetic_message_hash(*hash_ctor, handshake_message);
+        handshake_hasher->update(message_hash_record.m_contents);
+    } else {
+        handshake_hasher->update(handshake_message);
+    }
+    
+    if(*p_tls_version == TLS13 and !is_hello_retry()) {
         auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
         tls13_early_key_calc(*hash_ctor, tls13_key_schedule, null_psk, handshake_hasher->hash());
     }
 }
 
-ustring make_hello_random(uint16_t version, bool requires_hello_retry) {
-    constexpr std::array<uint8_t, 8> tls_11_downgrade_protection_sentinel = { 0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x00 };
-    constexpr std::array<uint8_t, 8> tls_12_downgrade_protection_sentinel = { 0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x01 };
-    constexpr std::array<uint8_t, 32> tls13_hello_retry_sentinel = { 0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11,
-                                                                     0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
-                                                                     0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
-                                                                     0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c };
-    ustring server_random(32, 0);
-    randomgen.randgen(server_random);
-    if(version < TLS12) {
-        std::copy(tls_11_downgrade_protection_sentinel.begin(), tls_11_downgrade_protection_sentinel.end(), server_random.begin()+24);
-    } else if(version == TLS12) {
-        std::copy(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.end(), server_random.begin()+24);
-    } else if(version == TLS13) {
-        if(requires_hello_retry) {
-            std::copy(tls13_hello_retry_sentinel.begin(), tls13_hello_retry_sentinel.end(), server_random.begin());
-        }
-    }
-    return server_random;
-}
-
 bool handshake_ctx::is_hello_retry() {
     assert(p_tls_version != nullptr);
     return client_public_key.key.empty() and *p_tls_version == TLS13;
-}
-
-
-ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
-    switch(peer_key.key_type) {
-        case NamedGroup::x25519:
-        {
-            std::array<uint8_t, 32> cli_pub;
-            std::copy_n(peer_key.key.begin(), 32, cli_pub.begin());
-            auto shared_secret = fbw::curve25519::multiply(server_private_key_ephem, cli_pub);
-            auto shared_secret_str = ustring(shared_secret.begin(), shared_secret.end());
-            return shared_secret_str;
-        }
-        case NamedGroup::secp256r1:
-        {
-            std::array<uint8_t, 65> cli_pub;
-            std::copy_n(peer_key.key.begin(), 65, cli_pub.begin());
-            auto shared_secret = fbw::secp256r1::multiply(server_private_key_ephem, cli_pub);
-            auto shared_secret_str = ustring(shared_secret.begin(), shared_secret.end());
-            return shared_secret_str;
-        }
-        default:
-            assert(false);
-            break;
-    }
 }
 
 tls_record handshake_ctx::server_hello_record() {
@@ -283,7 +263,9 @@ tls_record handshake_ctx::server_hello_record() {
     hello_record.write1(HandshakeType::server_hello);
     
     hello_record.start_size_header(3);
-    hello_record.write({3, 3});
+
+    hello_record.write2(TLS12);
+    
 
     hello_record.write(m_server_random);
 
@@ -308,15 +290,9 @@ tls_record handshake_ctx::server_hello_record() {
     assert(hello_record.m_contents.size() >= 4);
     assert(handshake_hasher != nullptr);
     
-    if(is_hello_retry()) {
-        auto client_hello1_hash = handshake_hasher->hash();
-        handshake_hasher->update(hello_record.m_contents);
-        handshake_hasher->update(client_hello1_hash);
-    } else {
-        handshake_hasher->update(hello_record.m_contents);
-    }
+    handshake_hasher->update(hello_record.m_contents);
 
-    if(*p_tls_version == TLS13) {
+    if(*p_tls_version == TLS13 and !is_hello_retry()) {
         ustring shared_secret = get_shared_secret(server_private_key_ephem, client_public_key);
         tls13_handshake_key_calc(*hash_ctor, tls13_key_schedule, shared_secret, handshake_hasher->hash());
     }
@@ -489,49 +465,15 @@ tls_record handshake_ctx::server_handshake_finished12_record() {
     return out;
 }
 
-std::optional<tls_record> try_extract_record(ustring& input) {
-    if (input.size() < TLS_HEADER_SIZE) {
-        return std::nullopt;
-    }
-    tls_record out(static_cast<ContentType>(input[0]), input[1], input[2] );
-
-    size_t record_size = try_bigend_read(input, 3, 2);
-    if(record_size > TLS_RECORD_SIZE + TLS_EXPANSION_MAX) [[unlikely]] {
-        throw ssl_error("record header size too large", AlertLevel::fatal, AlertDescription::record_overflow);
-    }
-    if(input.size() < record_size + TLS_HEADER_SIZE) [[unlikely]] {
-        return std::nullopt;
-    }
-    out.m_contents = input.substr(TLS_HEADER_SIZE, record_size);
-    input = input.substr(TLS_HEADER_SIZE + record_size);
-    return out;
-}
-
-std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype) {
-    switch(client_keytype) {
-        case NamedGroup::x25519:
-        {
-            std::array<uint8_t, 32> server_privkey;
-            randomgen.randgen(server_privkey);
-            std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_privkey);
-            ustring server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
-            key_share server_key { client_keytype, server_pub };
-            return { server_privkey, server_key };
-        }
-        default:
-            assert(false);
-    }
-}
-
 void handshake_ctx::hello_retry_extensions(tls_record& record) {
     assert(p_tls_version != nullptr);
     assert(*p_tls_version == TLS13);
     assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
     assert(is_hello_retry());
     record.start_size_header(2);
-    write_key_share_request(record, client_public_key.key_type);
     write_supported_versions(record, *p_tls_version);
     write_cookie(record);
+    write_key_share_request(record, client_public_key.key_type);
     record.end_size_header();
 }
 
@@ -539,6 +481,7 @@ void handshake_ctx::hello_extensions(tls_record& record) {
     record.start_size_header(2);
     if(*p_tls_version == TLS13) {
         assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
+        assert(!client_public_key.key.empty());
         auto [ privkey, pubkey_ephem ] = server_keypair(client_public_key.key_type);
         server_private_key_ephem = privkey;
         write_key_share(record, pubkey_ephem);

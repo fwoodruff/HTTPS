@@ -322,15 +322,7 @@ ustring make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_
     return additional_data;
 }
 
-ustring make_additional_13(const tls_record& record, bool record_is_plaintext) {
-    ustring additional_data { 0x17, 0x03, 0x03, 0, 0};
-    auto size = record.m_contents.size();
-    if(record_is_plaintext) {
-        size += 17;
-    }
-    checked_bigend_write(size, additional_data, 3, 2);
-    return additional_data;
-}
+
 
 std::array<uint8_t, IV_SIZE> number_once(std::array<uint8_t, IV_SIZE> IV, uint64_t seq) {
     std::array<uint8_t,sizeof(uint64_t)> sequence_no;
@@ -367,8 +359,8 @@ ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, ustring additional_da
 }
 
 tls_record ChaCha20_Poly1305_tls13::encrypt(tls_record record) noexcept {
-    ustring additional_data = make_additional_13(record, true);
     record = wrap13(std::move(record));
+    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
     return record;
 }
@@ -383,7 +375,7 @@ tls_record ChaCha20_Poly1305_tls13::decrypt(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    ustring additional_data = make_additional_13(record, false);
+    ustring additional_data = make_additional_13(record.m_contents, 0);
     record.m_contents = ctx.decrypt(std::move(record.m_contents), additional_data);
     record = unwrap13(std::move(record));
     return record;

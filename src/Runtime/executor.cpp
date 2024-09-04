@@ -20,7 +20,7 @@ using namespace std::chrono_literals;
 
 void executor::thread_function() {
     for(;;) {
-        std::coroutine_handle<> task;
+        std::optional<std::coroutine_handle<>> task;
         bool this_thread_does_poll_wait = false;
         {
             std::unique_lock lk { m_mut };
@@ -31,13 +31,10 @@ void executor::thread_function() {
             if(num_tasks == 0) {
                 assert(m_ready.empty());
                 break;
-            } else if(!m_ready.empty()) {
-                task = m_ready.front();
-                m_ready.pop();
-                if(!m_ready.empty()) {
-                    m_cond.notify_one();
-                }
-            } else {
+            }
+
+            task = m_ready.try_pop();
+            if(task == std::nullopt) {
                 assert(can_poll_wait);
                 this_thread_does_poll_wait = std::exchange(can_poll_wait, false);
             }
@@ -53,7 +50,7 @@ void executor::thread_function() {
             }
             m_cond.notify_one();
         } else {
-            task.resume();
+            task->resume();
         }
     }
     m_cond.notify_one();

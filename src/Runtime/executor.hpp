@@ -24,6 +24,46 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
+template<typename T>
+class concurrent_queue {
+public:
+    void push(T value) {
+        if(value == nullptr) {
+            std::terminate();
+        }
+        std::unique_lock lk { m_mut };
+        m_queue.push(std::move(value));
+        m_cv.notify_one();
+    }
+    std::optional<T> try_pop() {
+        std::unique_lock lk { m_mut };
+        if(m_queue.empty()) {
+            return std::nullopt;
+        }
+        auto ret = m_queue.front();
+        m_queue.pop();
+        return ret;
+    }
+    T pop() {
+        std::unique_lock lk { m_mut };
+        m_cv.wait(lk, [&]{
+            return !m_queue.empty();
+        });
+        auto ret = m_queue.front();
+        m_queue.pop();
+        return ret;
+    }
+    bool empty() {
+        std::unique_lock lk { m_mut };
+        return m_queue.empty();
+    }
+private:
+    std::condition_variable m_cv;
+    std::mutex m_mut;
+    std::queue<T> m_queue;
+};
+
+
 
 class executor {
 public:
@@ -38,7 +78,7 @@ private:
     
     std::mutex m_mut;
     std::condition_variable m_cond;
-    std::queue<std::coroutine_handle<>> m_ready;
+    concurrent_queue<std::coroutine_handle<>> m_ready;
     std::vector<std::thread> m_threadpool;
     int num_tasks;
     bool can_poll_wait = true;

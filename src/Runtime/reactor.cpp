@@ -33,18 +33,13 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
             a_handle = it->second;
             assert(a_handle.handle[!rw] != nullptr);
         }
-    }
-    
-    a_handle.handle[rw] = handle;
-    a_handle.fd = fd;
-    if(timeout) {
-        a_handle.wake_up[rw] = steady_clock::now() + *timeout;
-    } else {
-        a_handle.wake_up[rw] = std::nullopt;
-    }
-    
-    {
-        std::scoped_lock lk { m_mut };
+        a_handle.handle[rw] = handle;
+        a_handle.fd = fd;
+        if(timeout) {
+            a_handle.wake_up[rw] = steady_clock::now() + *timeout;
+        } else {
+            a_handle.wake_up[rw] = std::nullopt;
+        }
         park_map[fd] = a_handle;
         // epoll context add fd->handle
     }
@@ -139,6 +134,7 @@ std::vector<std::coroutine_handle<>> reactor::wait() {
             auto& wakeup = park_map[fdd.fd].wake_up;
             auto IOevent = std::array{POLLIN, POLLOUT};
             for(int i = 0; i < 2; i++) {
+                assert(!(fdd.revents & POLLNVAL));
                 if(fdd.revents & (IOevent[i] | POLLHUP | POLLERR)) {
                     if (handle[i] != nullptr) {
                         out.push_back(handle[i]);

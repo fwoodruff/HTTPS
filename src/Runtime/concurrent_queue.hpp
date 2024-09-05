@@ -13,6 +13,7 @@
 #ifndef concurrent_queue_hpp
 #define concurrent_queue_hpp
 
+// todo: work stealing or lock-freedom rather than global locking
 template<typename T>
 class concurrent_queue {
 public:

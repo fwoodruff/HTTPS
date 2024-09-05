@@ -42,12 +42,12 @@ void executor::try_poll() {
     if(m_ready.size_hint() < NUM_THREADS) {
         auto this_can_lock = can_poll_wait.try_lock();
         if(this_can_lock) {
-            std::vector<std::coroutine_handle<>> wakeable_coroutines_a{};
+            std::vector<std::coroutine_handle<>> wakeable_coroutines{};
             {
                 std::unique_lock lk { can_poll_wait, std::adopt_lock };
-                auto wakeable_coroutines_a = m_reactor.wait(true);
+                auto wakeable_coroutines = m_reactor.wait(true);
             }
-            m_ready.push_bulk(wakeable_coroutines_a);
+            m_ready.push_bulk(std::move(wakeable_coroutines));
         }
     }
 }
@@ -58,6 +58,7 @@ void executor::main_thread_function() {
         auto task = m_ready.try_pop();
         if(task) {
             if(*task == nullptr) {
+                // todo: test program exit conditions
                 return;
             }
             task->resume();
@@ -69,11 +70,16 @@ void executor::main_thread_function() {
             std::scoped_lock lk { can_poll_wait };
             wakeable_coroutines = m_reactor.wait(false);
         }
-        m_ready.push_bulk(wakeable_coroutines);
+        m_ready.push_bulk(std::move(wakeable_coroutines));
     }
 }
 
 void executor::run() {
+    // On the good-connection high-load path: the reactor is rarely used and we push and pull to the task queue.
+    // On the bad-connection high-load path: only the main thread polls the reactor, with other threads putting tasks to sleep on the reactor.
+    // When machine cores are not dedicated to this program, all threads make haphazard attempts to interact with both the task queue and the reactor.
+    // When idle, the main thread blocks on the reactor, and other threads block on the task queue.
+    
     for(unsigned i = 0; i < NUM_THREADS; i++) {
         m_threadpool.emplace_back(&executor::thread_function, this);
     }

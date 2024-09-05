@@ -14,15 +14,21 @@
 #include <cassert>
 #include <utility>
 
-static size_t NUM_THREADS = 0;//std::thread::hardware_concurrency() - 1;
+static const size_t NUM_THREADS = std::thread::hardware_concurrency();
 using namespace std::chrono;
 using namespace std::chrono_literals;
+
+void executor::notify_runtime() {
+    m_ready.push(nullptr);
+    m_reactor.notify();
+}
 
 void executor::thread_function() {
     for(;;) {
         auto task = m_ready.try_pop();
         if(task) {
             if(*task == nullptr) {
+                notify_runtime();
                 return;
             }
             task->resume();
@@ -31,7 +37,7 @@ void executor::thread_function() {
         try_poll();
         auto task_b = m_ready.pop();
         if(!task_b) {
-            m_ready.push(nullptr);
+            notify_runtime();
             return;
         }
         task_b.resume();
@@ -45,7 +51,7 @@ void executor::try_poll() {
             std::vector<std::coroutine_handle<>> wakeable_coroutines{};
             {
                 std::unique_lock lk { can_poll_wait, std::adopt_lock };
-                auto wakeable_coroutines = m_reactor.wait(true);
+                wakeable_coroutines = m_reactor.wait(true);
             }
             m_ready.push_bulk(std::move(wakeable_coroutines));
         }
@@ -55,16 +61,17 @@ void executor::try_poll() {
 void executor::main_thread_function() {
     for(;;) {
         try_poll();
-        auto task = m_ready.try_pop();
-        if(task) {
-            if(*task == nullptr) {
-                // todo: test program exit conditions
-                return;
+        for(int i = 0; i < 1 + (m_ready.size_hint() + 1)/ NUM_THREADS; i++ ) {
+            auto task = m_ready.try_pop();
+            if(task) {
+                if(*task == nullptr) {
+                    notify_runtime();
+                    return;
+                }
+                task->resume();
+                continue;
             }
-            task->resume();
-            continue;
         }
-
         std::vector<std::coroutine_handle<>> wakeable_coroutines{};
         {
             std::scoped_lock lk { can_poll_wait };
@@ -79,11 +86,12 @@ void executor::run() {
     // On the bad-connection high-load path: only the main thread polls the reactor, with other threads putting tasks to sleep on the reactor.
     // When machine cores are not dedicated to this program, all threads make haphazard attempts to interact with both the task queue and the reactor.
     // When idle, the main thread blocks on the reactor, and other threads block on the task queue.
-    
-    for(unsigned i = 0; i < NUM_THREADS; i++) {
+    assert(NUM_THREADS > 0);
+    for(unsigned i = 0; i < NUM_THREADS - 1; i++) {
         m_threadpool.emplace_back(&executor::thread_function, this);
     }
     main_thread_function();
+    std::cout << "main thread exited" << std::endl;
     for(auto& thd : m_threadpool) {
         thd.join();
     }
@@ -92,8 +100,11 @@ void executor::run() {
 root_task make_root_task(task<void> task) {
     co_await task;
     executor& global_executor = executor_singleton();
+    
     auto numtasks = global_executor.num_tasks.fetch_sub(1, std::memory_order_relaxed);
     if(numtasks == 1) {
+        std::atomic_thread_fence(std::memory_order::acquire);
+        assert(global_executor.num_tasks.load() == 0);
         global_executor.m_ready.push(nullptr);
     }
 }

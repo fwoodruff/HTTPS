@@ -25,7 +25,6 @@ reactor::reactor() {
 void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read_write,
                       std::optional<milliseconds> timeout) {
     
-
     auto rw = ((read_write == IO_direction::Read)? 0 : 1);
     {
         std::scoped_lock lk { m_mut };
@@ -44,6 +43,10 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
         park_map[fd] = a_handle;
         // epoll context add fd->handle
     }
+    notify();
+}
+
+void reactor::notify() {
     char buff;
     ::write(m_pipe_write, &buff, 1); // notify ::poll
 }
@@ -109,14 +112,13 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
             poll_fd.revents = 0;
             to_poll.push_back(poll_fd);
         }
-        
     }
     pollfd pipepoll;
     pipepoll.fd = m_pipe_read; // const after constructor syscall
     pipepoll.events = POLLIN;
     pipepoll.revents = 0;
     to_poll.push_back(pipepoll);
-    
+
     int num_descriptors = ::poll(to_poll.data(), (int) to_poll.size(), timeout_duration? (int) timeout_duration->count() : -1);
     if(num_descriptors == -1) {
         if(errno == EINTR) {

@@ -5,14 +5,15 @@
 #include <string>
 #include <unordered_map>
 #include <mutex>
+#include <memory>
 
 class limiter;
 
 class connection_token {
-    limiter* lim;
+    std::weak_ptr<limiter> lim;
     std::string ip;
 public:
-    connection_token(limiter* lim, std::string ip);
+    connection_token(std::shared_ptr<limiter> lim, std::string ip);
     connection_token(connection_token&& other);
     connection_token& operator=(connection_token&& other);
     connection_token& operator=(const connection_token&) = delete;
@@ -20,7 +21,7 @@ public:
     ~connection_token();
 };
 
-class limiter {
+class limiter : public std::enable_shared_from_this<limiter> {
     constexpr static int max_connections = 11000; // max concurrent connections
     constexpr static int max_ip_connections = 25; // connections per IP under low load
     constexpr static int brownout_connections = 2000;

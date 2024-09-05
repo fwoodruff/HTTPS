@@ -21,7 +21,7 @@
 #include <queue>
 #include <optional>
 #include <span>
-#include "concurrent_queue.hpp"
+#include "blocking_queue.hpp"
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -37,7 +37,7 @@ public:
     reactor m_reactor;
 private:
     executor() = default;
-    concurrent_queue<std::coroutine_handle<>> m_ready;
+    blocking_queue<std::coroutine_handle<>> m_ready;
     std::vector<std::thread> m_threadpool;
     std::atomic<int> num_tasks;
     std::mutex can_poll_wait;
@@ -47,6 +47,7 @@ private:
     void thread_function();
     void main_thread_function();
     void try_poll();
+    void notify_runtime();
     friend struct yield_coroutine;
 };
 

@@ -112,7 +112,7 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
-        async_spawn(redirect_server(ip_connections, std::move(http_listener)));
+        //async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
@@ -134,5 +134,6 @@ int main(int argc, const char * argv[]) {
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
     }
+    std::cout << "exiting main" << std::endl;
     return 0;
 }

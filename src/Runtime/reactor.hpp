@@ -39,6 +39,7 @@ public:
                   std::optional<milliseconds> timeout = std::nullopt);
     
     size_t task_count();
+    void notify();
 
     std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 private:

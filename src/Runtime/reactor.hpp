@@ -40,7 +40,7 @@ public:
     
     size_t task_count();
 
-    std::vector<std::coroutine_handle<>> wait();
+    std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 private:
     std::pair<std::optional<time_point<steady_clock>>, std::vector<std::coroutine_handle<>>>
         wakeup_timeouts( const time_point<steady_clock> &now);

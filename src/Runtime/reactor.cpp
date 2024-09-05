@@ -24,11 +24,12 @@ reactor::reactor() {
 
 void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read_write,
                       std::optional<milliseconds> timeout) {
-    io_handle a_handle {};
+    
 
     auto rw = ((read_write == IO_direction::Read)? 0 : 1);
     {
         std::scoped_lock lk { m_mut };
+        io_handle a_handle {};
         if (auto it = park_map.find(fd); it != park_map.end()) {
             a_handle = it->second;
             assert(a_handle.handle[!rw] != nullptr);
@@ -80,7 +81,7 @@ reactor::wakeup_timeouts( const time_point<steady_clock> &now) {
     return { first_wake, out };
 }
 
-std::vector<std::coroutine_handle<>> reactor::wait() {
+std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     auto now = steady_clock::now();
     auto [first_wake, out] = wakeup_timeouts(now);
     if(!out.empty()) {
@@ -91,6 +92,9 @@ std::vector<std::coroutine_handle<>> reactor::wait() {
     
     if(first_wake) {
         timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
+    }
+    if(noblock) {
+        timeout_duration = 0ms;
     }
     
     std::vector<pollfd> to_poll;

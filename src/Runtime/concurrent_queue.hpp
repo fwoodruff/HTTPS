@@ -22,7 +22,7 @@ public:
         size.fetch_add(1, std::memory_order_relaxed);
         m_cv.notify_one();
     }
-    void push_bulk(std::span<T> values) {
+    void push_bulk(std::vector<T> values) {
         if(values.empty()) {
             return;
         }

@@ -53,10 +53,6 @@ public:
         size.fetch_sub(1, std::memory_order_relaxed);
         return ret;
     }
-    bool empty() {
-        std::unique_lock lk { m_mut };
-        return m_queue.empty();
-    }
     size_t size_hint() {
         return size.load(std::memory_order_relaxed);
     }

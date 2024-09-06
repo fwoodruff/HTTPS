@@ -1,4 +1,7 @@
 
+#ifndef blocking_queue_hpp
+#define blocking_queue_hpp
+
 #include <stdio.h>
 #include <queue>
 #include <vector>
@@ -6,11 +9,6 @@
 #include <semaphore>
 #include "concurrent_queue.hpp"
 
-#ifndef blocking_queue_hpp
-#define blocking_queue_hpp
-
-
-// todo: work stealing or lock-freedom rather than global locking
 template<typename T>
 class blocking_queue {
 public:

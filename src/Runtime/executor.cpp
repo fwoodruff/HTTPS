@@ -13,81 +13,106 @@
 #include <algorithm>
 #include <cassert>
 #include <utility>
-
-static size_t NUM_THREADS = std::thread::hardware_concurrency();
+ 
+static const size_t NUM_THREADS = std::thread::hardware_concurrency();
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
+void executor::notify_runtime() {
+    m_ready.push(nullptr);
+    m_reactor.notify();
+}
+
 void executor::thread_function() {
     for(;;) {
-        std::coroutine_handle<> task;
-        bool this_thread_does_poll_wait = false;
-        {
-            std::unique_lock lk { m_mut };
-            m_cond.wait(lk, [&]{
-                return !m_ready.empty()
-                or num_tasks == 0
-                or (can_poll_wait and m_reactor.task_count() != 0); });
-            if(num_tasks == 0) {
-                assert(m_ready.empty());
-                break;
-            } else if(!m_ready.empty()) {
-                task = m_ready.front();
-                m_ready.pop();
-                if(!m_ready.empty()) {
-                    m_cond.notify_one();
-                }
-            } else {
-                assert(can_poll_wait);
-                this_thread_does_poll_wait = std::exchange(can_poll_wait, false);
+        auto task = m_ready.try_pop();
+        if(task) {
+            if(*task == nullptr) {
+                notify_runtime();
+                return;
             }
+            task->resume();
+            continue;
         }
-        if(this_thread_does_poll_wait) {
-            auto wakeable_coroutines = m_reactor.wait();
+        try_poll();
+        auto task_b = m_ready.pop();
+        if(!task_b) {
+            notify_runtime();
+            return;
+        }
+        task_b.resume();
+    }
+}
+
+void executor::try_poll() {
+    if(m_ready.size_hint() < NUM_THREADS) {
+        auto this_can_lock = can_poll_wait.try_lock();
+        if(this_can_lock) {
+            std::vector<std::coroutine_handle<>> wakeable_coroutines{};
             {
-                std::unique_lock lk { m_mut };
-                for(auto&& coro : wakeable_coroutines) {
-                    m_ready.push(coro);
-                }
-                can_poll_wait = true;
+                std::unique_lock lk { can_poll_wait, std::adopt_lock };
+                wakeable_coroutines = m_reactor.wait(true);
             }
-            m_cond.notify_one();
-        } else {
-            task.resume();
+            m_ready.push_bulk(std::move(wakeable_coroutines));
         }
     }
-    m_cond.notify_one();
+}
+
+void executor::main_thread_function() {
+    for(;;) {
+        try_poll();
+        for(int i = 0; i < 1 + (m_ready.size_hint() + 1)/ NUM_THREADS; i++ ) {
+            auto task = m_ready.try_pop();
+            if(task) {
+                if(*task == nullptr) {
+                    notify_runtime();
+                    return;
+                }
+                task->resume();
+                continue;
+            }
+        }
+        std::vector<std::coroutine_handle<>> wakeable_coroutines{};
+        {
+            std::scoped_lock lk { can_poll_wait };
+            wakeable_coroutines = m_reactor.wait(false);
+        }
+        m_ready.push_bulk(std::move(wakeable_coroutines));
+    }
 }
 
 void executor::run() {
-    for(unsigned i = 0; i < NUM_THREADS; i++) {
+    // On the good-connection high-load path: the reactor is rarely used and we push and pull to the task queue.
+    // On the bad-connection high-load path: only the main thread polls the reactor, with other threads putting tasks to sleep on the reactor.
+    // When machine cores are not dedicated to this program, all threads make haphazard attempts to interact with both the task queue and the reactor.
+    // When idle, the main thread blocks on the reactor, and other threads block on the task queue.
+    assert(NUM_THREADS > 0);
+    for(unsigned i = 0; i < NUM_THREADS - 1; i++) {
         m_threadpool.emplace_back(&executor::thread_function, this);
     }
+    main_thread_function();
     for(auto& thd : m_threadpool) {
         thd.join();
     }
 }
 
-
 root_task make_root_task(task<void> task) {
     co_await task;
     executor& global_executor = executor_singleton();
-    {
-        std::scoped_lock lk { global_executor.m_mut };
-        global_executor.num_tasks--;
+    
+    auto numtasks = global_executor.num_tasks.fetch_sub(1, std::memory_order_relaxed);
+    if(numtasks == 1) {
+        std::atomic_thread_fence(std::memory_order::acquire);
+        assert(global_executor.num_tasks.load() == 0);
+        global_executor.m_ready.push(nullptr);
     }
-    global_executor.m_cond.notify_one();
 }
 
 // enqueues an asynchronous task for the executor to run when resources are available
 void executor::spawn(task<void> taskob) {
-    {
-        auto root = make_root_task(std::move(taskob));
-        std::unique_lock lk { m_mut };
-        m_ready.push(root.m_coroutine);
-        ++num_tasks;
-    }
-    m_cond.notify_one();
+    auto root = make_root_task(std::move(taskob));
+    num_tasks.fetch_add(1, std::memory_order_relaxed);
+    m_ready.push(root.m_coroutine);
 }
 
 // starts the runtime
@@ -96,7 +121,6 @@ void run(task<void> main_task) {
     exec.spawn(std::move(main_task));
     exec.run();
 }
-
 
 void async_spawn(task<void> subtask) {
     auto& exec = executor_singleton();

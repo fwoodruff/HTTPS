@@ -22,13 +22,13 @@ Install with
 git clone https://github.com/fwoodruff/HTTPS.git
 cd HTTPS
 ```
-then run with either Make
+then run with Make
 ```
 make -j8 && ./target/codeymccodeface
 ```
 or Docker
 ```bash
-docker compose up
+docker build -t server . && docker run --init --rm -p 443:443 -p 80:80 server
 ```
 
 Every 60 days, CA certificates are updated with:

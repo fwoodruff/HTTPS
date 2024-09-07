@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <queue>
 #include <optional>
+#include <span>
+#include "blocking_queue.hpp"
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -35,17 +37,17 @@ public:
     reactor m_reactor;
 private:
     executor() = default;
-    
-    std::mutex m_mut;
-    std::condition_variable m_cond;
-    std::queue<std::coroutine_handle<>> m_ready;
+    blocking_queue<std::coroutine_handle<>> m_ready;
     std::vector<std::thread> m_threadpool;
-    int num_tasks;
-    bool can_poll_wait = true;
+    std::atomic<int> num_tasks;
+    std::mutex can_poll_wait;
     
     void run();
     void spawn(task<void> subtask);
     void thread_function();
+    void main_thread_function();
+    void try_poll();
+    void notify_runtime();
     friend struct yield_coroutine;
 };
 
@@ -59,7 +61,6 @@ struct yield_coroutine {
     }
     void await_suspend(std::coroutine_handle<> handle) noexcept {
         auto& global_executor = executor_singleton();
-        std::scoped_lock lk { global_executor.m_mut };
         global_executor.m_ready.push(handle);
     }
     void await_resume() noexcept { }

@@ -39,8 +39,9 @@ public:
                   std::optional<milliseconds> timeout = std::nullopt);
     
     size_t task_count();
+    void notify();
 
-    std::vector<std::coroutine_handle<>> wait();
+    std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 private:
     std::pair<std::optional<time_point<steady_clock>>, std::vector<std::coroutine_handle<>>>
         wakeup_timeouts( const time_point<steady_clock> &now);

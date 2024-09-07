@@ -59,7 +59,6 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
 // when the task wakes we push it to the server
 task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
-        
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);

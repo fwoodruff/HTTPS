@@ -9,9 +9,15 @@
 
 // Abridged from Anthony Williams C++ Concurrency in Action
 
-constexpr size_t interference_size = 32;
+constexpr size_t program_threads_upper_bound_hint = 32;
 
-struct alignas(interference_size) hazard_pointer_data {
+// If two threads update neighbouring hazard pointers, the L1 cache will be falsely invalidated.
+// However, if one thread updates a hazard pointer, and then sweeps the list of hazard pointers,
+// then the neighbouring data will have been prefetched.
+// Therefore the preferred alignment depends on runtime access patterns.
+// Profiling has not revealed hazard pointer performance bottlenecks.
+// hazard_pointer_data has therefore not been overaligned.
+struct hazard_pointer_data {
     std::atomic<std::thread::id> id;
     std::atomic<void*> pointer;
 };
@@ -19,9 +25,9 @@ struct alignas(interference_size) hazard_pointer_data {
 using enum std::memory_order;
 
 struct hazard_pointer_batch {
-    static constexpr size_t batch_size = 32;
-    std::array<hazard_pointer_data, batch_size> ptrs{};
+    std::array<hazard_pointer_data, program_threads_upper_bound_hint> ptrs{};
     std::atomic<hazard_pointer_batch*> m_next = nullptr;
+    // if the program has more threads than this expected upper bound, next() is used to expand the list
     hazard_pointer_batch* next() {
         hazard_pointer_batch* lnext = m_next.load(relaxed);
         if(lnext != nullptr) {
@@ -83,16 +89,14 @@ public:
                 update_max(max_hp_idx, i + 1);
                 break;
             }
-            if(idx == current_batch->batch_size -1) {
+            if(idx == current_batch->ptrs.size() -1) {
                 current_batch = current_batch->next();
                 idx = 0;
             } else {
                 idx++;
             }
         }
-        if(!hp) {
-            throw std::runtime_error("No hazard pointers available");
-        }
+        assert(hp != nullptr);
     }
     std::atomic<void*>& get_pointer() {
         return hp->pointer;
@@ -115,7 +119,7 @@ bool outstanding_hazard_pointers_for(void* p) {
         if(current_batch->ptrs[idx].pointer.load(acquire) == p) {
             return true;
         }
-        if(idx == current_batch->batch_size - 1) {
+        if(idx == current_batch->ptrs.size() - 1) {
             current_batch = current_batch->next();
             idx = 0;
         } else {

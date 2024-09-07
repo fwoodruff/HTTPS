@@ -91,7 +91,6 @@ void executor::run() {
         m_threadpool.emplace_back(&executor::thread_function, this);
     }
     main_thread_function();
-    std::cout << "main thread exited" << std::endl;
     for(auto& thd : m_threadpool) {
         thd.join();
     }

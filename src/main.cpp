@@ -59,7 +59,6 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
 // when the task wakes we push it to the server
 task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
-        
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);
@@ -112,7 +111,7 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
-        //async_spawn(redirect_server(ip_connections, std::move(http_listener)));
+        async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
@@ -134,6 +133,5 @@ int main(int argc, const char * argv[]) {
     } catch(const std::exception& e) {
         std::cerr << e.what() << std::endl;
     }
-    std::cout << "exiting main" << std::endl;
     return 0;
 }

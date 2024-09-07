@@ -141,7 +141,7 @@ enum class ECCurveType : uint8_t{
     named_curve = 3
 };
 
-enum class ChangeCipherSpec : uint8_t {
+enum class EnumChangeCipherSpec : uint8_t {
     change_cipher_spec = 1
 };
 

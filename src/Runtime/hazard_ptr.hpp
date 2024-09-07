@@ -3,38 +3,74 @@
 #ifndef hazard_ptr_hpp
 #define hazard_ptr_hpp
 
+// follows interface for https://en.cppreference.com/w/cpp/header/hazard_pointer
+// replace when C++26 available
+
 #include <atomic>
 #include <thread>
 
-constexpr unsigned max_hazard_pointers = 100;
-
-std::atomic<void*>& get_hazard_pointer_for_current_thread();
-
+void delete_nodes_with_no_hazards();
 bool outstanding_hazard_pointers_for(void* p);
-
-template<typename T>
-void do_delete(void* p) {
-    delete static_cast<T*>(p);
-}
-
-struct data_to_reclaim {
+struct retired_data {
     void* data;
-    std::function<void(void*)> deleter;
-    data_to_reclaim* next;
+    void (*deleter)(void*);
+    retired_data* next;
+    
     template<typename T>
-    data_to_reclaim(T* p): data(p), deleter(&do_delete<T>), next(0) {}
-    ~data_to_reclaim() {
+    retired_data(T* p): data(p), deleter([](void* ptr) { delete static_cast<T*>(ptr); }), next(0) {}
+    ~retired_data() {
         deleter(data);
     }
 };
-
-void add_to_reclaim_list(data_to_reclaim* node);
-
+void add_to_garbage(retired_data* node);
 template<typename T>
 void reclaim_later(T* data) {
-    add_to_reclaim_list(new data_to_reclaim(data));
+    add_to_garbage(new retired_data(data));
 }
 
-void delete_nodes_with_no_hazards();
+template<typename T>
+struct hazard_pointer_obj_base;
+
+struct hazard_pointer {
+    
+    template<class T>
+    T* protect(const std::atomic<T*>& src) noexcept {
+        using enum std::memory_order;
+        for(;;) {
+            T* local = src.load(relaxed);
+            m_ptr->store(local);
+            if (local == src.load(acquire)) {
+                return local;
+            }
+        }
+    }
+    void reset_protection();
+    ~hazard_pointer();
+    hazard_pointer(std::atomic<void*>*);
+private:
+    std::atomic<void*>* m_ptr;
+};
+hazard_pointer make_hazard_pointer();
+
+template<typename T>
+struct hazard_pointer_obj_base {
+public:
+    void retire() noexcept {
+        hazard_pointer hp = make_hazard_pointer();
+        hp.reset_protection();
+        if (outstanding_hazard_pointers_for(this)) {
+            reclaim_later(this);
+        } else {
+            delete this;
+        }
+        delete_nodes_with_no_hazards();
+    }
+};
+
+
+
+
+
+
 
 #endif

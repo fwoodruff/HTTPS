@@ -66,7 +66,8 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
         }
         record = decrypt_record(record);
         switch (static_cast<ContentType>(record.get_type()) ) {
-            [[unlikely]] case Handshake: [[fallthrough]];
+            case Handshake:
+                co_return co_await client_post_handshake(std::move(record.m_contents), timeout);
             [[unlikely]] case ChangeCipherSpec:
                 co_await server_alert(AlertLevel::fatal, AlertDescription::unexpected_message);
                 co_return stream_result::closed;
@@ -194,7 +195,6 @@ task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
 task<std::string> TLS::perform_handshake() {
     std::optional<ssl_error> error_ssl {};
     try {
-        handshake_ctx handshake;
         handshake.p_cipher_context = &cipher_context;
         handshake.p_tls_version = &tls_protocol_version;
         bool hello_request_sent = false;
@@ -216,7 +216,7 @@ task<std::string> TLS::perform_handshake() {
             record = decrypt_record(record);
             switch ( static_cast<ContentType>(record.get_type()) ) {
                 case Handshake:
-                    if(co_await client_handshake_record(handshake, std::move(record)) != stream_result::ok) {
+                    if(co_await client_handshake_record(std::move(record)) != stream_result::ok) {
                         co_return "";
                     }
                     if(m_expected_record == HandshakeStage::application_data) {
@@ -261,8 +261,12 @@ END2:
 
 tls_record TLS::decrypt_record(tls_record record) {
     if(record.get_type() == Alert and tls_protocol_version == TLS13) {
-        // client may send plaintext alert after server hello
         if(m_expected_record != HandshakeStage::application_data) {
+            // A client could send an Alert record complaining about the Server Hello message while the Encrypted Extensions message is in-flight.
+            // If a client has successfully processed a Server Hello message, record protection would disguise an Alert record as an Application record.
+            // If a record has content type Alert and we haven't received the Client Finished message yet, we can infer this has occurred.
+            // We would then reach this branch, and so we need to relax encryption requirements here.
+            // See RFC 8446 Appendix A.1
             return record;
         }
     }
@@ -335,10 +339,10 @@ std::vector<ustring> extract_handshake_messages(tls_record handshake_record, ust
     return { handshake_record.m_contents };
 }
 
-task<stream_result> TLS::client_handshake_record(handshake_ctx& handshake, tls_record record) {
+task<stream_result> TLS::client_handshake_record(tls_record record) {
     auto messages = extract_handshake_messages(std::move(record), m_handshake_fragment);
     for(const auto& message : messages) {
-        auto res = co_await client_handshake_message(handshake, message);
+        auto res = co_await client_handshake_message(message);
         if(res != stream_result::ok) {
             co_return res;
         }
@@ -346,13 +350,13 @@ task<stream_result> TLS::client_handshake_record(handshake_ctx& handshake, tls_r
     co_return stream_result::ok;
 }
 
-task<stream_result> TLS::client_handshake_message(handshake_ctx& handshake, const ustring& handshake_message) {
+task<stream_result> TLS::client_handshake_message(const ustring& handshake_message) {
     switch (handshake_message.at(0)) {
         [[unlikely]] case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
         case static_cast<uint8_t>(HandshakeType::client_hello):
-            client_hello(handshake, std::move(handshake_message));
-            if(auto result = co_await server_hello(handshake); result != stream_result::ok) {
+            client_hello(std::move(handshake_message));
+            if(auto result = co_await server_hello(); result != stream_result::ok) {
                 co_return result;
             }
             if(tls_protocol_version == TLS13) {
@@ -364,43 +368,45 @@ task<stream_result> TLS::client_handshake_message(handshake_ctx& handshake, cons
                         co_return result;
                     }
                 }
-                if(auto result = co_await server_encrypted_extensions(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_encrypted_extensions(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(auto result = co_await server_certificate(handshake); result != stream_result::ok) {
+                // mTLS client_certificate_request message would go here
+                if(auto result = co_await server_certificate(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(auto result = co_await server_certificate_verify(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_certificate_verify(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(auto result = co_await server_handshake_finished13(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_handshake_finished13(); result != stream_result::ok) {
                     co_return result;
                 }
             }
             if(tls_protocol_version == TLS12) {
-                if(auto result = co_await server_certificate(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_certificate(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(auto result = co_await server_key_exchange(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_key_exchange(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(auto result = co_await server_hello_done(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_hello_done(); result != stream_result::ok) {
                     co_return result;
                 }
             }
             break;
         case static_cast<uint8_t>(HandshakeType::client_key_exchange):
-            client_key_exchange(handshake, std::move(handshake_message));
+            client_key_exchange(std::move(handshake_message));
             break;
+        // mTLS receive client certificate would go here
         case static_cast<uint8_t>(HandshakeType::finished):
             if(tls_protocol_version == TLS13) {
-                client_handshake_finished13(handshake, std::move(handshake_message));
+                client_handshake_finished13(std::move(handshake_message));
             } else {
-                client_handshake_finished12(handshake, std::move(handshake_message));
+                client_handshake_finished12(std::move(handshake_message));
                 if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
                     co_return std::move(result);
                 }
-                if(auto result = co_await server_handshake_finished12(handshake); result != stream_result::ok) {
+                if(auto result = co_await server_handshake_finished12(); result != stream_result::ok) {
                     co_return std::move(result);
                 }
             }
@@ -411,7 +417,7 @@ task<stream_result> TLS::client_handshake_message(handshake_ctx& handshake, cons
     co_return stream_result::ok;
 }
 
-void TLS::client_hello(handshake_ctx& handshake, const ustring& handshake_message) {
+void TLS::client_hello(const ustring& handshake_message) {
     if(m_expected_record != HandshakeStage::client_hello) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -419,7 +425,7 @@ void TLS::client_hello(handshake_ctx& handshake, const ustring& handshake_messag
     m_expected_record = HandshakeStage::server_hello;
 }
 
-task<stream_result> TLS::server_hello(handshake_ctx& handshake) {
+task<stream_result> TLS::server_hello() {
     assert(m_expected_record == HandshakeStage::server_hello);
     auto hello_record = handshake.server_hello_record();
     auto result = co_await write_record(hello_record, project_options.handshake_timeout);
@@ -440,14 +446,14 @@ task<stream_result> TLS::server_hello(handshake_ctx& handshake) {
     co_return result;
 }
 
-task<stream_result> TLS::server_encrypted_extensions(handshake_ctx& handshake) {
+task<stream_result> TLS::server_encrypted_extensions() {
     assert(m_expected_record == HandshakeStage::server_encrypted_extensions);
     tls_record out = handshake.server_encrypted_extensions_record();
     m_expected_record = HandshakeStage::server_certificate;
     co_return co_await write_record(out, project_options.handshake_timeout);
 }
 
-task<stream_result> TLS::server_certificate(handshake_ctx& handshake) {
+task<stream_result> TLS::server_certificate() {
     assert(m_expected_record == HandshakeStage::server_certificate);
     tls_record certificate_record = handshake.server_certificate_record();
     if(tls_protocol_version == TLS13) {
@@ -458,22 +464,22 @@ task<stream_result> TLS::server_certificate(handshake_ctx& handshake) {
     co_return co_await write_record(certificate_record, project_options.handshake_timeout);
 }
 
-task<stream_result> TLS::server_certificate_verify(handshake_ctx& handshake) {
+task<stream_result> TLS::server_certificate_verify() {
     assert(m_expected_record == HandshakeStage::server_certificate_verify);
     auto record = handshake.server_certificate_verify_record();
     m_expected_record = HandshakeStage::server_handshake_finished;
     co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
-task<stream_result> TLS::server_handshake_finished13(handshake_ctx& handshake) {
+task<stream_result> TLS::server_handshake_finished13() {
     assert(m_expected_record == HandshakeStage::server_handshake_finished);
     auto record = handshake.server_handshake_finished13_record();
-    m_expected_record = HandshakeStage::client_handshake_finished;
+    m_expected_record = HandshakeStage::client_handshake_finished; // mTLS would change this
     auto res = co_await write_record(record, project_options.handshake_timeout);
     co_return res;
 }
 
-void TLS::client_handshake_finished13(handshake_ctx& handshake, const ustring& handshake_message) {
+void TLS::client_handshake_finished13(const ustring& handshake_message) {
     if(m_expected_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -484,7 +490,7 @@ void TLS::client_handshake_finished13(handshake_ctx& handshake, const ustring& h
     m_expected_record = HandshakeStage::application_data;
 }
 
-task<stream_result> TLS::server_key_exchange(handshake_ctx& handshake) {
+task<stream_result> TLS::server_key_exchange() {
     
     tls_record record = handshake.server_key_exchange_record();
     
@@ -492,7 +498,7 @@ task<stream_result> TLS::server_key_exchange(handshake_ctx& handshake) {
     co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
-task<stream_result> TLS::server_hello_done(handshake_ctx& handshake) {
+task<stream_result> TLS::server_hello_done() {
     assert(m_expected_record == HandshakeStage::server_hello_done);
     auto record = handshake.server_hello_done_record();
     
@@ -500,7 +506,7 @@ task<stream_result> TLS::server_hello_done(handshake_ctx& handshake) {
     co_return co_await write_record(record, project_options.handshake_timeout);
 }
 
-void TLS::client_key_exchange(handshake_ctx& handshake, ustring handshake_message) {
+void TLS::client_key_exchange(ustring handshake_message) {
     if(m_expected_record != HandshakeStage::client_key_exchange) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -525,7 +531,7 @@ void TLS::client_change_cipher_spec( tls_record record) {
     m_expected_record = HandshakeStage::client_handshake_finished;
 }
 
-void TLS::client_handshake_finished12(handshake_ctx& handshake, const ustring& handshake_message) {
+void TLS::client_handshake_finished12(const ustring& handshake_message) {
     if(m_expected_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -548,7 +554,7 @@ task<stream_result> TLS::server_change_cipher_spec() {
     co_return res;
 }
 
-task<stream_result> TLS::server_handshake_finished12(const handshake_ctx& handshake) {
+task<stream_result> TLS::server_handshake_finished12() {
     assert(m_expected_record == HandshakeStage::server_handshake_finished);
 
     tls_record out(Handshake);
@@ -624,6 +630,64 @@ std::pair<bool, tls_record> TLS::client_heartbeat_record(tls_record record, bool
     heartbeat_record.m_contents = { 0x02 };
     heartbeat_record.m_contents.append( length_and_payload );
     return {false, heartbeat_record} ;
+}
+
+task<stream_result> TLS::client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout) {
+    assert(m_expected_record == HandshakeStage::application_data);
+    if(tls_protocol_version != TLS13) {
+        co_await server_alert(AlertLevel::fatal, AlertDescription::unexpected_message);
+        co_return stream_result::closed;
+    }
+    if(message.size() < 5) {
+        co_await server_alert(AlertLevel::fatal, AlertDescription::decode_error);
+        co_return stream_result::closed;
+    }
+    switch(static_cast<HandshakeType>(message[0])) {
+        case HandshakeType::key_update:
+        {
+            auto key_update_message = der_span_read(message, 1, 3);
+            if(key_update_message.size() != 1) {
+                throw ssl_error("bad key update message", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
+            switch(static_cast<KeyUpdateRequest>(key_update_message[0])) {
+                case KeyUpdateRequest::update_not_requested:
+                {
+                    auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
+                    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
+                    assert(tls13_context != nullptr);
+                    tls13_context->set_key_material_13_application(handshake.tls13_key_schedule);
+                    break;
+                }
+                case KeyUpdateRequest::update_requested:
+                {
+                    tls_record keyupdate(ContentType::Handshake);
+                    keyupdate.write1(HandshakeType::key_update);
+                    keyupdate.start_size_header(3);
+                    keyupdate.write1(KeyUpdateRequest::update_not_requested);
+                    keyupdate.end_size_header();
+                    auto res = co_await write_record(std::move(keyupdate), timeout);
+                    if(res != stream_result::ok) {
+                        co_return res;
+                    }
+                    auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
+                    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
+                    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
+                    assert(tls13_context != nullptr);
+                    tls13_context->set_key_material_13_application(handshake.tls13_key_schedule);
+                    break;
+                }
+                default:
+                    throw ssl_error("bad key update message", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    co_return stream_result::ok;
 }
 
 }// namespace fbw

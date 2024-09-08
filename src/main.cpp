@@ -28,8 +28,9 @@
 // memory pool of common objects (records) - view calls to malloc
 // improve interface for signature and key exchange
 // docker in CI with curlimages/curl to docker network
-// nail down constant time-ness - look at RFC for x25519
+// nail down constant time-ness - look at RFC 7746 for x25519
 // offload state to TLS HRR cookie
+// Implement KeyUpdate TLS messages
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

@@ -33,6 +33,7 @@ class cipher_base_tls13 : public cipher_base {
 public:
     virtual void set_key_material_13_handshake(const key_schedule& key_sche) = 0;
     virtual void set_key_material_13_application(const key_schedule& key_sche) = 0;
+    virtual bool do_key_reset() { return false; }
 };
 
 

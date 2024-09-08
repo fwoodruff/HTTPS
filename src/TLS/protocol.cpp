@@ -60,6 +60,13 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
         if(res != stream_result::ok) {
             co_return res;
         }
+
+        if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
+            if(ctx->do_key_reset()) {
+                co_await server_key_update();
+            }
+        }
+
         auto [record, result] = co_await try_read_record(timeout);
         if(result != stream_result::ok) {
             co_return result;
@@ -632,6 +639,31 @@ std::pair<bool, tls_record> TLS::client_heartbeat_record(tls_record record, bool
     return {false, heartbeat_record} ;
 }
 
+tls_record server_key_update_record(KeyUpdateRequest req) {
+    tls_record keyupdate(ContentType::Handshake);
+    keyupdate.write1(HandshakeType::key_update);
+    keyupdate.start_size_header(3);
+    keyupdate.write1(req);
+    keyupdate.end_size_header();
+    return keyupdate;
+}
+
+task<stream_result> TLS::server_key_update() {
+    assert(m_expected_record == HandshakeStage::application_data);
+    assert(tls_protocol_version == TLS13);
+    auto keyupdate = server_key_update_record(KeyUpdateRequest::update_requested);
+    auto res = co_await write_record(std::move(keyupdate), project_options.session_timeout);
+    if(res != stream_result::ok) {
+        co_return res;
+    }
+    auto& srv_key = handshake.tls13_key_schedule.client_application_traffic_secret;
+    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+    auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
+    assert(tls13_context != nullptr);
+    tls13_context->set_key_material_13_application(handshake.tls13_key_schedule);
+    co_return stream_result::ok;
+}
+
 task<stream_result> TLS::client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout) {
     assert(m_expected_record == HandshakeStage::application_data);
     if(tls_protocol_version != TLS13) {
@@ -661,11 +693,7 @@ task<stream_result> TLS::client_post_handshake(const ustring& message,  std::opt
                 }
                 case KeyUpdateRequest::update_requested:
                 {
-                    tls_record keyupdate(ContentType::Handshake);
-                    keyupdate.write1(HandshakeType::key_update);
-                    keyupdate.start_size_header(3);
-                    keyupdate.write1(KeyUpdateRequest::update_not_requested);
-                    keyupdate.end_size_header();
+                    tls_record keyupdate = server_key_update_record(KeyUpdateRequest::update_not_requested);
                     auto res = co_await write_record(std::move(keyupdate), timeout);
                     if(res != stream_result::ok) {
                         co_return res;

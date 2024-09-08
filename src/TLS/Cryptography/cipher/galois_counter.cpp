@@ -348,6 +348,14 @@ void AES_256_GCM_SHA384::set_key_material_13_handshake(const key_schedule& key_s
    ctx.set_keys_handshake(key_sche, KEY_SIZE, IV_SIZE, sha384());
 }
 
+bool AES_256_GCM_SHA384::do_key_reset() {
+    return ctx.seqno_client > (1ull << 32) or ctx.seqno_server > (1ull << 32);
+}
+
+bool AES_128_GCM_SHA256_tls13::do_key_reset() {
+    return ctx.seqno_client > (1ull << 32) or ctx.seqno_server > (1ull << 32);
+}
+
 void AES_256_GCM_SHA384::set_key_material_13_application(const key_schedule& key_sche) {
    ctx.set_keys_application(key_sche, KEY_SIZE, IV_SIZE, sha384());
 }

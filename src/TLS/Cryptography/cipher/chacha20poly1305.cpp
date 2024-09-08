@@ -390,6 +390,10 @@ tls_record ChaCha20_Poly1305_tls12::decrypt(tls_record record) {
     return record;
 }
 
+bool ChaCha20_Poly1305_tls13::do_key_reset() {
+    return ctx.seqno_client > (1ull << 48) or ctx.seqno_server > (1ull << 48);
+}
+
 
     
 } // namespace fbw::cha

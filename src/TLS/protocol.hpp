@@ -87,6 +87,7 @@ private:
     [[nodiscard]] task<stream_result> server_hello_done();
     [[nodiscard]] task<stream_result> server_handshake_finished12();
     [[nodiscard]] task<stream_result> server_handshake_finished13();
+    task<stream_result> server_key_update();
 
     [[nodiscard]] task<stream_result> server_encrypted_extensions();
 

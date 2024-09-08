@@ -51,6 +51,7 @@ public:
     AES_128_GCM_SHA256_tls13() = default;
     void set_key_material_13_handshake(const key_schedule& key_sche) override;
     void set_key_material_13_application(const key_schedule& key_sche) override;
+    bool do_key_reset() override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };
@@ -64,6 +65,7 @@ public:
     AES_256_GCM_SHA384() = default;
     void set_key_material_13_handshake(const key_schedule& key_sche) override;
     void set_key_material_13_application(const key_schedule& key_sche) override;
+    bool do_key_reset() override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };

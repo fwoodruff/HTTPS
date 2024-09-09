@@ -286,66 +286,42 @@ void AES_128_GCM_SHA256::set_key_material_12(ustring material) {
     ctx.server_write_round_keys = aes_key_schedule(server_write_key);
 }
 
-void AES_GCM_SHA2_ctx::set_keys_handshake(const key_schedule& key_sche, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
-    auto client_handshake_key = hkdf_expand_label(hash_ctor, key_sche.client_handshake_traffic_secret, "key", std::string(""), key_size);
-    auto client_handshake_iv = hkdf_expand_label(hash_ctor, key_sche.client_handshake_traffic_secret, "iv", std::string(""), iv_size);
-    auto server_handshake_key = hkdf_expand_label(hash_ctor, key_sche.server_handshake_traffic_secret, "key", std::string(""), key_size);
-    auto server_handshake_iv = hkdf_expand_label(hash_ctor, key_sche.server_handshake_traffic_secret, "iv", std::string(""), iv_size);
-
-    std::vector<uint8_t> client_write_key(key_size);
-    std::vector<uint8_t> server_write_key(key_size);
-
-    std::copy(client_handshake_key.begin(), client_handshake_key.end(), client_write_key.begin());
-    std::copy(server_handshake_key.begin(), server_handshake_key.end(), server_write_key.begin());
-
-    client_write_round_keys = aes_key_schedule(client_write_key);
-    server_write_round_keys = aes_key_schedule(server_write_key);
-
-    client_implicit_write_IV.resize(iv_size);
+void AES_GCM_SHA2_ctx::set_server_key(const ustring& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
+    seqno_server = 0;
+    auto key = hkdf_expand_label(hash_ctor, traffic_key, "key", std::string(""), key_size);
+    auto iv = hkdf_expand_label(hash_ctor, traffic_key, "iv", std::string(""), iv_size);
+    std::vector<uint8_t> write_key(key_size);
+    std::copy(key.begin(), key.end(), write_key.begin());
+    server_write_round_keys = aes_key_schedule(write_key);
     server_implicit_write_IV.resize(iv_size);
+    std::copy(iv.begin(), iv.end(), server_implicit_write_IV.begin());
+}
 
-    std::copy(client_handshake_iv.begin(), client_handshake_iv.end(), client_implicit_write_IV.begin());
-    std::copy(server_handshake_iv.begin(), server_handshake_iv.end(), server_implicit_write_IV.begin());
-
+void AES_GCM_SHA2_ctx::set_client_key(const ustring& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
     seqno_client = 0;
-    seqno_server = 0;
+    auto key = hkdf_expand_label(hash_ctor, traffic_key, "key", std::string(""), key_size);
+    auto iv = hkdf_expand_label(hash_ctor, traffic_key, "iv", std::string(""), iv_size);
+    std::vector<uint8_t> write_key(key_size);
+    std::copy(key.begin(), key.end(), write_key.begin());
+    client_write_round_keys = aes_key_schedule(write_key);
+    client_implicit_write_IV.resize(iv_size);
+    std::copy(iv.begin(), iv.end(), client_implicit_write_IV.begin());
 }
 
-void AES_GCM_SHA2_ctx::set_keys_application(const key_schedule& key_sche, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
-    auto client_application_key = hkdf_expand_label(hash_ctor, key_sche.client_application_traffic_secret, "key", std::string(""), key_size);
-    auto client_application_iv = hkdf_expand_label(hash_ctor, key_sche.client_application_traffic_secret, "iv", std::string(""), iv_size);
-    auto server_application_key = hkdf_expand_label(hash_ctor, key_sche.server_application_traffic_secret, "key", std::string(""), key_size);
-    auto server_application_iv = hkdf_expand_label(hash_ctor, key_sche.server_application_traffic_secret, "iv", std::string(""), iv_size);
-
-    std::vector<uint8_t> client_write_key(key_size);
-    std::vector<uint8_t> server_write_key(key_size);
-
-    assert(client_implicit_write_IV.size() == iv_size);
-    assert(server_implicit_write_IV.size() == iv_size);
-
-    std::copy(client_application_key.begin(), client_application_key.end(), client_write_key.begin());
-    std::copy(server_application_key.begin(), server_application_key.end(), server_write_key.begin());
-
-    std::copy(client_application_iv.begin(), client_application_iv.end(), client_implicit_write_IV.begin());
-    std::copy(server_application_iv.begin(), server_application_iv.end(), server_implicit_write_IV.begin());
-
-    client_write_round_keys = aes_key_schedule(client_write_key);
-    server_write_round_keys = aes_key_schedule(server_write_key);
-
-    seqno_client = 0;
-    seqno_server = 0;
+void AES_128_GCM_SHA256_tls13::set_server_traffic_key(const ustring& traffic_key) {
+    ctx.set_server_key(traffic_key, KEY_SIZE, IV_SIZE, sha256());
 }
 
-void AES_128_GCM_SHA256_tls13::set_key_material_13_handshake(const key_schedule& key_sche) {
-    ctx.set_keys_handshake(key_sche, KEY_SIZE, IV_SIZE, sha256());
+void AES_128_GCM_SHA256_tls13::set_client_traffic_key(const ustring& traffic_key) {
+    ctx.set_client_key(traffic_key, KEY_SIZE, IV_SIZE, sha256());
 }
 
-void AES_128_GCM_SHA256_tls13::set_key_material_13_application(const key_schedule& key_sche) {
-    ctx.set_keys_application(key_sche, KEY_SIZE, IV_SIZE, sha256());
+void AES_256_GCM_SHA384::set_server_traffic_key(const ustring& traffic_key) {
+   ctx.set_server_key(traffic_key, KEY_SIZE, IV_SIZE, sha384());
 }
 
-void AES_256_GCM_SHA384::set_key_material_13_handshake(const key_schedule& key_sche) {
-   ctx.set_keys_handshake(key_sche, KEY_SIZE, IV_SIZE, sha384());
+void AES_256_GCM_SHA384::set_client_traffic_key(const ustring& traffic_key) {
+    ctx.set_client_key(traffic_key, KEY_SIZE, IV_SIZE, sha384());
 }
 
 bool AES_256_GCM_SHA384::do_key_reset() {
@@ -354,10 +330,6 @@ bool AES_256_GCM_SHA384::do_key_reset() {
 
 bool AES_128_GCM_SHA256_tls13::do_key_reset() {
     return ctx.seqno_client > (1ull << 32) or ctx.seqno_server > (1ull << 32);
-}
-
-void AES_256_GCM_SHA384::set_key_material_13_application(const key_schedule& key_sche) {
-   ctx.set_keys_application(key_sche, KEY_SIZE, IV_SIZE, sha384());
 }
 
 ustring make_additional_12(const tls_record& record, uint64_t sequence_no, size_t tag_size) {

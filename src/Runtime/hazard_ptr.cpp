@@ -29,12 +29,12 @@ struct hazard_pointer_batch {
     std::atomic<hazard_pointer_batch*> m_next = nullptr;
     // if the program has more threads than this expected upper bound, next() is used to expand the list
     hazard_pointer_batch* next() {
-        hazard_pointer_batch* lnext = m_next.load(relaxed);
+        hazard_pointer_batch* lnext = m_next.load(consume);
         if(lnext != nullptr) {
             return lnext;
         }
         hazard_pointer_batch* new_batch = new hazard_pointer_batch{};
-        if(!m_next.compare_exchange_strong(lnext, new_batch, release, relaxed)) {
+        if(!m_next.compare_exchange_strong(lnext, new_batch, release, consume)) {
             delete new_batch;
             new_batch = lnext;
         }
@@ -51,26 +51,25 @@ struct hazard_pointer_batch {
 };
 
 hazard_pointer::~hazard_pointer() {
-    m_ptr->store(nullptr, relaxed);
+    reset_protection();
     delete_nodes_with_no_hazards();
 }
 
 hazard_pointer::hazard_pointer(std::atomic<void*>* _ptr) : m_ptr(_ptr) {}
 
 void hazard_pointer::reset_protection() {
-    m_ptr->store(nullptr, release);
+    // would still be ok if this was a no-op, so use relaxed
+    m_ptr->store(nullptr, relaxed);
 }
 
 hazard_pointer_batch hazard_pointers{};
-
-
 
 
 std::atomic<size_t> max_hp_idx = 0;
 
 void update_max(std::atomic<size_t>& atom, size_t value) {
     auto current = atom.load(relaxed); // atom never decreases
-    while (current < value && !atom.compare_exchange_weak(current, value, release, relaxed));
+    while (current < value && !atom.compare_exchange_weak(current, value, seq_cst, relaxed));
 }
 
 
@@ -84,7 +83,7 @@ public:
         size_t idx = 0;
         for(unsigned i = 0;; i++) {
             std::thread::id old_id;
-            if(current_batch->ptrs[idx].id.compare_exchange_strong(old_id, std::this_thread::get_id())) {
+            if(current_batch->ptrs[idx].id.compare_exchange_strong(old_id, std::this_thread::get_id(), seq_cst, seq_cst)) {
                 hp = &current_batch->ptrs[idx];
                 update_max(max_hp_idx, i + 1);
                 break;
@@ -102,8 +101,9 @@ public:
         return hp->pointer;
     }
     ~hp_owner() {
-        hp->pointer.store(nullptr);
-        hp->id.store(std::thread::id());
+        hp->pointer.store(nullptr, seq_cst);
+        hp->id.store(std::thread::id(), seq_cst);
+        delete_nodes_with_no_hazards();
     }
 };
 
@@ -115,8 +115,8 @@ hazard_pointer make_hazard_pointer() {
 bool outstanding_hazard_pointers_for(void* p) {
     hazard_pointer_batch* current_batch = &hazard_pointers;
     size_t idx = 0;
-    for(unsigned i = 0; i < max_hp_idx; i++) {
-        if(current_batch->ptrs[idx].pointer.load(acquire) == p) {
+    for(unsigned i = 0; i < max_hp_idx.load(acquire); i++) {
+        if(current_batch->ptrs[idx].pointer.load(seq_cst) == p) {
             return true;
         }
         if(idx == current_batch->ptrs.size() - 1) {

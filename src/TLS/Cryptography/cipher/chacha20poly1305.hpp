@@ -38,8 +38,8 @@ private:
     ChaCha20_Poly1305_ctx ctx;
 public:
     ChaCha20_Poly1305_tls13() = default;
-    void set_key_material_13_handshake(const key_schedule& key_sche) override;
-    void set_key_material_13_application(const key_schedule& key_sche) override;
+    void set_server_traffic_key(const ustring& key) override;
+    void set_client_traffic_key(const ustring& key) override;
     bool do_key_reset() override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;

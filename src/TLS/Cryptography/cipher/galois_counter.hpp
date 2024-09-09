@@ -26,8 +26,8 @@ struct AES_GCM_SHA2_ctx {
     ustring server_implicit_write_IV;
     uint64_t seqno_server = 0;
     uint64_t seqno_client = 0;
-    void set_keys_handshake(const key_schedule& key_sche, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
-    void set_keys_application(const key_schedule& key_sche, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
+    void set_server_key(const ustring& key, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
+    void set_client_key(const ustring& key, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
 };
 
 class AES_128_GCM_SHA256 : public cipher_base_tls12 {
@@ -49,8 +49,9 @@ class AES_128_GCM_SHA256_tls13 : public cipher_base_tls13 {
     AES_GCM_SHA2_ctx ctx;
 public:
     AES_128_GCM_SHA256_tls13() = default;
-    void set_key_material_13_handshake(const key_schedule& key_sche) override;
-    void set_key_material_13_application(const key_schedule& key_sche) override;
+    void set_server_traffic_key(const ustring& key) override;
+    void set_client_traffic_key(const ustring& key) override;
+    bool do_key_reset() override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };
@@ -62,8 +63,9 @@ class AES_256_GCM_SHA384 : public cipher_base_tls13 {
     AES_GCM_SHA2_ctx ctx;
 public:
     AES_256_GCM_SHA384() = default;
-    void set_key_material_13_handshake(const key_schedule& key_sche) override;
-    void set_key_material_13_application(const key_schedule& key_sche) override;
+    void set_server_traffic_key(const ustring& key) override;
+    void set_client_traffic_key(const ustring& key) override;
+    bool do_key_reset() override;
     tls_record encrypt(tls_record record) noexcept override;
     tls_record decrypt(tls_record record) override;
 };

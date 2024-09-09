@@ -61,7 +61,7 @@ public:
         if (outstanding_hazard_pointers_for(this)) {
             reclaim_later(this);
         } else {
-            delete this;
+            delete static_cast<T*>(this);
         }
         delete_nodes_with_no_hazards();
     }

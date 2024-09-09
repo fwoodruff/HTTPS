@@ -368,7 +368,7 @@ tls_record ChaCha20_Poly1305_tls12::decrypt(tls_record record) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
     ustring additional_data = make_additional_12(record, ctx.seqno_client, TAG_SIZE);
-    record.m_contents = ctx.decrypt(std::move(record.m_contents), additional_data);
+    record.m_contents = ctx.decrypt(record.m_contents, additional_data);
     return record;
 }
 
@@ -377,6 +377,5 @@ bool ChaCha20_Poly1305_tls13::do_key_reset() {
 }
 
 
-    
 } // namespace fbw::cha
 

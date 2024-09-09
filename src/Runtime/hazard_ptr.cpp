@@ -4,8 +4,10 @@
 #include <thread>
 #include <new>
 #include <iostream>
-#include "hazard_ptr.hpp"
 #include <cassert>
+#include <array>
+
+#include "hazard_ptr.hpp"
 
 // Abridged from Anthony Williams C++ Concurrency in Action
 

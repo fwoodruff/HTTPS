@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <cassert>
 #include <utility>
- 
+
 static const size_t NUM_THREADS = std::thread::hardware_concurrency();
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -61,7 +61,7 @@ void executor::try_poll() {
 void executor::main_thread_function() {
     for(;;) {
         try_poll();
-        for(int i = 0; i < 1 + (m_ready.size_hint() + 1)/ NUM_THREADS; i++ ) {
+        for(size_t i = 0; i < 1 + (m_ready.size_hint() + 1)/ NUM_THREADS; i++ ) {
             auto task = m_ready.try_pop();
             if(task) {
                 if(*task == nullptr) {

@@ -30,9 +30,6 @@
 // docker in CI with curlimages/curl to docker network
 // nail down constant time-ness - look at RFC 7746 for x25519
 // offload state to TLS HRR cookie
-// Implement KeyUpdate TLS messages
-// Nasty bug: currently both server and client sequence numbers get updated when performing a key update, even if only one side should
-
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

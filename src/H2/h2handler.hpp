@@ -5,8 +5,8 @@
 //  Created by Frederick Benjamin Woodruff on 22/09/2024.
 //
 
-#ifndef http2handler_hpp
-#define http2handler_hpp
+#ifndef h2handler_hpp
+#define h2handler_hpp
 
 #include "../Runtime/task.hpp"
 #include <memory>

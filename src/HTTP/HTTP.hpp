@@ -18,10 +18,7 @@
 
 namespace fbw {
 
-
 class HTTP {
-
-    
     static std::optional<http_header> try_extract_header(ustring& m_buffer);
 
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();

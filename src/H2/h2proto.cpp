@@ -1,5 +1,5 @@
 //
-//  HTTP2.hpp
+//  h2proto.cpp
 //  HTTPS Server
 //
 //  Created by Frederick Benjamin Woodruff on 26/07/2024.
@@ -7,13 +7,12 @@
 
 #include "../Runtime/task.hpp"
 
-#include "HTTP.hpp"
-#include "HTTP2.hpp"
+#include "h2proto.hpp"
 #include <queue>
 #include "../Runtime/executor.hpp"
-#include "H2handler.hpp"
-#include "http2frame.hpp"
-#include "http2awaitable.hpp"
+#include "h2handler.hpp"
+#include "h2frame.hpp"
+#include "h2awaitable.hpp"
 
 namespace fbw {
 

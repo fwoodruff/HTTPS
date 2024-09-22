@@ -1,5 +1,5 @@
 //
-//  HTTP2.hpp
+//  h2proto.hpp
 //  HTTPS Server
 //
 //  Created by Frederick Benjamin Woodruff on 26/07/2024.
@@ -10,14 +10,12 @@
 #define http2_hpp
 
 #include "../TCP/tcp_stream.hpp"
-#include "string_utils.hpp"
 #include "../global.hpp"
 #include "../Runtime/task.hpp"
 #include "../Runtime/concurrent_queue.hpp"
-#include "http2frame.hpp"
+#include "h2frame.hpp"
 #include <queue>
 #include <unordered_map>
-
 #include <memory>
 #include <string>
 
@@ -99,7 +97,6 @@ public:
 
 std::vector<h2frame> extract_frames(ustring& buffer);
 
-task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
 
 } // namespace fbw
 #endif // http2_hpp

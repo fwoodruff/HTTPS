@@ -1,8 +1,13 @@
-
+//
+//  H2handler.cpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 22/09/2024.
+//
 
 #include "../Runtime/task.hpp"
-#include "H2handler.hpp"
-#include "HTTP2.hpp"
+#include "h2handler.hpp"
+#include "h2proto.hpp"
 
 namespace fbw {
 

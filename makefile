@@ -1,5 +1,6 @@
 # Compiler and flags
 CXX := g++
+#CXX := arm-linux-gnueabihf-g++
 CXXFLAGS := -std=c++20 -Wall -Wno-psabi -MMD -MP -O2
 LDFLAGS :=
 

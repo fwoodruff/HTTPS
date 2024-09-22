@@ -51,6 +51,7 @@ using enum ContentType;
 
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
+// application code calls this to decrypt and read data
 task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl {};
     try {
@@ -107,6 +108,7 @@ END2:
     co_return stream_result::closed;
 }
 
+// if the last record is going to be really small, just add that data to the penultimate record
 bool squeeze_last_chunk(ssize_t additional_data_len) {
     return  size_t(additional_data_len) < WRITE_RECORD_SIZE and 
             additional_data_len != 0 and 
@@ -114,6 +116,7 @@ bool squeeze_last_chunk(ssize_t additional_data_len) {
             size_t(additional_data_len) * 3 < WRITE_RECORD_SIZE * 2;
 }
 
+// application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     try {
@@ -152,6 +155,7 @@ END2:
     co_return stream_result::closed;
 }
 
+// application data is sent on a buffered stream so the pattern of record sizes reveals much less
 task<stream_result> TLS::flush() {
     if(encrypt_send.size() >= 2) {
         if(squeeze_last_chunk(encrypt_send.back().m_contents.size())) {
@@ -175,6 +179,7 @@ task<stream_result> TLS::flush() {
     co_return stream_result::ok;
 }
 
+// applications call this when graceful not abrupt closing of a connection is desired
 task<void> TLS::close_notify() {
     try {
         co_await flush();
@@ -192,6 +197,7 @@ task<void> TLS::close_notify() {
     } catch(const std::exception& e) { }
 }
 
+// When the server encounters an error, it sends that error here
 task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
     auto r = tls_record(Alert);
     r.write1(level);
@@ -199,6 +205,7 @@ task<void> TLS::server_alert(AlertLevel level, AlertDescription description) {
     co_await write_record(std::move(r), project_options.error_timeout);
 }
 
+// Called when a client connects, to secure the channel
 task<std::string> TLS::perform_handshake() {
     std::optional<ssl_error> error_ssl {};
     try {
@@ -266,6 +273,7 @@ END2:
     co_return "";
 }
 
+// called internally to decrypt a client record on receipt
 tls_record TLS::decrypt_record(tls_record record) {
     if(record.get_type() == Alert and tls_protocol_version == TLS13) {
         if(m_expected_record != HandshakeStage::application_data) {

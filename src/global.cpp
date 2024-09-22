@@ -58,6 +58,7 @@ void init_options() {
         remove_whitespace(value);
         option_map.insert({key, value});
     }
+    // todo: catch errors here
     project_options.redirect_port = option_map.at("REDIRECT_PORT");
     project_options.server_port = option_map.at("SERVER_PORT");
     project_options.domain_names = split(option_map.at("DOMAIN_NAMES"), ",");

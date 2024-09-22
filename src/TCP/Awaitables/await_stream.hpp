@@ -44,7 +44,7 @@ private:
     int m_fd;
     stream_result m_res;
     std::span<uint8_t> m_bytes_read;  // scoped to await_resume and await_suspend
-    std::span<uint8_t>* m_buffer; // scoped to caller
+    std::span<uint8_t>* m_buffer; // scoped to caller, todo: does this need to be doubly dereferenced?
     std::optional<milliseconds> m_millis;
 };
 

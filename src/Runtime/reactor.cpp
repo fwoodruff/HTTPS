@@ -47,7 +47,7 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
 }
 
 void reactor::notify() {
-    char buff;
+    char buff = '\0';
     ::write(m_pipe_write, &buff, 1); // notify ::poll
 }
 

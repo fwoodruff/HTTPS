@@ -13,6 +13,7 @@
 #include "../global.hpp"
 #include "../Runtime/task.hpp"
 #include "../Runtime/concurrent_queue.hpp"
+#include "h2awaitable.hpp"
 #include "h2frame.hpp"
 #include <queue>
 #include <unordered_map>
@@ -27,8 +28,8 @@ namespace fbw {
 class h2_stream {
 public:
     int64_t stream_current_window = 0;
-    size_t m_stream_id;
-    stream_state state = stream_state::idle;
+    // size_t m_stream_id; // implicit
+    std::atomic<stream_state> state = stream_state::idle;
     bool client_sent_headers = false;
     bool server_sent_headers = false;
     std::unordered_map<std::string, std::string> m_received_headers;
@@ -59,33 +60,41 @@ public:
     [[nodiscard]] task<void> client();
     HTTP2(std::unique_ptr<stream> stream, std::string folder);
 
-    concurrent_queue<std::pair<std::unique_ptr<h2frame>, std::chrono::milliseconds>> outbox;
-
     task<stream_result> handle_frame(const h2frame& frame);
-    task<stream_result> process_streams();
+    void process_streams();
     void set_peer_settings(h2_settings settings);
     void handle_client_headers(const h2_headers& frame);
     void handle_rst_stream(const h2_rst_stream& frame);
+
+    bool notify_close_sent = false;
     std::unique_ptr<stream> m_stream;
 
-    task<stream_result> write_one();
-    task<stream_result> flush();
+    task<stream_result> read_append_safe(ustring &, std::optional<std::chrono::milliseconds> timeout);
+    task<stream_result> write_safe(ustring data, std::optional<milliseconds> timeout);
+    task<stream_result> write_close_safe(ustring data, std::optional<milliseconds> timeout);
 
+    async_mutex co_mutex;
     std::unordered_map<uint32_t, ustring> HPACK;
+    std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines, only updated by owner
+    void* connection_owner = nullptr; // sentinel, do not resume
 
-    mutable std::mutex conn_mut;
-    std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
+
+    // bookkeeping
+    // - increment when stream is created (unique)
+    // - decrement when resuming a stream coroutine (unique)
+    // - leave when a stream coroutine suspends on write because window
+    // - when a stream coroutine suspends on write (written some) - (runtime yield and) resume if we are not the owner otherwise increment (unique) // todo
+    // - leave when a stream coroutine suspends on read
+    // - increment when a stream data queue becomes non-empty or window widens (unique)
+
+    // i.e. if all streams are 'elsewhere' or waiting for data, then we should suspend to read more data
+    ssize_t processable_streams = 0; // todo, updates to this value (consider concurrency)
 
     std::string m_folder;
-    uint32_t last_stream_id = 0;
+    uint32_t last_stream_id = 0; // most recent id
 
     setting_values server_settings; // applies to server, sent by client
     setting_values client_settings;
-
-    std::atomic<uint32_t> running_streams = 0; // increment on resume, decrement on suspend
-    // hard to safely block on both read and write while respecting lower levels' protocols, particularly close_notfiy
-    // so instead, if we are waiting for a proxy call, block on the proxy not on read when nothing to do
-    // later implement a way to block until either coroutine wakes
 
     bool received_settings = false;
 

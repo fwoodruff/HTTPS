@@ -37,7 +37,7 @@ class readable {
 public:
     readable(int fd, std::span<uint8_t>& buffer, std::optional<milliseconds> millis);
     bool await_ready() const noexcept;
-    bool await_suspend(std::coroutine_handle<> awaitingCoroutine);
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<uint8_t>, stream_result> await_resume();
 private:
     
@@ -53,7 +53,7 @@ class writeable {
 public:
     writeable(int fd, std::span<const uint8_t>& bytes, std::optional<milliseconds> millis);
     bool await_ready() const noexcept;
-    bool await_suspend(std::coroutine_handle<> awaitingCoroutine);
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<const uint8_t>, stream_result> await_resume();
 private:
     

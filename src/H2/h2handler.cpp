@@ -16,6 +16,8 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     // on wake, extract self from connection in case we want to wait somewhere else
     // on sleep readd to connection
     // await write
+
+    // responsible for setting stream_state to closed
     co_return;
 }
 

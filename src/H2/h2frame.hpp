@@ -86,7 +86,6 @@ struct h2frame {
     uint8_t flags = 0;
     uint32_t stream_id;
     h2frame() = default;
-    h2frame(h2_type type);
     virtual ustring serialise() const = 0;
     virtual ~h2frame() = default;
     static std::unique_ptr<h2frame> deserialise(ustring);
@@ -106,7 +105,7 @@ struct h2_headers : public h2frame {
     bool exclusive;
     uint32_t stream_dependency;
     uint8_t weight;
-    std::unordered_map<std::string, std::string> field_block_fragment;
+    std::vector<uint8_t> field_block_fragment;
     ustring serialise() const override { return {};}
 };
 
@@ -157,7 +156,7 @@ struct h2_window_update : public h2frame {
 };
 
 struct h2_continuation : public h2frame {
-    ustring field_block_fragment;
+    std::vector<uint8_t> field_block_fragment;
 };
 
 

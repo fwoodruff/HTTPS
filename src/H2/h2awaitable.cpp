@@ -27,7 +27,8 @@ std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::w
     return { conn, it->second };
 }
 
-task<stream_result> write_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t> bytes) {
+// writes as much as window allows
+task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes) {
     auto [ stream_res, num_bytes ] = co_await h2writewindowable{ connection, stream_id };
     if(stream_res != stream_result::ok) {
         co_return stream_res;
@@ -56,14 +57,24 @@ bool h2writewindowable::await_ready() const noexcept {
     return false;
 }
 
-bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) { // placeholder: ignores windowing 
-    //auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
-    (void)m_stream_id;
+bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
+    auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
+    if(!stream) {
+        return false;
+    }
+    if(stream->stream_current_window > 0) {
+        return false;
+    }
+    stream->m_writer.store(continuation);
     return true;
 }
 
 std::pair<stream_result, int32_t> h2writewindowable::await_resume() {
-    return {stream_result::ok, 0x7fffffff};
+    auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
+    if(!stream) {
+        return {stream_result::closed, 0};
+    }
+    return {stream_result::ok, stream->stream_current_window};
 }
 
 bool async_mutex::lockable::await_ready() const noexcept {

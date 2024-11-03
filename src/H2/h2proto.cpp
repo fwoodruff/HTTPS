@@ -22,7 +22,6 @@ constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
 
 [[nodiscard]] task<void> HTTP2::client() {
     connection_owner = (co_await extract_current_handle()).address();
-   
     std::optional<h2_error> error;
     ustring buffer;
     using namespace std::chrono_literals;
@@ -58,7 +57,6 @@ constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
 }
 
 task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
-    
     using enum h2_type;
     if(!received_settings) {
         if(frame.type != SETTINGS) {
@@ -68,11 +66,10 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
     }
     switch(frame.type) {
         case DATA:
-            // POST requests not implemented yet
-            // if queue was empty, processable_streams--;
+            handle_data_frame(dynamic_cast<const h2_data&>(frame));
             break;
         case HEADERS:
-            handle_client_headers(dynamic_cast<const h2_headers&>(frame));
+            handle_headers_frame(dynamic_cast<const h2_headers&>(frame));
             break;
         case PRIORITY:
             // rfc9113 recommends ignoring now
@@ -117,6 +114,11 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
 // if the stream encounters a problem, it should send a stream error.
 // when the stream exits, it should set stream_closed
 
+void HTTP2::handle_data_frame(const h2_data& frame) {
+    throw h2_error("client data handling not implemented", h2_code::INTERNAL_ERROR);
+    processable_streams--;
+}
+
 void HTTP2::process_streams()  {
     assert(m_h2streams.empty());
     for (auto it = m_h2streams.begin(); it != m_h2streams.end(); ) {
@@ -132,9 +134,10 @@ void HTTP2::process_streams()  {
             }
             auto write_coro = h2stream->m_writer.load();
             if(write_coro != nullptr) {
-                // todo: check window
-                processable_streams--;
-                write_coro.resume();
+                if(h2stream->stream_current_window > 0) {
+                    processable_streams--;
+                    write_coro.resume();
+                }
             }
         }
         if(h2stream->state.load() == stream_state::closed) {
@@ -148,42 +151,65 @@ std::vector<h2frame> extract_frames(ustring& buffer)  {
     return {};
 }
 
-void HTTP2::handle_client_headers(const h2_headers& frame) {
-    // identify stream frame belongs to
-    // if new: create an entry for this stream (open) - check it's the next numbered stream, set window to initial value
-    // else: check stream is in right state to accept headers
-    
+void HTTP2::handle_headers_frame(const h2_headers& frame) {
     auto it = m_h2streams.find(frame.stream_id);
     if(it == m_h2streams.end()) {
         if(frame.stream_id <= last_stream_id) {
             throw h2_error("bad stream id", h2_code::PROTOCOL_ERROR);
+            // maybe check that it's the next one not just a later one
         }
         last_stream_id = frame.stream_id;
         auto strm = std::make_unique<h2_stream>();
+        if(frame.flags & h2_flags::end_stream) {
+            strm->state.store(stream_state::half_closed);
+            strm->client_sent_headers = done;
+        } else if(frame.flags & h2_flags::end_headers) {
+            strm->state.store(stream_state::open);
+            strm->client_sent_headers = data_pp_trailers_expected;
+        } else {
+            strm->state.store(stream_state::open);
+            strm->client_sent_headers = continuation_expected;
+        }
+        auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
+        strm->receive_headers(std::move(some_headers));
         processable_streams++;
         m_h2streams.insert({frame.stream_id, std::move(strm)});
         it = m_h2streams.find(frame.stream_id);
         assert(it != m_h2streams.end());
+        if(frame.flags & h2_flags::end_headers) {
+            async_spawn(handle_stream(shared_from_this(), frame.stream_id));
+        }
+    } else {
+        if(it->second->client_sent_headers != data_pp_trailers_expected) {
+            throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
+        }
+        if(frame.flags & h2_flags::end_stream) {
+            it->second->client_sent_headers = done;
+        } else {
+            it->second->client_sent_headers = trailer_continuation_expected;
+        }
+        auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
+        it->second->receive_trailers(std::move(some_headers));
     }
-    if(it->second->client_sent_headers) {
-        throw h2_error("received headers after end of headers", h2_code::PROTOCOL_ERROR);
-    }
+}
 
-    if(frame.flags | (h2_flags::end_stream | h2_flags::end_headers)) {
-        it->second->client_sent_headers = true;
-        async_spawn(handle_stream(shared_from_this(), frame.stream_id));
-        // revisit data races, also maybe launch on current thread?
+void HTTP2::handle_continuation_frame(const h2_continuation& frame) {
+    auto it = m_h2streams.find(frame.stream_id);
+    if(it == m_h2streams.end()) {
+        throw h2_error("continuation of bad stream id", h2_code::PROTOCOL_ERROR);
     }
-    if(frame.flags & h2_flags::end_stream) {
-        it->second->state = stream_state::half_closed; // maybe CAS? check
+    auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
+    if(it->second->client_sent_headers == continuation_expected) {
+        it->second->receive_headers(std::move(some_headers));
+    } else if (it->second->client_sent_headers == trailer_continuation_expected) {
+        it->second->receive_trailers(std::move(some_headers));
+    } else {
+        throw h2_error("continuation not expected", h2_code::PROTOCOL_ERROR);
     }
-    // unpack headers
-    // if last header, change open -> half-closed, send any push promises
 }
 
 void HTTP2::handle_rst_stream(const h2_rst_stream& frame) {
-    // look up stream_id, if not present, ignore
-    // if found, remove stream_id entry
+    m_h2streams.erase(frame.stream_id);
 }
 
 void HTTP2::set_peer_settings(h2_settings settings) {
@@ -257,6 +283,10 @@ HTTP2::HTTP2(std::unique_ptr<stream> stream, std::string folder) : m_stream(std:
 
 void h2_stream::receive_headers(std::unordered_map<std::string, std::string> headers) {
     m_received_headers.merge(std::move(headers));
+}
+
+void h2_stream::receive_trailers(std::unordered_map<std::string, std::string> headers) {
+    m_received_trailers.merge(std::move(headers));
 }
 
 h2_stream::~h2_stream() {

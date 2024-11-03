@@ -13,6 +13,7 @@
 #include "../global.hpp"
 #include "../Runtime/task.hpp"
 #include "../Runtime/concurrent_queue.hpp"
+#include "hpack.hpp"
 #include "h2awaitable.hpp"
 #include "h2frame.hpp"
 #include <queue>
@@ -25,19 +26,29 @@ namespace fbw {
 // if after .resume() a coroutine hasn't landed back, await its return on the main event loop rather than blocking on read
 // then keep writes on the main thread.
 
+enum stream_frame_state {
+    headers_expected,
+    continuation_expected,
+    data_pp_trailers_expected,
+    trailer_continuation_expected,
+    done,
+};
+
 class h2_stream {
 public:
     int64_t stream_current_window = 0;
     // size_t m_stream_id; // implicit
     std::atomic<stream_state> state = stream_state::idle;
-    bool client_sent_headers = false;
-    bool server_sent_headers = false;
+    stream_frame_state client_sent_headers = headers_expected;
+    stream_frame_state server_sent_headers = headers_expected;
     std::unordered_map<std::string, std::string> m_received_headers;
+    std::unordered_map<std::string, std::string> m_received_trailers;
     void receive_headers(std::unordered_map<std::string, std::string> headers); // populate headers
+    void receive_trailers(std::unordered_map<std::string, std::string> headers); // populate headers
     std::queue<h2_data> inbox;
 
     std::atomic<std::coroutine_handle<>> m_reader { nullptr };
-    std::atomic<std::coroutine_handle<>> m_writer { nullptr }; // atomic?
+    std::atomic<std::coroutine_handle<>> m_writer { nullptr };
 
     ~h2_stream();
 };
@@ -51,7 +62,6 @@ struct setting_values {
     uint32_t max_header_size = 0x7fffffff;
 };
 
-
 // When we receive a 'go-away', we might have a bunch of coroutine handles (and new ones may arrive)
 // initially set a 'goaway sent' flag. 
 class HTTP2 : public std::enable_shared_from_this<HTTP2> {
@@ -63,8 +73,12 @@ public:
     task<stream_result> handle_frame(const h2frame& frame);
     void process_streams();
     void set_peer_settings(h2_settings settings);
-    void handle_client_headers(const h2_headers& frame);
+    void handle_headers_frame(const h2_headers& frame);
+    void handle_continuation_frame(const h2_continuation& frame);
     void handle_rst_stream(const h2_rst_stream& frame);
+    void handle_data_frame(const h2_data& frame);
+
+    hpack m_hpack;
 
     bool notify_close_sent = false;
     std::unique_ptr<stream> m_stream;
@@ -74,7 +88,7 @@ public:
     task<stream_result> write_close_safe(ustring data, std::optional<milliseconds> timeout);
 
     async_mutex co_mutex;
-    std::unordered_map<uint32_t, ustring> HPACK;
+    
     std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines, only updated by owner
     void* connection_owner = nullptr; // sentinel, do not resume
 
@@ -83,6 +97,7 @@ public:
     // - increment when stream is created (unique)
     // - decrement when resuming a stream coroutine (unique)
     // - leave when a stream coroutine suspends on write because window
+    // - leave when a stream exits
     // - when a stream coroutine suspends on write (written some) - (runtime yield and) resume if we are not the owner otherwise increment (unique) // todo
     // - leave when a stream coroutine suspends on read
     // - increment when a stream data queue becomes non-empty or window widens (unique)

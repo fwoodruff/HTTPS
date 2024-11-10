@@ -115,6 +115,12 @@ void executor::spawn(task<void> taskob) {
     m_ready.push(root.m_coroutine);
 }
 
+void executor::commence(task<void> taskob) {
+    auto root = make_root_task(std::move(taskob));
+    num_tasks.fetch_add(1, std::memory_order_relaxed);
+    root.m_coroutine.resume();
+}
+
 // starts the runtime
 void run(task<void> main_task) {
     auto& exec = executor_singleton();
@@ -125,6 +131,11 @@ void run(task<void> main_task) {
 void async_spawn(task<void> subtask) {
     auto& exec = executor_singleton();
     exec.spawn(std::move(subtask));
+}
+
+void sync_spawn(task<void> subtask) {
+    auto& exec = executor_singleton();
+    exec.commence(std::move(subtask));
 }
 
 // thread pool with a reactor

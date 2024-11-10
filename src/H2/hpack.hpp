@@ -19,4 +19,4 @@ public:
     std::unordered_map<std::string, std::string> parse_field_block_fragment(const std::vector<uint8_t>& field_block_fragment);
 };
 
-#endif // http2_hpp
+#endif // hpack_hpp

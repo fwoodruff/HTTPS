@@ -97,7 +97,7 @@ struct h2_data : public h2frame {
     uint32_t stream_dependency = 0;
     uint8_t weight = 0;
     ustring contents = 0;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
 
 struct h2_headers : public h2frame {
@@ -106,57 +106,60 @@ struct h2_headers : public h2frame {
     uint32_t stream_dependency;
     uint8_t weight;
     std::vector<uint8_t> field_block_fragment;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
 
 struct h2_priority : public h2frame {
     bool exclusive;
     uint32_t stream_dependency;
     uint8_t weight;
-    ustring serialise() const override { return {};}
-};
-
-struct h2_setting : public h2frame {
-    h2_settings_codes identifier;
-    uint32_t value;
-    ustring serialise() const override { return {};}
-};
-
-struct h2_settings : public h2frame {
-    std::vector<h2_setting> settings;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
 
 struct h2_rst_stream : public h2frame {
     h2_code error_code;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
+
+struct h2_setting {
+    h2_settings_codes identifier;
+    uint32_t value;
+};
+
+struct h2_settings : public h2frame {
+    std::vector<h2_setting> settings;
+    ustring serialise() const override;
+};
+
+
 
 struct h2_push_promise : public h2frame {
     uint8_t pad_length;
     uint32_t promised_stream_id;
     ustring field_block_fragment;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
 
 struct h2_ping : public h2frame {
     uint64_t opaque;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
 
 struct h2_goaway : public h2frame {
     uint32_t last_stream_id;
     h2_code error_code;
     ustring additional_debug_data;
-    ustring serialise() const override { return {};}
+    ustring serialise() const override;
 };
 
 struct h2_window_update : public h2frame {
     uint32_t window_size_increment;
+    ustring serialise() const override;
 };
 
 struct h2_continuation : public h2frame {
     std::vector<uint8_t> field_block_fragment;
+    ustring serialise() const override;
 };
 
 

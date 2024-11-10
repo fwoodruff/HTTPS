@@ -23,9 +23,6 @@
 
 namespace fbw {
 
-
-
-
 struct tls_record {
 public:
     ContentType m_type;
@@ -106,8 +103,6 @@ void certificates_serial(tls_record& record, std::string domain, bool use_tls13)
 std::optional<tls_record> try_extract_record(ustring& input);
 
 } // namespace
-
-
 
 
 #endif // tls_utils_hpp

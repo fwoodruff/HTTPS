@@ -218,7 +218,7 @@ void HTTP2::set_peer_settings(h2_settings settings) {
         using enum h2_settings_code;
         switch(setting.identifier) {
         case SETTINGS_HEADER_TABLE_SIZE:
-            server_settings.compression_table_size = setting.value;
+            m_hpack.set_encoder_max_capacity(setting.value);
             break;
         case SETTINGS_ENABLE_PUSH:
             switch(setting.value) {
@@ -254,7 +254,6 @@ void HTTP2::set_peer_settings(h2_settings settings) {
             server_settings.max_frame_size = setting.value;
             break;
         case SETTINGS_MAX_HEADER_LIST_SIZE:
-            m_hpack.set_client_capacity(setting.value);
             server_settings.max_header_size = setting.value;
             break;
         default:

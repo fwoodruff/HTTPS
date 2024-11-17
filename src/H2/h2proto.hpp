@@ -56,7 +56,6 @@ public:
 
 struct setting_values {
     bool push_promise_enabled = true;
-    uint32_t compression_table_size = 4096;
     uint32_t max_concurrent_streams = 0x7fffffff;
     int32_t initial_window_size = 65535;
     uint32_t max_frame_size = 16384;

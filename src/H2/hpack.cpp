@@ -11,215 +11,25 @@
 
 namespace fbw {
 
-extern const std::unordered_map<hpack_huffman_bit_pattern, uint16_t> huffman_decode;
-
-constexpr uint32_t EOS = 256;
+extern const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode;
 
 uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits);
 ustring encode_integer(uint32_t value, uint8_t prefix_bits);
 
-table::table() : next_idx(static_entries) {}
+std::string decode_huffman(std::span<const uint8_t> encoded_str);
+ustring encode_string_literal(std::string str);
+ustring encode_string_efficient(std::string str);
 
-size_t table::index(const entry_t& entry) {
-    auto it = lookup_idx.find(entry);
-    if(it == lookup_idx.end()) {
-        return 0;
-    }
-    return it->second->idx;
-}
+ustring indexed_field(uint32_t idx);
+ustring indexed_name_new_value(uint32_t idx, std::string value);
+ustring new_name_new_value(std::string name, std::string value);
+ustring indexed_name_new_value_without_dynamic(uint32_t idx, std::string value);
+ustring new_name_new_value_without_dynamic(std::string name, std::string value);
+ustring indexed_name_new_value_never_dynamic(uint32_t idx, std::string value);
+ustring new_name_new_value_never_dynamic(std::string name, std::string value);
+ustring dynamic_table_size_update(size_t size);
 
-std::optional<entry_t> table::field(size_t key) {
-    auto it = lookup_field.find(key);
-    if(it == lookup_field.end()) {
-        return std::nullopt;
-    }
-    return it->second->entry;
-}
-
-void table::pop_entry() {
-    auto old_entry = entries_ordered.front();
-    lookup_idx.erase(old_entry.entry);
-    lookup_field.erase(old_entry.idx);
-    entries_ordered.pop_front();
-}
-
-void table::add_entry(const entry_t& entry) {
-    entries_ordered.push_back({entry, next_idx});
-    auto it = entries_ordered.end()-1;
-    lookup_idx.insert({entry, it});
-    lookup_field.insert({next_idx, it});
-    if(entries_ordered.size() > m_capacity) {
-        pop_entry();
-    }
-    next_idx++;
-}
-
-void table::set_capacity(size_t capacity) {
-    m_capacity = capacity;
-    while(entries_ordered.size() > capacity) {
-        pop_entry();
-    }
-}
-
-size_t hpack::client_table_index(const entry_t& entry) {
-    // todo: efficient lookup
-    if(auto it = std::find(s_static_table.begin(), s_static_table.end(), entry); it != s_static_table.end()) {
-        return std::distance(s_static_table.begin(), it) + 1;
-    }
-    return m_client_table.index(entry);
-}
-
-void hpack::set_client_capacity(uint32_t capacity) {
-    m_client_table.set_capacity(capacity);
-}
-
-void hpack::set_server_capacity(uint32_t capacity) {
-    m_server_table.set_capacity(capacity);
-}
-
-std::string decode_huffman(std::span<const uint8_t> encoded_str) {
-    std::string result;
-    uint32_t current_bits = 0;
-    uint8_t bit_size = 0;
-    for (uint8_t byte : encoded_str) {
-        for (int bit = 7; bit >= 0; --bit) {
-            current_bits <<= 1;
-            current_bits |= ((byte >> bit) & 1);
-            bit_size++;
-            if(auto it = huffman_decode.find(hpack_huffman_bit_pattern{current_bits, bit_size}); it != huffman_decode.end()) {
-                if(it->second == EOS) {
-                    return result;
-                }
-                assert(it->second < 256);
-                result += char(it->second);
-                current_bits = 0;
-                bit_size = 0;
-            }
-            if(bit_size > 32) {
-                throw h2_error("bad Huffman encoding", h2_code::COMPRESSION_ERROR);
-            }
-        }
-    }
-    throw h2_error("incomplete Huffman encoding", h2_code::COMPRESSION_ERROR);
-}
-    
-std::vector<entry_t> hpack::parse_field_block_fragment(const ustring& field_block_fragment) {
-    return {};
-}
-
-ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers) {
-    return {};
-}
-
-ustring encode_integer(uint32_t value, uint8_t prefix_bits) {
-    assert(prefix_bits <= 8);
-    ustring encoded;
-    uint32_t prefix = (1 << prefix_bits) - 1;
-    if(value < prefix) {
-        encoded.push_back(value);
-        return encoded;
-    }
-    value -= prefix;
-    do {
-        uint8_t byte = value & 0x7F;
-        value >>= 7;
-        if (value != 0) {
-            byte |= 0x80;
-        }
-        encoded.push_back(byte);
-    } while (value != 0);
-    return encoded;
-}
-
-uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits) {
-    uint64_t value = 0;
-    uint32_t prefix = (1 << prefix_bits) - 1;
-    if((encoded.at(offset) & prefix) != prefix) {
-        offset++;
-        return encoded[offset] & prefix;
-    }
-    for(size_t i = 1; i < encoded.size(); i++) {
-        uint8_t byte = encoded.at(offset + i);
-        value |= (byte & 0x7F);
-        if (value > ((1ull << 31) - prefix)) {
-            throw h2_error("encoded integer is too large", h2_code::COMPRESSION_ERROR);
-        }
-        if ((byte & 0x80) == 0) {
-            value += prefix;
-            offset += (i + 1);
-            return value;
-        }
-        value <<= 7;
-    }
-    throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
-}
-
-// todo: this could be a (collisionless) hash map
-const std::array<entry_t, static_entries> hpack::s_static_table = {
-    entry_t{":authority", ""},
-    {":method", "GET"},
-    {":method", "POST"},
-    {":path", "/"},
-    {":path", "/index.html"},
-    {":scheme", "http"},
-    {":scheme", "https"},
-    {":status", "200"},
-    {":status", "204"},
-    {":status", "206"},
-    {":status", "304"},
-    {":status", "400"},
-    {":status", "404"},
-    {":status", "500"},
-    {"accept-charset", ""},
-    {"accept-encoding", "gzip, deflate"},
-    {"accept-language", ""},
-    {"accept-ranges", ""},
-    {"accept", ""},
-    {"access-control-allow-origin", ""},
-    {"age", ""},
-    {"allow", ""},
-    {"authorization", ""},
-    {"cache-control", ""},
-    {"content-disposition", ""},
-    {"content-encoding", ""},
-    {"content-language", ""},
-    {"content-length", ""},
-    {"content-location", ""},
-    {"content-range", ""},
-    {"content-type", ""},
-    {"cookie", ""},
-    {"date", ""},
-    {"etag", ""},
-    {"expect", ""},
-    {"expires", ""},
-    {"from", ""},
-    {"host", ""},
-    {"if-match", ""},
-    {"if-modified-since", ""},
-    {"if-none-match", ""},
-    {"if-range", ""},
-    {"if-unmodified-since", ""},
-    {"last-modified", ""},
-    {"link", ""},
-    {"location", ""},
-    {"max-forwards", ""},
-    {"proxy-authenticate", ""},
-    {"proxy-authorization", ""},
-    {"range", ""},
-    {"referer", ""},
-    {"refresh", ""},
-    {"retry-after", ""},
-    {"server", ""},
-    {"set-cookie", ""},
-    {"strict-transport-security", ""},
-    {"transfer-encoding", ""},
-    {"user-agent", ""},
-    {"vary", ""},
-    {"via", ""},
-    {"www-authenticate", ""}
-};
-
-constexpr std::array<hpack_huffman_bit_pattern, 257> huffman_table = {
+constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
     hpack_huffman_bit_pattern{0x1ff8, 13},  {0x7fffd8, 23}, {0xfffffe2, 28}, {0xfffffe3, 28},
     {0xfffffe4, 28}, {0xfffffe5, 28}, {0xfffffe6, 28}, {0xfffffe7, 28},
     {0xfffffe8, 28}, {0xffffea, 24}, {0x3ffffffc, 30}, {0xfffffe9, 28},
@@ -283,14 +93,435 @@ constexpr std::array<hpack_huffman_bit_pattern, 257> huffman_table = {
     {0x3ffffeb, 26}, {0x7ffffe6, 27}, {0x3ffffec, 26}, {0x3ffffed, 26},
     {0x7ffffe7, 27}, {0x7ffffe8, 27}, {0x7ffffe9, 27}, {0x7ffffea, 27},
     {0x7ffffeb, 27}, {0xffffffe, 28}, {0x7ffffec, 27}, {0x7ffffed, 27},
-    {0x7ffffee, 27}, {0x7ffffef, 27}, {0x7fffff0, 27}, {0x3ffffee, 26},
-    {0x3fffffff, 30},
+    {0x7ffffee, 27}, {0x7ffffef, 27}, {0x7fffff0, 27}, {0x3ffffee, 26} // , {3fffffff, 30} implicit
 };
 
+ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers) {
+    ustring encoded_fragment;
+    if(encoder_max_capacity != m_encode_table.m_capacity) {
+        auto update = dynamic_table_size_update(encoder_max_capacity);
+        encoded_fragment.append(update);
+        m_encode_table.set_capacity(encoder_max_capacity);
+    }
+    for (const auto& header : headers) {
+        auto index = m_encode_table.index(header);
+        if (index != 0) {
+            encoded_fragment.append(indexed_field(index));
+        } else {
+            auto name_index = m_decode_table.index({header.name, ""});
+            if (name_index != 0) {
+                if(header.do_index == do_indexing::never) {
+                    encoded_fragment.append(indexed_name_new_value_never_dynamic(name_index, header.value));
+                } else if (header.do_index == do_indexing::never) {
+                    encoded_fragment.append(indexed_name_new_value_without_dynamic(name_index, header.value));
+                } else {
+                    encoded_fragment.append(indexed_name_new_value(name_index, header.value));
+                    m_decode_table.add_entry({header.name, header.value});
+                }
+            } else {
+                if(header.do_index == do_indexing::never) {
+                    encoded_fragment.append(new_name_new_value_never_dynamic(header.name, header.value));
+                } else if (header.do_index == do_indexing::never) {
+                    encoded_fragment.append(new_name_new_value_without_dynamic(header.name, header.value));
+                } else {
+                    encoded_fragment.append(new_name_new_value(header.name, header.value));
+                    m_decode_table.add_entry({header.name, header.value});
+                }
+            }
+        }
+    }
+    return encoded_fragment;
+}
+
+table::table() : next_idx(static_entries) {}
+
+size_t table::index(const entry_t& entry) {
+    if(auto it = std::find(s_static_table.begin(), s_static_table.end(), entry); it != s_static_table.end()) {
+        return std::distance(s_static_table.begin(), it) + 1;
+    }
+    auto it = lookup_idx.find(entry);
+    if(it == lookup_idx.end()) {
+        return 0;
+    }
+    return it->second->idx;
+}
+
+std::optional<entry_t> table::field(size_t key) {
+    auto it = lookup_field.find(key);
+    if(it == lookup_field.end()) {
+        return std::nullopt;
+    }
+    return it->second->entry;
+}
+
+void table::pop_entry() {
+    auto old_entry = entries_ordered.front();
+    m_size -= old_entry.size;
+    lookup_idx.erase(old_entry.entry);
+    lookup_field.erase(old_entry.idx);
+    entries_ordered.pop_front();
+}
+
+void table::add_entry(const entry_t& entry) {
+    auto size = entry.name.size() + entry.value.size() + 32;
+    m_size += size;
+    entries_ordered.push_back({entry, next_idx, size});
+    auto it = entries_ordered.end()-1;
+    lookup_idx.insert({entry, it});
+    lookup_field.insert({next_idx, it});
+    while(m_size > m_capacity && !entries_ordered.empty()) {
+        pop_entry();
+    }
+    next_idx++;
+}
+
+void table::set_capacity(size_t capacity) {
+    m_capacity = capacity;
+    while(m_size > m_capacity && !entries_ordered.empty()) {
+        pop_entry();
+    }
+}
+
+void hpack::set_encoder_max_capacity(uint32_t capacity) {
+    encoder_max_capacity = capacity;
+}
+
+void hpack::set_decoder_max_capacity(uint32_t capacity) {
+    decoder_max_capacity = capacity;
+}
+
+std::string decode_string(const ustring& encoded, size_t& offset) {
+    bool is_huffman = (encoded[offset] & 0x80) != 0;
+    uint32_t size = decode_integer(encoded, offset, 7);
+    if(is_huffman) {
+        if(offset + size > encoded.size()) {
+            throw h2_error("bad Huffman decode", h2_code::COMPRESSION_ERROR);
+        }
+        auto ret = decode_huffman({encoded.begin() + offset, size});
+        offset += size;
+        return ret;
+    } else {
+        std::string out;
+        if(offset + size > encoded.size()) {
+            throw h2_error("bad Huffman decode", h2_code::COMPRESSION_ERROR);
+        }
+        out.append(encoded.begin() + offset, encoded.begin() + offset + size);
+        offset += size;
+        return out;
+    }
+}
+
+std::string decode_huffman(std::span<const uint8_t> encoded_str) {
+    std::string result;
+    uint32_t current_bits = 0;
+    uint8_t bit_size = 0;
+    for (uint8_t byte : encoded_str) {
+        for (int bit = 7; bit >= 0; --bit) {
+            current_bits <<= 1;
+            current_bits |= ((byte >> bit) & 1);
+            bit_size++;
+            if(auto it = huffman_decode.find(hpack_huffman_bit_pattern{current_bits, bit_size}); it != huffman_decode.end()) {
+                result.push_back(char(it->second));
+                current_bits = 0;
+                bit_size = 0;
+            }
+            if(bit_size > 32) {
+                throw h2_error("bad Huffman encoding", h2_code::COMPRESSION_ERROR);
+            }
+        }
+    }
+    return result;
+}
+
+std::vector<entry_t> hpack::parse_field_block_fragment(const ustring& field_block_fragment) {
+    size_t offset = 0;
+    std::vector<entry_t> entries;
+    while(offset < field_block_fragment.size()) {
+        auto entry = decode_hpack_string(field_block_fragment, offset);
+        if(!entry) {
+            continue;
+        }
+        entries.push_back(std::move(*entry));
+    }
+    return entries;
+}
+
+ustring encode_huffman(std::string str_literal) {
+    ustring out;
+    uint8_t bit_idx = 0;
+    uint8_t current_byte = 0;
+
+    for (uint8_t ch : str_literal) {
+        auto [bit_pattern, num_bits] = huffman_table[ch];
+        while (num_bits > 0) {
+            uint8_t bits_to_write = std::min((int)num_bits, (int)8 - bit_idx);
+            uint8_t shift = num_bits - bits_to_write;
+            current_byte |= (bit_pattern >> shift) & ((1 << bits_to_write) - 1);
+            bit_idx += bits_to_write;
+            num_bits -= bits_to_write;
+
+            if (bit_idx == 8) {
+                out.push_back(current_byte);
+                current_byte = 0;
+                bit_idx = 0;
+            }
+        }
+    }
+
+    if (bit_idx > 0) { // EOS
+        current_byte |= (1 << (7 - bit_idx + 1)) - 1;
+        out.push_back(current_byte);
+    }
+
+    return out;
+}
+
+ustring encode_integer(uint32_t value, uint8_t prefix_bits) {
+    assert(prefix_bits <= 8);
+    ustring encoded;
+    uint32_t prefix = (1 << prefix_bits) - 1;
+    if(value < prefix) {
+        encoded.push_back(value);
+        return encoded;
+    }
+    value -= prefix;
+    do {
+        uint8_t byte = value & 0x7F;
+        value >>= 7;
+        if (value != 0) {
+            byte |= 0x80;
+        }
+        encoded.push_back(byte);
+    } while (value != 0);
+    return encoded;
+}
+
+uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits) {
+    uint64_t value = 0;
+    uint32_t prefix = (1 << prefix_bits) - 1;
+    if(encoded.size() > offset) {
+        throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);
+    }
+    if((encoded[offset] & prefix) != prefix) {
+        auto ret = encoded[offset] & prefix;
+        offset++;
+        return ret;
+    }
+    for(size_t i = 1; i < encoded.size() - offset; i++) {
+        uint8_t byte = encoded[offset + i];
+        value |= (byte & 0x7F);
+        if (value > ((1ull << 31) - prefix)) {
+            throw h2_error("encoded integer is too large", h2_code::COMPRESSION_ERROR);
+        }
+        if ((byte & 0x80) == 0) {
+            value += prefix;
+            offset += (i + 1);
+            return value;
+        }
+        value <<= 7;
+    }
+    throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
+}
+
+ustring encode_string_literal(std::string str) {
+    auto lit = encode_integer(str.size(), 7);
+    lit.append(str.begin(), str.end());
+    return lit;
+}
+
+ustring encode_string_efficient(std::string str) {
+    ustring hstr = encode_huffman(str);
+    if(hstr.size() < str.size()) {
+        auto lit = encode_integer(hstr.size(), 7);
+        lit[0] |= 0x80;
+        lit.append(hstr);
+        return lit;
+    } else {
+        auto lit = encode_integer(str.size(), 7);
+        lit.append(str.begin(), str.end());
+        return lit;
+    }
+}
+
+ustring indexed_field(uint32_t idx) {
+    ustring rep = encode_integer(idx, 7);
+    rep[0] |= 0x80;
+    return rep;
+}
+
+ustring indexed_name_new_value(uint32_t idx, std::string value) {
+    ustring rep = encode_integer(idx, 6);
+    rep[0] |= 0x40;
+    rep.append(encode_string_efficient(value));
+    return rep;
+}
+
+ustring new_name_new_value(std::string name, std::string value) {
+    ustring rep {0x40};
+    rep.append(encode_string_efficient(name));
+    rep.append(encode_string_efficient(value));
+    return rep;
+}
+
+ustring indexed_name_new_value_without_dynamic(uint32_t idx, std::string value) {
+    ustring rep = encode_integer(idx, 4);
+    rep.append(encode_string_efficient(value));
+    return rep;
+}
+
+ustring new_name_new_value_without_dynamic(std::string name, std::string value) {
+    ustring rep {0};
+    rep.append(encode_string_efficient(name));
+    rep.append(encode_string_efficient(value));
+    return rep;
+}
+
+ustring indexed_name_new_value_never_dynamic(uint32_t idx, std::string value) {
+    ustring rep = encode_integer(idx, 4);
+    rep.append(encode_string_literal(value));
+    rep[0] |= 0x10;
+    return rep;
+}
+
+ustring new_name_new_value_never_dynamic(std::string name, std::string value) {
+    ustring rep {0x10};
+    rep.append(encode_string_literal(name));
+    rep.append(encode_string_literal(value));
+    return rep;
+}
+
+ustring dynamic_table_size_update(size_t size) {
+    ustring rep = encode_integer(size, 5);
+    rep[0] |= 0x20;
+    return rep;
+}
+
+entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const ustring& encoded, size_t& offset) {
+    if(idx == 0) {
+        // new name new value
+        auto name = decode_string(encoded, offset);
+        auto value = decode_string(encoded, offset);
+        return {name, value, indexing};
+    } else {
+        // indexed name new value
+        auto entry = m_encode_table.field(idx);
+        if(!entry) {
+            throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
+        }
+        entry->value = decode_string(encoded, offset);
+        return {entry->name, entry->value, indexing};
+    }
+}
+
+std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t& offset) {
+    assert(encoded.size() < offset);
+    uint8_t byte = encoded[offset];
+    if((byte & 0x80) == 0x80) { // indexed
+        auto idx = decode_integer(encoded, offset, 7);
+        auto entry = m_encode_table.field(idx);
+        if(!entry) {
+            throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
+        }
+        return *entry;
+    }
+    if((byte & 0xc0) == 0x40) { // named indexed, do index value
+        auto idx = decode_integer(encoded, offset, 6);
+        auto entry = extract_entry(idx, do_indexing::incremental, encoded, offset);
+        m_encode_table.add_entry(entry);
+        return entry;
+    }
+    if((byte & 0xe0) == 0x00) { // name indexed, don't index value
+        auto idx = decode_integer(encoded, offset, 4);
+        do_indexing do_idx;
+        if((byte & 0xf0) == 0x10) {
+            do_idx = do_indexing::never;
+        } else {
+            do_idx = do_indexing::without;
+        }
+        return extract_entry(idx, do_idx, encoded, offset);
+    }
+    if((byte & 0xe0) == 0x20) {
+        auto capacity = decode_integer(encoded, offset, 5);
+        if(capacity > decoder_max_capacity) {
+            throw h2_error("could not update encoder", h2_code::COMPRESSION_ERROR);
+        }
+        m_decode_table.set_capacity(capacity);
+        return std::nullopt;
+    }
+    throw h2_error("bad decode", h2_code::COMPRESSION_ERROR);
+}
+
+// todo: this could be a (collisionless) hash map
+const std::array<entry_t, static_entries> table::s_static_table = {
+    entry_t{":authority", ""},
+    {":method", "GET"},
+    {":method", "POST"},
+    {":path", "/"},
+    {":path", "/index.html"},
+    {":scheme", "http"},
+    {":scheme", "https"},
+    {":status", "200"},
+    {":status", "204"},
+    {":status", "206"},
+    {":status", "304"},
+    {":status", "400"},
+    {":status", "404"},
+    {":status", "500"},
+    {"accept-charset", ""},
+    {"accept-encoding", "gzip, deflate"},
+    {"accept-language", ""},
+    {"accept-ranges", ""},
+    {"accept", ""},
+    {"access-control-allow-origin", ""},
+    {"age", ""},
+    {"allow", ""},
+    {"authorization", ""},
+    {"cache-control", ""},
+    {"content-disposition", ""},
+    {"content-encoding", ""},
+    {"content-language", ""},
+    {"content-length", ""},
+    {"content-location", ""},
+    {"content-range", ""},
+    {"content-type", ""},
+    {"cookie", ""},
+    {"date", ""},
+    {"etag", ""},
+    {"expect", ""},
+    {"expires", ""},
+    {"from", ""},
+    {"host", ""},
+    {"if-match", ""},
+    {"if-modified-since", ""},
+    {"if-none-match", ""},
+    {"if-range", ""},
+    {"if-unmodified-since", ""},
+    {"last-modified", ""},
+    {"link", ""},
+    {"location", ""},
+    {"max-forwards", ""},
+    {"proxy-authenticate", ""},
+    {"proxy-authorization", ""},
+    {"range", ""},
+    {"referer", ""},
+    {"refresh", ""},
+    {"retry-after", ""},
+    {"server", ""},
+    {"set-cookie", ""},
+    {"strict-transport-security", ""},
+    {"transfer-encoding", ""},
+    {"user-agent", ""},
+    {"vary", ""},
+    {"via", ""},
+    {"www-authenticate", ""}
+};
+
+
+
 // todo: use a perfect hash
-const std::unordered_map<hpack_huffman_bit_pattern, uint16_t> huffman_decode = [](){
-    std::unordered_map<hpack_huffman_bit_pattern, uint16_t> out;
-    for(size_t i = 0; i < huffman_table.size(); i++) {
+const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode = [](){
+    std::unordered_map<hpack_huffman_bit_pattern, uint8_t> out;
+    for(int i = 0; i < huffman_table.size(); i++) {
         out.insert({huffman_table[i], i});
     }
     return out;

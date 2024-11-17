@@ -290,7 +290,7 @@ constexpr std::array<hpack_huffman_bit_pattern, 257> huffman_table = {
 // todo: use a perfect hash
 const std::unordered_map<hpack_huffman_bit_pattern, uint16_t> huffman_decode = [](){
     std::unordered_map<hpack_huffman_bit_pattern, uint16_t> out;
-    for(int i = 0; i < huffman_table.size(); i++) {
+    for(size_t i = 0; i < huffman_table.size(); i++) {
         out.insert({huffman_table[i], i});
     }
     return out;

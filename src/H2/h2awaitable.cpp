@@ -95,7 +95,7 @@ int32_t h2writewindowable::await_resume() {
     }
     auto siz = std::min(conn->connection_current_window, stream->stream_current_window);
     siz = std::min(siz, (int64_t)m_desired_size);
-    siz = std::max(siz, 0ll);
+    siz = std::max(siz, int64_t(0));
     conn->connection_current_window -= siz;
     stream->stream_current_window -= siz;
     return siz;

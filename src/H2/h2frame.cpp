@@ -130,7 +130,7 @@ std::unique_ptr<h2_settings> deserialise_SETTINGS(const ustring& frame_bytes) {
     if(size % 6 != 0) {
         throw h2_error("malformed SETTINGS frame", h2_code::FRAME_SIZE_ERROR);
     }
-    for(int i = 0; i < size; i+=6) {
+    for(uint64_t i = 0; i < size; i+=6) {
         h2_setting setting;
         setting.identifier = static_cast<h2_settings_code>(try_bigend_read(frame_bytes, H2_IDX_0 + i, 2));
         setting.value = try_bigend_read(frame_bytes, H2_IDX_0 + 2 + i, 4);

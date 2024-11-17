@@ -42,10 +42,10 @@ public:
     stream_state state = stream_state::idle;
     stream_frame_state client_sent_headers = headers_expected;
     stream_frame_state server_sent_headers = headers_expected;
-    std::unordered_map<std::string, std::string> m_received_headers;
-    std::unordered_map<std::string, std::string> m_received_trailers;
-    void receive_headers(std::unordered_map<std::string, std::string> headers); // populate headers
-    void receive_trailers(std::unordered_map<std::string, std::string> headers); // populate headers
+    std::vector<entry_t> m_received_headers;
+    std::vector<entry_t> m_received_trailers;
+    void receive_headers(std::vector<entry_t> headers); // populate headers
+    void receive_trailers(std::vector<entry_t> headers); // populate headers after data
     std::queue<h2_data> inbox;
 
     std::coroutine_handle<> m_reader { nullptr };
@@ -100,10 +100,10 @@ public:
 
     int64_t connection_current_window = 0;
 
-    [[nodiscard]] task<void> send_goaway(h2_code);
+    [[nodiscard]] task<void> send_goaway(h2_code code, std::string message);
 };
 
-std::unique_ptr<h2frame> extract_frame(ustring& buffer);
+std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
 
 
 } // namespace fbw

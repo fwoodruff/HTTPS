@@ -32,6 +32,7 @@
 // scope of parsed hello should be such that it gets removed sooner
 // offload state to TLS HRR cookie
 // project point at infinity into Montgomery space, add with other points (including Pt@Inf), project back - check value still good
+// go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

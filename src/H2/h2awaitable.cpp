@@ -38,7 +38,7 @@ task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t str
     while(bytes_to_write > 0) {
         auto frame_size = std::max(ssize_t(conn->server_settings.max_frame_size), bytes_to_write);
         h2_data frame;
-        frame.data.assign(bytes.begin(), bytes.begin() + frame_size);
+        frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);
         assert(!conn->notify_close_sent);
         auto strmres = co_await conn->m_stream->write(frame.serialise(), project_options.session_timeout);
         if(strmres != stream_result::ok) {

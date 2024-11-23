@@ -11,6 +11,11 @@ jobs:
           command: |
             make -j$(nproc)
       - run:
+          name: Free ports 80 and 443
+          command: |
+            sudo lsof -t -i :80 -sTCP:LISTEN | xargs -r sudo kill
+            sudo lsof -t -i :443 -sTCP:LISTEN | xargs -r sudo kill
+      - run:
           name: Run server
           command: |
             ./target/codeymccodeface

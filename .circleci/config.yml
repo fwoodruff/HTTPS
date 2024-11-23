@@ -27,3 +27,4 @@ workflows:
   run_tests:
     jobs:
       - test
+

@@ -18,7 +18,7 @@ jobs:
       - run:
           name: Test server
           command: |
-            sleep 1.01 # wait for server
+            sleep 0.01 # wait for server
             curl -kv https://localhost:8443
             curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost:8443
             curl http://localhost:8080

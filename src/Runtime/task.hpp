@@ -117,8 +117,8 @@ public:
     using promise_type = task_promise<T>;
     struct awaitable {
         bool await_ready() const noexcept { return !m_coroutine || m_coroutine.done(); }
-        std::coroutine_handle<> await_suspend( std::coroutine_handle<> awaitingCoroutine ) noexcept {
-            m_coroutine.promise().set_continuation( awaitingCoroutine );
+        std::coroutine_handle<> await_suspend( std::coroutine_handle<> awaiting_coroutine ) noexcept {
+            m_coroutine.promise().set_continuation( awaiting_coroutine );
             return m_coroutine;
         }
         decltype(auto) await_resume() {

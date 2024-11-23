@@ -60,8 +60,8 @@ hazard_pointer::~hazard_pointer() {
 hazard_pointer::hazard_pointer(std::atomic<void*>* _ptr) : m_ptr(_ptr) {}
 
 void hazard_pointer::reset_protection() {
-    // would still be ok if this was a no-op, so use relaxed
-    m_ptr->store(nullptr, relaxed);
+    // would still be ok if this was a no-op but don't want this ordered before a load
+    m_ptr->store(nullptr, release);
 }
 
 hazard_pointer_batch hazard_pointers{};

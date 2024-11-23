@@ -16,7 +16,6 @@
 #include <queue>
 #include <thread>
 #include <vector>
-#include <condition_variable>
 #include <unordered_map>
 #include <queue>
 #include <optional>
@@ -30,6 +29,8 @@ using namespace std::chrono_literals;
 class executor {
 public:
     friend void async_spawn(task<void> subtask);
+    friend void sync_spawn(task<void> subtask);
+    
     friend void run(task<void> main_task);
     friend root_task make_root_task(task<void> task);
     friend executor& executor_singleton();
@@ -44,6 +45,7 @@ private:
     
     void run();
     void spawn(task<void> subtask);
+    void commence(task<void> subtask);
     void thread_function();
     void main_thread_function();
     void try_poll();
@@ -53,7 +55,10 @@ private:
 
 executor& executor_singleton();
 void async_spawn(task<void> subtask);
+void sync_spawn(task<void> subtask);
 void run(task<void> main_task);
+
+root_task make_root_task(task<void> task);
 
 struct yield_coroutine {
     bool await_ready() const noexcept {

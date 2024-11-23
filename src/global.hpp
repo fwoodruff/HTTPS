@@ -105,6 +105,15 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     return out;
 }
 
+inline void hash_combine(std::size_t& seed) { }
+
+template <typename T, typename... Rest>
+inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+    hash_combine(seed, rest...);
+}
+
 void remove_whitespace(std::string& str);
 
 std::vector<std::string> split(const std::string& line, const std::string& delim);

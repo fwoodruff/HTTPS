@@ -1,5 +1,4 @@
 
-
 #ifndef hazard_ptr_hpp
 #define hazard_ptr_hpp
 
@@ -37,8 +36,8 @@ struct hazard_pointer {
     T* protect(const std::atomic<T*>& src) noexcept {
         using enum std::memory_order;
         for(;;) {
-            T* local = src.load(relaxed);
-            m_ptr->store(local);
+            T* local = src.load(acquire);
+            m_ptr->store(local, seq_cst);
             if (local == src.load(acquire)) {
                 return local;
             }

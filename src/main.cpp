@@ -3,7 +3,7 @@
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP.hpp"
-#include "HTTP/HTTP2.hpp"
+#include "H2/h2proto.hpp"
 #include "global.hpp"
 #include "HTTP/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
@@ -29,7 +29,10 @@
 // improve interface for signature and key exchange
 // docker in CI with curlimages/curl to docker network
 // nail down constant time-ness - look at RFC 7746 for x25519
+// scope of parsed hello should be such that it gets removed sooner
 // offload state to TLS HRR cookie
+// project point at infinity into Montgomery space, add with other points (including Pt@Inf), project back - check value still good
+// go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -38,8 +41,8 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
             fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
             co_await http_handler.client();
         } if(alpn == "h2") {
-            fbw::HTTP2 http_handler { std::move(client_stream), fbw::project_options.webpage_folder };
-            co_await http_handler.client();
+            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), fbw::project_options.webpage_folder );
+            co_await http_handler->client();
         }
     } catch(const std::exception& e) {
         std::cerr << e.what();
@@ -78,7 +81,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
 }
 
 task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
-    try {        
+    try {
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 auto conn = ip_connections->add_connection(client->m_ip);
@@ -131,7 +134,7 @@ int main(int argc, const char * argv[]) {
         auto https_listener = fbw::tcplistener::bind(https_port);
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        std::cerr << "main: " << e.what() << std::endl;
     }
     return 0;
 }

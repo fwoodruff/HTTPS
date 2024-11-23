@@ -1,10 +1,11 @@
 REDIRECT_PORT=80
 SERVER_PORT=443
 DOMAIN_NAMES=freddiewoodruff.co.uk, www.freddiewoodruff.co.uk
-CERTIFICATE_FILE=/etc/letsencrypt/live/freddiewoodruff.co.uk/fullchain.pem
-KEY_FILE=/etc/letsencrypt/live/freddiewoodruff.co.uk/privkey.pem
+KEY_FOLDER=/etc/letsencrypt/live
+CERTIFICATE_FILE=fullchain.pem
+KEY_FILE=privkey.pem
 WEBPAGE_FOLDER=resources/webpages
 DEFAULT_SUBFOLDER=freddiewoodruff.co.uk
-MIME_FOLDER=resources/MIME
 TLD_FILE=resources/tld.txt
-HTTP_STRICT_TRANSPORT_SECURITY=true
+MIME_FOLDER=resources/MIME
+HTTP_STRICT_TRANSPORT_SECURITY=false

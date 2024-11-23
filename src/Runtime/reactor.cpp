@@ -47,8 +47,19 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
 }
 
 void reactor::notify() {
-    char buff;
-    ::write(m_pipe_write, &buff, 1); // notify ::poll
+    char buff = '\0';
+    do {
+        ssize_t succ = ::write(m_pipe_write, &buff, 1); // notify ::poll
+        if(succ < 0) {
+            if(errno == EINTR) {
+                continue;
+            } else if (errno == EPIPE) {
+                ;
+            } else {
+                assert(false);
+            }
+        }
+    } while(false);
 }
 
 size_t reactor::task_count() {
@@ -129,7 +140,18 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     }
     if(to_poll.back().revents & POLLIN) {
         char buff;
-        ::read(m_pipe_read, &buff, 1); // unclog pipe
+        do {
+            ssize_t succ = ::read(m_pipe_read, &buff, 1); // unclog pipe
+            if(succ < 0) {
+                if(errno == EINTR) {
+                    continue;
+                } else if (errno == EPIPE) {
+                    ;
+                } else {
+                    assert(false);
+                }
+            }
+        } while(false);
     }
     to_poll.pop_back(); // exclude the pipe
     

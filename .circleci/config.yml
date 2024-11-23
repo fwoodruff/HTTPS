@@ -13,9 +13,7 @@ jobs:
       - run:
           name: Run server
           command: |
-            sudo lsof -i :80
-            sudo lsof -i :443
-            sudo ./target/codeymccodeface
+            ./target/codeymccodeface
           background: true
       - run:
           name: Test server

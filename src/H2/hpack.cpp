@@ -143,7 +143,7 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
 table::table() : next_idx(static_entries) {}
 
 size_t table::index(const entry_t& entry) {
-    for(int i = 0; i < s_static_table.size(); i++) {
+    for(size_t i = 0; i < s_static_table.size(); i++) {
         auto& ent = s_static_table[i];
         if(ent.name == entry.name and ent.value == entry.value) {
             return i + 1;
@@ -543,7 +543,7 @@ const std::array<entry_t, static_entries> table::s_static_table = {
 // todo: use a perfect hash
 const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode = [](){
     std::unordered_map<hpack_huffman_bit_pattern, uint8_t> out;
-    for(int i = 0; i < huffman_table.size(); i++) {
+    for(size_t i = 0; i < huffman_table.size(); i++) {
         out.insert({huffman_table[i], i});
     }
     return out;

@@ -35,8 +35,8 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
             if(buffer.size() < connection_init.size()) {
                 continue;
             }
-        } while(false);        
-        for(int i = 0; i < connection_init.size(); i++) {
+        } while(false);
+        for(size_t i = 0; i < connection_init.size(); i++) {
             if(connection_init[i] != buffer[i]) {
                 co_return; // maybe with an error?
             }

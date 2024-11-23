@@ -20,7 +20,7 @@ std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const ustring& frame_b
 void set_base_frame_values(h2frame& frame, const ustring& frame_bytes);
 
 std::unique_ptr<h2frame> h2frame::deserialise(const ustring& frame_bytes) { // todo, span
-    assert(frame_bytes.size() > H2_IDX_0);
+    assert(frame_bytes.size() >= H2_IDX_0);
     auto type = static_cast<h2_type>(frame_bytes[3]);
     try {
         auto size = try_bigend_read(frame_bytes, 0, 3);
@@ -75,6 +75,7 @@ std::unique_ptr<h2_data> deserialise_DATA(const ustring& frame_bytes) {
 
 std::unique_ptr<h2_headers> deserialise_HEADERS(const ustring& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
+    assert(size + H2_IDX_0 == frame_bytes.size());
     auto frame = std::make_unique<h2_headers>();
     set_base_frame_values(*frame, frame_bytes);
     size_t idx = 0;
@@ -91,7 +92,8 @@ std::unique_ptr<h2_headers> deserialise_HEADERS(const ustring& frame_bytes) {
         frame->weight = try_bigend_read(frame_bytes, H2_IDX_0 + idx + 4, 1);
         idx += 5;
     }
-    frame->field_block_fragment = frame_bytes.substr(H2_IDX_0 + idx, size - frame->pad_length);
+    frame->field_block_fragment = frame_bytes.substr(H2_IDX_0 + idx, size - idx - frame->pad_length);
+    assert(frame->field_block_fragment.size() + idx + frame->pad_length == size);
     return frame;
 }
 
@@ -219,13 +221,15 @@ ustring h2_headers::serialise() const {
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
     }
-    out.append({0,0,0,0});
-    checked_bigend_write(stream_dependency, out, out.size() - 4, 4);
-    out[out.size() - 4] |= (uint8_t(exclusive) << 7);
-    out.push_back(weight);
+    if(flags & h2_flags::PRIORITY) {
+        out.append({0,0,0,0});
+        checked_bigend_write(stream_dependency, out, out.size() - 4, 4);
+        out[out.size() - 4] |= (uint8_t(exclusive) << 7);
+        out.push_back(weight);
+    }
     out.append(field_block_fragment.begin(), field_block_fragment.end());
     out.resize(out.size() + pad_length);
-    checked_bigend_write(out.size() - 9, out, 0, 3);
+    checked_bigend_write(out.size() - H2_IDX_0, out, 0, 3);
     return out;
 }
 

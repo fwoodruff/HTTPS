@@ -27,6 +27,24 @@ std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::w
     return { conn, it->second };
 }
 
+task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers) {
+    for(auto entry : headers) {
+        std::cout << entry.name << " " << entry.value << std::endl;
+    }
+    h2_headers frame;
+    auto [ conn, stream ] = lock_stream(connection, stream_id);
+    auto fragment = conn->m_hpack.generate_field_block_fragment(headers);
+    
+
+    frame.field_block_fragment = fragment;
+    frame.flags |= h2_flags::END_HEADERS;
+    frame.stream_id = stream_id;
+    frame.type = h2_type::HEADERS;
+    auto frame_bytes = frame.serialise();
+    auto stream_res = co_await conn->m_stream->write(frame_bytes, project_options.session_timeout);
+    co_return stream_res;
+}
+
 // writes as much as window allows then return
 task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes) {
     auto num_bytes = co_await h2writewindowable{ connection, stream_id, (uint32_t)bytes.size() };
@@ -36,11 +54,15 @@ task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t str
     }
     ssize_t bytes_to_write = std::min(size_t(num_bytes), bytes.size());
     while(bytes_to_write > 0) {
-        auto frame_size = std::max(ssize_t(conn->server_settings.max_frame_size), bytes_to_write);
+        auto frame_size = std::min(ssize_t(conn->server_settings.max_frame_size), bytes_to_write);
         h2_data frame;
+        frame.type = h2_type::DATA;
+        frame.stream_id = stream_id;
         frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);
         assert(!conn->notify_close_sent);
-        auto strmres = co_await conn->m_stream->write(frame.serialise(), project_options.session_timeout);
+        
+        auto frame_bytes = frame.serialise();
+        auto strmres = co_await conn->m_stream->write(frame_bytes, project_options.session_timeout);
         if(strmres != stream_result::ok) {
             co_return strmres;
         }
@@ -66,11 +88,11 @@ bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
     if(!stream) {
         return false;
     }
-    if(conn->connection_current_window <= 0) {
+    if(conn->connection_current_window <= conn->server_settings.initial_window_size) {
         conn->waiters_global.push(continuation);
         return true;
     }
-    if(stream->stream_current_window <= 0) {
+    if(stream->stream_current_window <= conn->server_settings.initial_window_size) {
         stream->m_writer = continuation;
         return true;
     }

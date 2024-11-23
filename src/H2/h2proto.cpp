@@ -17,15 +17,32 @@
 
 namespace fbw {
 
-constexpr size_t MIN_FRAME_SIZE = 16384;
-constexpr size_t MAX_FRAME_SIZE = 16777215;
-constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
+
+
+const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 [[nodiscard]] task<void> HTTP2::client() {
+    std::cout << "\ncreating an H2 connection" << std::endl;
     std::optional<h2_error> error;
     ustring buffer;
     using namespace std::chrono_literals;
     try {
+        do {
+            auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
+            if(res == stream_result::closed) {
+                co_return;
+            }
+            if(buffer.size() < connection_init.size()) {
+                continue;
+            }
+        } while(false);        
+        for(int i = 0; i < connection_init.size(); i++) {
+            if(connection_init[i] != buffer[i]) {
+                co_return; // maybe with an error?
+            }
+        }
+        buffer = buffer.substr(connection_init.size());
+
         while(true) {
             if(m_h2streams.size() < client_settings.max_concurrent_streams) {
                 auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
@@ -52,7 +69,7 @@ constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
                 };
             } else {
                 throw h2_error("too many concurrent streams", h2_code::FLOW_CONTROL_ERROR);
-                // todo: executor
+                // todo: executor - whereby stream handlers can choose to yield to other streams
             }
         }
     } catch(const h2_error& e) {
@@ -84,10 +101,9 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
         case RST_STREAM:
             handle_rst_stream(dynamic_cast<const h2_rst_stream&>(frame));
             break;
-        case SETTINGS:
-            set_peer_settings(dynamic_cast<const h2_settings&>(frame));
-            // todo: send an ack
-            break;
+        case SETTINGS: {
+            co_return co_await handle_peer_settings(dynamic_cast<const h2_settings&>(frame));
+        }
         case PUSH_PROMISE:
             throw h2_error("received a push promise from a client", h2_code::PROTOCOL_ERROR);
         case PING:
@@ -120,6 +136,7 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
                     }
                 }
             }
+            break;
         }
         default:
             throw h2_error("received bad frame type", h2_code::PROTOCOL_ERROR);
@@ -205,13 +222,18 @@ void HTTP2::handle_rst_stream(const h2_rst_stream& frame) {
     m_h2streams.erase(frame.stream_id);
 }
 
-void HTTP2::set_peer_settings(h2_settings settings) {
+task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
     if(settings.stream_id != 0) {
         throw h2_error("bad settings stream id", h2_code::PROTOCOL_ERROR);
     }
     if(settings.flags & h2_flags::ACK) {
         if(!settings.settings.empty()) {
             throw h2_error("bad ack frame", h2_code::PROTOCOL_ERROR);
+        }
+        if(awaiting_settings_ack == true) {
+            awaiting_settings_ack = false;
+            // todo: process any frames buffered while waiting for an ACK
+            co_return stream_result::ok;
         }
     }
     for(const auto& setting : settings.settings) {
@@ -261,7 +283,40 @@ void HTTP2::set_peer_settings(h2_settings settings) {
             break;
         }
     }
+
     received_settings = true;
+
+    h2_settings server_settings;
+    server_settings.type = h2_type::SETTINGS;
+    server_settings.settings.push_back({h2_settings_code::SETTINGS_MAX_CONCURRENT_STREAMS, INITIAL_MAX_CONCURRENT_STREAMS});
+    server_settings.settings.push_back({h2_settings_code::SETTINGS_INITIAL_WINDOW_SIZE, INITIAL_WINDOW_SIZE});
+    server_settings.settings.push_back({h2_settings_code::SETTINGS_MAX_FRAME_SIZE, MAX_FRAME_SIZE});
+    server_settings.settings.push_back({h2_settings_code::SETTINGS_MAX_HEADER_LIST_SIZE, HEADER_LIST_SIZE});
+    server_settings.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, 0});
+
+    client_settings.max_concurrent_streams = INITIAL_MAX_CONCURRENT_STREAMS;
+    client_settings.initial_window_size = INITIAL_WINDOW_SIZE;
+    client_settings.max_frame_size = MAX_FRAME_SIZE;
+    client_settings.max_header_size = HEADER_LIST_SIZE;
+    client_settings.push_promise_enabled = false;
+
+    auto server_settings_bytes = server_settings.serialise();
+
+    auto res2 = co_await m_stream->write(server_settings_bytes, project_options.keep_alive);
+    awaiting_settings_ack = true;
+
+    if(res2 != stream_result::ok) {
+        co_return res2;
+    }
+
+    h2_settings ack_frame;
+    ack_frame.type = h2_type::SETTINGS;
+    ack_frame.flags |= h2_flags::ACK;
+    ack_frame.stream_id = 0;
+    ack_frame.settings.clear();
+    auto ack_bytes = ack_frame.serialise();
+    auto res = co_await m_stream->write(ack_bytes, project_options.session_timeout);
+    co_return res;
 }
 
 task<void> HTTP2::send_goaway(h2_code code, std::string message) {
@@ -269,7 +324,9 @@ task<void> HTTP2::send_goaway(h2_code code, std::string message) {
     goawayframe.last_stream_id = last_stream_id;
     goawayframe.error_code = code;
     goawayframe.additional_debug_data = std::move(message);
-    auto res = co_await m_stream->write(goawayframe.serialise(), project_options.error_timeout);
+    goawayframe.type = h2_type::GOAWAY;
+    auto serial_go_away = goawayframe.serialise();
+    auto res = co_await m_stream->write(serial_go_away, project_options.error_timeout);
     if(res != stream_result::ok) {
         co_return;
     }
@@ -300,7 +357,17 @@ HTTP2::~HTTP2() {
 
 void h2_stream::receive_headers(std::vector<entry_t> headers) {
     for(auto&& header : headers) {
-        m_received_headers.push_back(std::move(header));
+        if(header.name == ":authority") {
+            authority = header.value;
+        } else if(header.name == ":method") {
+            method = header.value;
+        } else if(header.name == ":path") {
+            path = header.value;
+        } else if (header.name == ":scheme") {
+            scheme = header.value;
+        } else {
+            m_received_headers.push_back(std::move(header));
+        }
     }
 }
 

@@ -140,7 +140,7 @@ std::string choose_alpn(const std::vector<std::string>& client_alpn) {
         return "http/1.1";
     }
     if(std::find(client_alpn.begin(), client_alpn.end(), "h2") != client_alpn.end()) {
-        // todo
+        // todo: toggle
         // return "h2";
     }
     if(std::find(client_alpn.begin(), client_alpn.end(), "http/1.1") == client_alpn.end()) {

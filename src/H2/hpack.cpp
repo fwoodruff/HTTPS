@@ -98,17 +98,24 @@ constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
 
 ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers) {
     ustring encoded_fragment;
+    /*
+    todo: fix this
     if(encoder_max_capacity != m_encode_table.m_capacity) {
+        std::cout << "writing encode capac" << std::endl;
         auto update = dynamic_table_size_update(encoder_max_capacity);
         encoded_fragment.append(update);
         m_encode_table.set_capacity(encoder_max_capacity);
     }
+    */
     for (const auto& header : headers) {
         auto index = m_encode_table.index(header);
+        std::cout << "index: " << index << std::endl;
         if (index != 0) {
             encoded_fragment.append(indexed_field(index));
         } else {
-            auto name_index = m_decode_table.index({header.name, ""});
+            std::cout << header.name << std::endl;
+            auto name_index = m_encode_table.index({header.name, ""});
+            std::cout << "name index: " << name_index << std::endl;
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
                     encoded_fragment.append(indexed_name_new_value_never_dynamic(name_index, header.value));
@@ -136,8 +143,11 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
 table::table() : next_idx(static_entries) {}
 
 size_t table::index(const entry_t& entry) {
-    if(auto it = std::find(s_static_table.begin(), s_static_table.end(), entry); it != s_static_table.end()) {
-        return std::distance(s_static_table.begin(), it) + 1;
+    for(int i = 0; i < s_static_table.size(); i++) {
+        auto& ent = s_static_table[i];
+        if(ent.name == entry.name and ent.value == entry.value) {
+            return i + 1;
+        }
     }
     auto it = lookup_idx.find(entry);
     if(it == lookup_idx.end()) {
@@ -147,6 +157,10 @@ size_t table::index(const entry_t& entry) {
 }
 
 std::optional<entry_t> table::field(size_t key) {
+    assert(key != 0);
+    if(key <= s_static_table.size()) {
+        return s_static_table[ key - 1 ];
+    }
     auto it = lookup_field.find(key);
     if(it == lookup_field.end()) {
         return std::nullopt;
@@ -243,6 +257,9 @@ std::vector<entry_t> hpack::parse_field_block_fragment(const ustring& field_bloc
         }
         entries.push_back(std::move(*entry));
     }
+    if(offset != field_block_fragment.size()) {
+        throw h2_error("extra data in field block fragment", h2_code::COMPRESSION_ERROR);
+    }
     return entries;
 }
 
@@ -254,9 +271,11 @@ ustring encode_huffman(std::string str_literal) {
     for (uint8_t ch : str_literal) {
         auto [bit_pattern, num_bits] = huffman_table[ch];
         while (num_bits > 0) {
-            uint8_t bits_to_write = std::min((int)num_bits, (int)8 - bit_idx);
+            uint8_t available_bits = 8 - bit_idx;
+            uint8_t bits_to_write = std::min(num_bits, available_bits);
             uint8_t shift = num_bits - bits_to_write;
-            current_byte |= (bit_pattern >> shift) & ((1 << bits_to_write) - 1);
+            uint8_t bits = (bit_pattern >> shift) & ((1 << bits_to_write) - 1);
+            current_byte |= bits << (available_bits - bits_to_write);
             bit_idx += bits_to_write;
             num_bits -= bits_to_write;
 
@@ -269,7 +288,7 @@ ustring encode_huffman(std::string str_literal) {
     }
 
     if (bit_idx > 0) { // EOS
-        current_byte |= (1 << (7 - bit_idx + 1)) - 1;
+        current_byte |= ((1 << (8 - bit_idx)) - 1);
         out.push_back(current_byte);
     }
 
@@ -299,7 +318,7 @@ ustring encode_integer(uint32_t value, uint8_t prefix_bits) {
 uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits) {
     uint64_t value = 0;
     uint32_t prefix = (1 << prefix_bits) - 1;
-    if(encoded.size() > offset) {
+    if(offset >= encoded.size()) {
         throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);
     }
     if((encoded[offset] & prefix) != prefix) {
@@ -406,7 +425,7 @@ entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const ustring& en
         // indexed name new value
         auto entry = m_encode_table.field(idx);
         if(!entry) {
-            throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
+            throw h2_error("index not found in table", h2_code::COMPRESSION_ERROR);
         }
         entry->value = decode_string(encoded, offset);
         return {entry->name, entry->value, indexing};
@@ -414,13 +433,16 @@ entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const ustring& en
 }
 
 std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t& offset) {
-    assert(encoded.size() < offset);
+    assert(offset < encoded.size());
     uint8_t byte = encoded[offset];
     if((byte & 0x80) == 0x80) { // indexed
         auto idx = decode_integer(encoded, offset, 7);
+        if(idx == 0) {
+            throw h2_error("index 0 requested", h2_code::COMPRESSION_ERROR);
+        }
         auto entry = m_encode_table.field(idx);
         if(!entry) {
-            throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
+            throw h2_error("decoding indexed value but index not found", h2_code::COMPRESSION_ERROR);
         }
         return *entry;
     }

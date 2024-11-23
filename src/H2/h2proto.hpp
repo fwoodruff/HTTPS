@@ -35,6 +35,13 @@ enum stream_frame_state {
     done,
 };
 
+constexpr size_t MIN_FRAME_SIZE = 16384;
+constexpr size_t MAX_FRAME_SIZE = 16777215;
+constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
+constexpr size_t INITIAL_MAX_CONCURRENT_STREAMS = 0x7fffffff;
+constexpr int32_t INITIAL_WINDOW_SIZE = 65535;
+constexpr size_t HEADER_LIST_SIZE = 0x7fffffff;
+
 class h2_stream {
 public:
     int64_t stream_current_window = 0;
@@ -42,6 +49,10 @@ public:
     stream_state state = stream_state::idle;
     stream_frame_state client_sent_headers = headers_expected;
     stream_frame_state server_sent_headers = headers_expected;
+    std::string method;
+    std::string path;
+    std::string scheme;
+    std::string authority;
     std::vector<entry_t> m_received_headers;
     std::vector<entry_t> m_received_trailers;
     void receive_headers(std::vector<entry_t> headers); // populate headers
@@ -72,11 +83,13 @@ public:
     ~HTTP2();
 
     task<stream_result> handle_frame(const h2frame& frame);
-    void set_peer_settings(h2_settings settings);
+    task<stream_result> handle_peer_settings(h2_settings settings);
     void handle_headers_frame(const h2_headers& frame);
     void handle_continuation_frame(const h2_continuation& frame);
     void handle_rst_stream(const h2_rst_stream& frame);
     void handle_data_frame(const h2_data& frame);
+
+    bool awaiting_settings_ack = false;
 
     hpack m_hpack;
 

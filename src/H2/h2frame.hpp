@@ -100,6 +100,7 @@ struct h2_data : public h2frame {
 };
 
 struct h2_headers : public h2frame {
+    h2_headers() { this->type = h2_type::HEADERS; } // todo: others
     uint8_t pad_length {};
     bool exclusive {};
     uint32_t stream_dependency {};

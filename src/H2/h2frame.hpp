@@ -13,7 +13,7 @@
 
 namespace fbw {
 
-constexpr size_t H2_IDX_0 = 9;
+constexpr size_t H2_FRAME_HEADER_SIZE = 9;
 
 enum class h2_type : uint8_t {
     DATA = 0x0,
@@ -81,6 +81,11 @@ public:
         std::runtime_error(what_arg), m_error_code(error_code) {}
 };
 
+struct h2_setting_value {
+    h2_settings_code identifier;
+    uint32_t value {};
+};
+
 struct h2frame {
     h2_type type = h2_type::unspecified;
     uint8_t flags = 0;
@@ -92,6 +97,7 @@ struct h2frame {
 };
 
 struct h2_data : public h2frame {
+    h2_data();
     uint8_t pad_length {};
     uint32_t stream_dependency {};
     ustring contents;
@@ -99,7 +105,7 @@ struct h2_data : public h2frame {
 };
 
 struct h2_headers : public h2frame {
-    h2_headers() { this->type = h2_type::HEADERS; } // todo: others
+    h2_headers();
     uint8_t pad_length {};
     bool exclusive {};
     uint32_t stream_dependency {};
@@ -109,6 +115,7 @@ struct h2_headers : public h2frame {
 };
 
 struct h2_priority : public h2frame {
+    h2_priority();
     bool exclusive {};
     uint32_t stream_dependency {};
     uint8_t weight {};
@@ -116,23 +123,19 @@ struct h2_priority : public h2frame {
 };
 
 struct h2_rst_stream : public h2frame {
+    h2_rst_stream();
     h2_code error_code = h2_code::NO_ERROR;
     ustring serialise() const override;
 };
 
-struct h2_setting {
-    h2_settings_code identifier;
-    uint32_t value {};
-};
-
 struct h2_settings : public h2frame {
-    std::vector<h2_setting> settings;
+    h2_settings();
+    std::vector<h2_setting_value> settings;
     ustring serialise() const override;
 };
 
-
-
 struct h2_push_promise : public h2frame {
+    h2_push_promise();
     uint8_t pad_length {};
     uint32_t promised_stream_id {};
     ustring field_block_fragment;
@@ -140,11 +143,13 @@ struct h2_push_promise : public h2frame {
 };
 
 struct h2_ping : public h2frame {
+    h2_ping();
     uint64_t opaque {};
     ustring serialise() const override;
 };
 
 struct h2_goaway : public h2frame {
+    h2_goaway();
     uint32_t last_stream_id {};
     h2_code error_code {};
     std::string additional_debug_data;
@@ -152,11 +157,13 @@ struct h2_goaway : public h2frame {
 };
 
 struct h2_window_update : public h2frame {
+    h2_window_update();
     uint32_t window_size_increment {};
     ustring serialise() const override;
 };
 
 struct h2_continuation : public h2frame {
+    h2_continuation();
     ustring field_block_fragment;
     ustring serialise() const override;
 };

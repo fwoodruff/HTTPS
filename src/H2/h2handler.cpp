@@ -13,11 +13,11 @@
 
 namespace fbw {
 
-task<void> handle_stream_inner(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
+[[nodiscard]] task<void> handle_stream_inner(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
 
-task<stream_result> write_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t> bytes) {
+task<stream_result> write_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t> bytes, bool data_end = true) {
     while(!bytes.empty()) {
-        auto stres = co_await write_some_data(connection, stream_id, bytes);
+        auto stres = co_await write_some_data(connection, stream_id, bytes, data_end);
         if(stres != stream_result::ok) {
             co_return stres;
         }
@@ -36,7 +36,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
 // handle stream starts when headers have been received
 task<void> handle_stream_inner(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     auto [ conn, stream ] = lock_stream(connection, stream_id);
-
+    
     std::vector<entry_t> send_headers;
     const std::string message = "<HTML>HELLO WORLD</HTML>";
 

@@ -15,6 +15,7 @@ using namespace std::chrono;
 
 namespace fbw {
 
+// todo: overused - many functions should just be members of the connection
 std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::weak_ptr<HTTP2> weak_conn, uint32_t stream_id) {
     auto conn = weak_conn.lock();
     if(conn == nullptr) {
@@ -42,18 +43,22 @@ task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t strea
 }
 
 // writes as much as window allows then return
-task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes) {
+task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end) {
     auto num_bytes = co_await h2writewindowable{ connection, stream_id, (uint32_t)bytes.size() };
     auto [ conn, stream ] = lock_stream(connection, stream_id);
     if(stream == nullptr or conn->notify_close_sent) {
         co_return stream_result::closed;
     }
     ssize_t bytes_to_write = std::min(size_t(num_bytes), bytes.size());
+    
     while(bytes_to_write > 0) {
         auto frame_size = std::min(ssize_t(conn->server_settings.max_frame_size), bytes_to_write);
         h2_data frame;
         frame.type = h2_type::DATA;
         frame.stream_id = stream_id;
+        if(data_end and bytes_to_write == bytes.size()) {
+            frame.flags |= h2_flags::END_STREAM;
+        }
         frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);
         assert(!conn->notify_close_sent);
         
@@ -84,19 +89,14 @@ bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
     if(!stream) {
         return false;
     }
-    if(conn->connection_current_window <= conn->server_settings.initial_window_size) {
+    if(conn->connection_current_window_remaining <= 0) {
         conn->waiters_global.push(continuation);
         return true;
     }
-    if(stream->stream_current_window <= conn->server_settings.initial_window_size) {
+    if(stream->stream_current_window_remaining <= 0) {
         stream->m_writer = continuation;
         return true;
     }
-    auto siz = std::min(conn->connection_current_window, stream->stream_current_window);
-    siz = std::min(siz, (int64_t)m_desired_size);
-    conn->connection_current_window -= siz;
-    stream->stream_current_window -= siz;
-    window_size = siz;
     return false;
 }
 
@@ -108,15 +108,17 @@ int32_t h2writewindowable::await_resume() {
     if(!stream) {
         return 0;
     }
-    if(window_size != 0) {
-        return window_size;
+    if(stream->stream_current_window_remaining < 0) {
+        return 0;
     }
-    auto siz = std::min(conn->connection_current_window, stream->stream_current_window);
-    siz = std::min(siz, (int64_t)m_desired_size);
-    siz = std::max(siz, int64_t(0));
-    conn->connection_current_window -= siz;
-    stream->stream_current_window -= siz;
-    return siz;
+    if(conn->connection_current_window_remaining < 0) {
+        return 0;
+    }
+    const auto max_frame_size = std::min(conn->connection_current_window_remaining, stream->stream_current_window_remaining);
+    auto frame_size = std::min(max_frame_size, (int64_t)m_desired_size);
+    conn->connection_current_window_remaining -= frame_size;
+    stream->stream_current_window_remaining -= frame_size;
+    return frame_size;
 }
 
 h2readable::h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id) :

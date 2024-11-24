@@ -50,7 +50,6 @@ private:
     std::weak_ptr<HTTP2> m_connection;
     int32_t m_stream_id;
     int64_t m_desired_size;
-    int64_t window_size = 0;
 };
 
 // co_await a readable, reads data - relevant to POST requests, not implemented yet
@@ -68,8 +67,8 @@ private:
 std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::weak_ptr<HTTP2> weak_conn, uint32_t stream_id);
 
 // todo: this interface is a silly relic of when I considered writing data from multiple threads
-task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers);
-task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes);
+[[nodiscard]] task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers);
+[[nodiscard]] task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
 
 // todo: we need a stream_yield awaitable that suspends for owners, incrementing processable_streams 
 

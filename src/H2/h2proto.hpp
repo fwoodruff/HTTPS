@@ -43,7 +43,7 @@ constexpr size_t HEADER_LIST_SIZE = 0x7fffffff;
 
 class h2_stream {
 public:
-    int64_t stream_current_window = 0;
+    int64_t stream_current_window_remaining = INITIAL_WINDOW_SIZE;
 
     stream_state state = stream_state::idle;
     stream_frame_state client_sent_headers = headers_expected;
@@ -79,37 +79,31 @@ public:
     HTTP2(std::unique_ptr<stream> stream, std::string folder);
     ~HTTP2();
 
-    task<stream_result> handle_frame(const h2frame& frame);
-    task<stream_result> handle_peer_settings(h2_settings settings);
+    [[nodiscard]] task<stream_result> handle_frame(const h2frame& frame);
+    [[nodiscard]] task<stream_result> handle_peer_settings(h2_settings settings);
     void handle_headers_frame(const h2_headers& frame);
     void handle_continuation_frame(const h2_continuation& frame);
     void handle_rst_stream(const h2_rst_stream& frame);
     void handle_data_frame(const h2_data& frame);
-
-    bool awaiting_settings_ack = false;
+    [[nodiscard]] task<stream_result> handle_window_frame(const h2_window_update& frame);
 
     hpack m_hpack;
-
-    bool notify_close_sent = false;
-    std::unique_ptr<stream> m_stream;
-
     std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
-
     // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
-
-    std::queue<std::coroutine_handle<>> waiters_global;
-
-    std::string m_folder;
-    uint32_t last_stream_id = 0; // most recent id
-
     setting_values server_settings; // applies to server, sent by client
     setting_values client_settings;
-
-    bool received_settings = false;
-
-    int64_t connection_current_window = 0;
-
+    
+    std::unique_ptr<stream> m_stream;
+    std::queue<std::coroutine_handle<>> waiters_global;
+    std::string m_folder;
+    int64_t connection_current_window_remaining;
+    uint32_t last_stream_id; // most recent id
+    bool received_settings;
+    bool awaiting_settings_ack;
+    bool notify_close_sent;
+    
     [[nodiscard]] task<void> send_goaway(h2_code code, std::string message);
+    [[nodiscard]] task<stream_result> raise_stream_error(h2_code code, uint32_t stream_id);
 };
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);

@@ -19,9 +19,7 @@
 #include <memory>
 #include "hpack.hpp"
 
-
 #include "../TCP/stream_base.hpp"
-
 
 #ifdef __cpp_impl_coroutine
 #include <coroutine>
@@ -33,17 +31,13 @@ namespace std {
 }
 #endif
 
-
-
 using namespace std::chrono;
-
 
 namespace fbw {
 
 class HTTP2;
 struct h2_data;
 class h2_stream;
-
 
 // co_await a writeable, shrinks the input buffer to the remaining buffer, and returns the bytes written
 class h2writewindowable {

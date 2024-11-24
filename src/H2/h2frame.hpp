@@ -161,8 +161,6 @@ struct h2_continuation : public h2frame {
     ustring serialise() const override;
 };
 
-
-
 } // namespace fbw
 
 #endif // http2frame_hpp

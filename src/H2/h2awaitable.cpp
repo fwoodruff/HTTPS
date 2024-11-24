@@ -31,7 +31,6 @@ task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t strea
     h2_headers frame;
     auto [ conn, stream ] = lock_stream(connection, stream_id);
     auto fragment = conn->m_hpack.generate_field_block_fragment(headers);
-    
 
     frame.field_block_fragment = fragment;
     frame.flags |= h2_flags::END_HEADERS;

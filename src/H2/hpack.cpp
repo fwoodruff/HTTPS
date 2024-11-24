@@ -534,8 +534,6 @@ const std::array<entry_t, static_entries> table::s_static_table = {
     {"www-authenticate", ""}
 };
 
-
-
 // todo: use a perfect hash
 const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode = [](){
     std::unordered_map<hpack_huffman_bit_pattern, uint8_t> out;

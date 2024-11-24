@@ -16,7 +16,6 @@ namespace fbw {
 class HTTP2;
 task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
 
-
-}
+} // namespace fbw
 
 #endif

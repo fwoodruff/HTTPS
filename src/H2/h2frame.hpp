@@ -5,7 +5,6 @@
 //  Created by Frederick Benjamin Woodruff on 26/07/2024.
 //
 
-
 #ifndef http2frame_hpp
 #define http2frame_hpp
 

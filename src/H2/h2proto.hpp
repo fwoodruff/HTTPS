@@ -5,7 +5,6 @@
 //  Created by Frederick Benjamin Woodruff on 26/07/2024.
 //
 
-
 #ifndef http2_hpp
 #define http2_hpp
 
@@ -73,8 +72,6 @@ struct setting_values {
     uint32_t max_header_size = 0x7fffffff;
 };
 
-// When we receive a 'go-away', we might have a bunch of coroutine handles (and new ones may arrive)
-// initially set a 'goaway sent' flag. 
 class HTTP2 : public std::enable_shared_from_this<HTTP2> {
 
 public:
@@ -96,9 +93,9 @@ public:
     bool notify_close_sent = false;
     std::unique_ptr<stream> m_stream;
 
-    std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines, only updated by owner
+    std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
 
-    // a thread may choose to post itself onto a 'executor' - implement later
+    // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
 
     std::queue<std::coroutine_handle<>> waiters_global;
 
@@ -117,6 +114,6 @@ public:
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
 
-
 } // namespace fbw
+
 #endif // http2_hpp

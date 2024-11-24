@@ -17,8 +17,6 @@
 
 namespace fbw {
 
-
-
 const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 [[nodiscard]] task<void> HTTP2::client() {

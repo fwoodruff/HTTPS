@@ -64,7 +64,6 @@ struct std::hash<fbw::hpack_huffman_bit_pattern> {
 
 namespace fbw {
 
-
 struct logged_entry {
     entry_t entry;
     uint32_t idx;

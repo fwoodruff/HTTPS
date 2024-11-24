@@ -101,7 +101,6 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
     /*
     todo: fix this
     if(encoder_max_capacity != m_encode_table.m_capacity) {
-        std::cout << "writing encode capac" << std::endl;
         auto update = dynamic_table_size_update(encoder_max_capacity);
         encoded_fragment.append(update);
         m_encode_table.set_capacity(encoder_max_capacity);
@@ -109,13 +108,10 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
     */
     for (const auto& header : headers) {
         auto index = m_encode_table.index(header);
-        std::cout << "index: " << index << std::endl;
         if (index != 0) {
             encoded_fragment.append(indexed_field(index));
         } else {
-            std::cout << header.name << std::endl;
             auto name_index = m_encode_table.index({header.name, ""});
-            std::cout << "name index: " << name_index << std::endl;
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
                     encoded_fragment.append(indexed_name_new_value_never_dynamic(name_index, header.value));

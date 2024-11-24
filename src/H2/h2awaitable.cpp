@@ -28,9 +28,6 @@ std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::w
 }
 
 task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers) {
-    for(auto entry : headers) {
-        std::cout << entry.name << " " << entry.value << std::endl;
-    }
     h2_headers frame;
     auto [ conn, stream ] = lock_stream(connection, stream_id);
     auto fragment = conn->m_hpack.generate_field_block_fragment(headers);

@@ -22,7 +22,6 @@ namespace fbw {
 const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 [[nodiscard]] task<void> HTTP2::client() {
-    std::cout << "\ncreating an H2 connection" << std::endl;
     std::optional<h2_error> error;
     ustring buffer;
     using namespace std::chrono_literals;

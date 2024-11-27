@@ -8,10 +8,10 @@
 #ifndef http_hpp
 #define http_hpp
 
-#include "../TCP/tcp_stream.hpp"
+#include "../../TCP/tcp_stream.hpp"
 #include "string_utils.hpp"
-#include "../global.hpp"
-#include "../Runtime/task.hpp"
+#include "../../global.hpp"
+#include "../../Runtime/task.hpp"
 
 #include <string>
 #include <memory>

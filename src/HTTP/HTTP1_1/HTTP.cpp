@@ -7,9 +7,9 @@
 
 #include "HTTP.hpp"
 #include "string_utils.hpp"
-#include "../global.hpp"
+#include "../../global.hpp"
 #include "mimemap.hpp"
-#include "../TLS/Cryptography/one_way/keccak.hpp"
+#include "../../TLS/Cryptography/one_way/keccak.hpp"
 
 #include <iostream>
 #include <sstream>

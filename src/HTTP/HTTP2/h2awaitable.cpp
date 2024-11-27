@@ -8,6 +8,7 @@
 #include "h2awaitable.hpp"
 #include "h2frame.hpp"
 #include "h2proto.hpp"
+#include "h2stream.hpp"
 #include <span>
 
 using namespace std::chrono_literals;
@@ -26,52 +27,6 @@ std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::w
         return { conn, nullptr };
     }
     return { conn, it->second };
-}
-
-task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers) {
-    h2_headers frame;
-    auto [ conn, stream ] = lock_stream(connection, stream_id);
-    auto fragment = conn->m_hpack.generate_field_block_fragment(headers);
-
-    frame.field_block_fragment = fragment;
-    frame.flags |= h2_flags::END_HEADERS;
-    frame.stream_id = stream_id;
-    frame.type = h2_type::HEADERS;
-    auto frame_bytes = frame.serialise();
-    auto stream_res = co_await conn->m_stream->write(frame_bytes, project_options.session_timeout);
-    co_return stream_res;
-}
-
-// writes as much as window allows then return
-task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end) {
-    auto num_bytes = co_await h2writewindowable{ connection, stream_id, (uint32_t)bytes.size() };
-    auto [ conn, stream ] = lock_stream(connection, stream_id);
-    if(stream == nullptr or conn->notify_close_sent) {
-        co_return stream_result::closed;
-    }
-    ssize_t bytes_to_write = std::min(size_t(num_bytes), bytes.size());
-    
-    while(bytes_to_write > 0) {
-        auto frame_size = std::min(ssize_t(conn->server_settings.max_frame_size), bytes_to_write);
-        h2_data frame;
-        frame.type = h2_type::DATA;
-        frame.stream_id = stream_id;
-        if(data_end and bytes_to_write == bytes.size()) {
-            frame.flags |= h2_flags::END_STREAM;
-        }
-        frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);
-        assert(!conn->notify_close_sent);
-        
-        auto frame_bytes = frame.serialise();
-        auto strmres = co_await conn->m_stream->write(frame_bytes, project_options.session_timeout);
-        if(strmres != stream_result::ok) {
-            co_return strmres;
-        }
-        bytes = bytes.subspan(frame_size);
-        bytes_to_write -= frame_size;
-        assert(bytes_to_write >= 0);
-    }
-    co_return stream_result::ok;
 }
 
 h2writewindowable::h2writewindowable(std::weak_ptr<HTTP2> connection, int32_t stream_id, uint32_t desired_size)
@@ -135,7 +90,7 @@ bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
         return false;
     }
     if(!stream->inbox.empty()) {
-        // if data is awaint, resume succeed
+        // if data is await, resume succeed
         return false;
     }
     // todo: send a WINDOW_UPDATE if necessary
@@ -160,6 +115,38 @@ std::pair<std::optional<h2_data>, stream_result> h2readable::await_resume() {
 
 bool h2readable::await_ready() const noexcept {
     return false;
+}
+
+h2read_headers::h2read_headers(std::weak_ptr<h2_stream> hstream) : m_hstream(hstream) {}
+
+bool h2read_headers::await_ready() const noexcept {
+    return false;
+}
+
+bool h2read_headers::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+    auto conn = m_hstream.lock();
+    if(conn->client_sent_headers == stream_frame_state::data_expected) {
+        return false;
+    }
+    if(conn->client_sent_headers == stream_frame_state::done) {
+        // trailers
+        return false;
+    }
+    conn->m_read_headers = awaiting_coroutine;
+    return true;
+}
+
+std::pair<std::vector<entry_t>, stream_result> h2read_headers::await_resume() {
+    auto conn = m_hstream.lock();
+    if(conn == nullptr) {
+        return { {}, stream_result::closed };
+    }
+    if(conn->client_sent_headers == stream_frame_state::data_expected) {
+        return { std::move(conn->m_received_headers), stream_result::ok };
+    } else if(conn->client_sent_headers == stream_frame_state::done) {
+        return { std::move(conn->m_received_headers), stream_result::ok };
+    }
+    assert(false);
 }
 
 } // namespace

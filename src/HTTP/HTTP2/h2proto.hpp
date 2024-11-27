@@ -8,10 +8,10 @@
 #ifndef http2_hpp
 #define http2_hpp
 
-#include "../TCP/tcp_stream.hpp"
-#include "../global.hpp"
-#include "../Runtime/task.hpp"
-#include "../Runtime/concurrent_queue.hpp"
+#include "../../TCP/tcp_stream.hpp"
+#include "../../global.hpp"
+#include "../../Runtime/task.hpp"
+#include "../../Runtime/concurrent_queue.hpp"
 #include "hpack.hpp"
 #include "h2awaitable.hpp"
 #include "h2frame.hpp"
@@ -25,44 +25,6 @@ namespace fbw {
 // we ensure single threaded-ness by demanding that every time the coroutine resumes from a different thread, we yield, placing it on this thread's executor
 // every task must end in such a yield if it may have entered a different thread
 
-
-enum stream_frame_state {
-    headers_expected,
-    continuation_expected,
-    data_pp_trailers_expected,
-    trailer_continuation_expected,
-    done,
-};
-
-constexpr size_t MIN_FRAME_SIZE = 16384;
-constexpr size_t MAX_FRAME_SIZE = 16777215;
-constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
-constexpr size_t INITIAL_MAX_CONCURRENT_STREAMS = 0x7fffffff;
-constexpr int32_t INITIAL_WINDOW_SIZE = 65535;
-constexpr size_t HEADER_LIST_SIZE = 0x7fffffff;
-
-class h2_stream {
-public:
-    int64_t stream_current_window_remaining = INITIAL_WINDOW_SIZE;
-
-    stream_state state = stream_state::idle;
-    stream_frame_state client_sent_headers = headers_expected;
-    stream_frame_state server_sent_headers = headers_expected;
-    std::string method;
-    std::string path;
-    std::string scheme;
-    std::string authority;
-    std::vector<entry_t> m_received_headers;
-    std::vector<entry_t> m_received_trailers;
-    void receive_headers(std::vector<entry_t> headers); // populate headers
-    void receive_trailers(std::vector<entry_t> headers); // populate headers after data
-    std::queue<h2_data> inbox;
-
-    std::coroutine_handle<> m_reader { nullptr };
-    std::coroutine_handle<> m_writer { nullptr };
-
-    ~h2_stream();
-};
 
 struct setting_values {
     bool push_promise_enabled = true;
@@ -87,6 +49,10 @@ public:
     void handle_data_frame(const h2_data& frame);
     [[nodiscard]] task<stream_result> handle_window_frame(const h2_window_update& frame);
 
+    task<stream_result> write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool data_end = false);
+    task<stream_result> write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
+    task<stream_result> write_data(int32_t stream_id, std::span<const uint8_t> bytes, bool data_end = true);
+
     hpack m_hpack;
     std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
     // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
@@ -107,6 +73,8 @@ public:
 };
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
+
+task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
 
 } // namespace fbw
 

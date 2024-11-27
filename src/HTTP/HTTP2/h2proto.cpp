@@ -5,15 +5,16 @@
 //  Created by Frederick Benjamin Woodruff on 26/07/2024.
 //
 
-#include "../Runtime/task.hpp"
+#include "../../Runtime/task.hpp"
 
 #include "h2proto.hpp"
 #include <queue>
-#include "../Runtime/executor.hpp"
-#include "h2handler.hpp"
+#include "../../Runtime/executor.hpp"
+#include "../../Application/http_handler.hpp"
 #include "h2frame.hpp"
 #include "h2awaitable.hpp"
-#include "../global.hpp"
+#include "../../global.hpp"
+#include "h2stream.hpp"
 
 namespace fbw {
 
@@ -123,6 +124,21 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
     co_return stream_result::ok;
 }
 
+task<stream_result> HTTP2::write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool end) {
+    h2_headers frame;
+    auto fragment = m_hpack.generate_field_block_fragment(headers);
+    frame.field_block_fragment = fragment;
+    if(end) {
+        frame.flags |= h2_flags::END_STREAM;
+    }
+    frame.flags |= h2_flags::END_HEADERS;
+    frame.stream_id = stream_id;
+    frame.type = h2_type::HEADERS;
+    auto frame_bytes = frame.serialise();
+    auto stream_res = co_await m_stream->write(frame_bytes, project_options.session_timeout);
+    co_return stream_res;
+}
+
 task<stream_result> HTTP2::handle_window_frame(const h2_window_update& frame) {
     if(frame.stream_id == 0) {
         if(frame.window_size_increment == 0) {
@@ -174,6 +190,7 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
 }
 
 void HTTP2::handle_data_frame(const h2_data& frame) {
+    // send window updates on receipt of data frames
     throw h2_error("client data handling not implemented", h2_code::INTERNAL_ERROR);
 }
 
@@ -204,32 +221,40 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
             strm->client_sent_headers = done;
         } else if(frame.flags & h2_flags::END_HEADERS) {
             strm->state = stream_state::open;
-            strm->client_sent_headers = data_pp_trailers_expected;
+            strm->client_sent_headers = data_expected;
         } else {
             strm->state = stream_state::open;
-            strm->client_sent_headers = continuation_expected;
+            strm->client_sent_headers = stream_frame_state::headers_cont_expected;
         }
+        strm->m_stream_id = frame.stream_id;
+        strm->wp_connection = shared_from_this();
         strm->stream_current_window_remaining = server_settings.initial_window_size;
         auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
         strm->receive_headers(std::move(some_headers));
         m_h2streams.insert({frame.stream_id, std::move(strm)});
         it = m_h2streams.find(frame.stream_id);
         assert(it != m_h2streams.end());
-        if(frame.flags & h2_flags::END_HEADERS) {
-            sync_spawn(handle_stream(shared_from_this(), frame.stream_id));
-        }
+        sync_spawn(handle_stream(shared_from_this(), frame.stream_id));
     } else {
-        if(it->second->client_sent_headers != data_pp_trailers_expected) {
+        if(it->second->client_sent_headers != data_expected) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
         }
         if(frame.flags & h2_flags::END_STREAM) {
             it->second->client_sent_headers = done;
         } else {
-            it->second->client_sent_headers = trailer_continuation_expected;
+            it->second->client_sent_headers = trailer_cont_expected;
         }
         auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
         it->second->receive_trailers(std::move(some_headers));
     }
+}
+
+task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
+    auto [ conn, stream ] = lock_stream(connection, stream_id);
+    co_await application_handler(stream);
+    // ensure we are running on the same thread as the connection here
+    conn->m_h2streams.erase(stream_id);
+    co_return;
 }
 
 void HTTP2::handle_continuation_frame(const h2_continuation& frame) {
@@ -238,9 +263,9 @@ void HTTP2::handle_continuation_frame(const h2_continuation& frame) {
         throw h2_error("continuation of bad stream id", h2_code::PROTOCOL_ERROR);
     }
     auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
-    if(it->second->client_sent_headers == continuation_expected) {
+    if(it->second->client_sent_headers == headers_cont_expected) {
         it->second->receive_headers(std::move(some_headers));
-    } else if (it->second->client_sent_headers == trailer_continuation_expected) {
+    } else if (it->second->client_sent_headers == trailer_cont_expected) {
         it->second->receive_trailers(std::move(some_headers));
     } else {
         throw h2_error("continuation not expected", h2_code::PROTOCOL_ERROR);
@@ -405,31 +430,51 @@ HTTP2::~HTTP2() {
     assert(waiters_global.empty());
 }
 
-void h2_stream::receive_headers(std::vector<entry_t> headers) {
-    for(auto&& header : headers) {
-        if(header.name == ":authority") {
-            authority = header.value;
-        } else if(header.name == ":method") {
-            method = header.value;
-        } else if(header.name == ":path") {
-            path = header.value;
-        } else if (header.name == ":scheme") {
-            scheme = header.value;
-        } else {
-            m_received_headers.push_back(std::move(header));
-        }
-    }
-}
 
-void h2_stream::receive_trailers(std::vector<entry_t> headers) {
-    for(auto&& header : headers) {
-        m_received_trailers.push_back(std::move(header));
-    }
-}
 
 h2_stream::~h2_stream() {
     assert(m_reader == nullptr);
     assert(m_writer == nullptr);
+}
+
+// writes as much as window allows then return
+task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end) {
+    auto num_bytes = co_await h2writewindowable{ shared_from_this(), stream_id, (uint32_t)bytes.size() };
+    if(notify_close_sent) {
+        co_return stream_result::closed;
+    }
+    ssize_t bytes_to_write = std::min(size_t(num_bytes), bytes.size());
+    while(bytes_to_write > 0) {
+        auto frame_size = std::min(ssize_t(server_settings.max_frame_size), bytes_to_write);
+        h2_data frame;
+        frame.type = h2_type::DATA;
+        frame.stream_id = stream_id;
+        if(data_end and bytes_to_write == bytes.size()) {
+            frame.flags |= h2_flags::END_STREAM;
+        }
+        frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);
+        assert(!notify_close_sent);
+        
+        auto frame_bytes = frame.serialise();
+        auto strmres = co_await m_stream->write(frame_bytes, project_options.session_timeout);
+        if(strmres != stream_result::ok) {
+            co_return strmres;
+        }
+        bytes = bytes.subspan(frame_size);
+        bytes_to_write -= frame_size;
+        assert(bytes_to_write >= 0);
+    }
+    co_return stream_result::ok;
+}
+
+task<stream_result> HTTP2::write_data(int32_t stream_id, std::span<const uint8_t> bytes, bool data_end) {
+    while(!bytes.empty()) {
+        auto stres = co_await write_some_data(stream_id, bytes, data_end);
+        if(stres != stream_result::ok) {
+            co_return stres;
+        }
+    }
+    co_return stream_result::ok;
 }
 
 } // namespace 

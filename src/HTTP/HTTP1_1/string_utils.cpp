@@ -6,10 +6,10 @@
 //
 
 #include "string_utils.hpp"
-#include "../TLS/Cryptography/one_way/keccak.hpp"
+#include "../../TLS/Cryptography/one_way/keccak.hpp"
 
 #include <sys/stat.h>
-#include "../global.hpp"
+#include "../../global.hpp"
 
 #include <string>
 #include <ctime>

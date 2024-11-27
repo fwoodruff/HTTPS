@@ -19,7 +19,7 @@
 #include <memory>
 #include "hpack.hpp"
 
-#include "../TCP/stream_base.hpp"
+#include "../../TCP/stream_base.hpp"
 
 #ifdef __cpp_impl_coroutine
 #include <coroutine>
@@ -67,8 +67,18 @@ private:
 std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::weak_ptr<HTTP2> weak_conn, uint32_t stream_id);
 
 // todo: this interface is a silly relic of when I considered writing data from multiple threads
-[[nodiscard]] task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers);
-[[nodiscard]] task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
+//[[nodiscard]] task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers);
+//[[nodiscard]] task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
+
+
+class h2read_headers {
+    std::weak_ptr<h2_stream> m_hstream;
+public:
+    h2read_headers(std::weak_ptr<h2_stream> hstream);
+    bool await_ready() const noexcept;
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
+    std::pair<std::vector<entry_t>, stream_result> await_resume();
+};
 
 // todo: we need a stream_yield awaitable that suspends for owners, incrementing processable_streams 
 

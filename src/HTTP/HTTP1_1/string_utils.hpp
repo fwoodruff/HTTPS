@@ -8,7 +8,7 @@
 #ifndef string_utils_hpp
 #define string_utils_hpp
 
-#include "../global.hpp"
+#include "../../global.hpp"
 
 #include <string>
 #include <vector>

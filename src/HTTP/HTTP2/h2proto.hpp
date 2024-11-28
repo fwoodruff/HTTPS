@@ -54,7 +54,7 @@ public:
     
 
     hpack m_hpack;
-    std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
+    std::unordered_map<size_t, std::weak_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
     // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
     setting_values server_settings; // applies to server, sent by client
     setting_values client_settings;

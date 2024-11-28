@@ -26,6 +26,7 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     using namespace std::chrono_literals;
     try {
         do {
+            
             auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
             if(res == stream_result::closed) {
                 co_return;
@@ -82,6 +83,7 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 }
 
 task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
+    
     using enum h2_type;
     if(!received_settings and frame.type != SETTINGS) {
         throw h2_error("first frame must be SETTINGS", h2_code::PROTOCOL_ERROR);
@@ -156,12 +158,16 @@ task<stream_result> HTTP2::handle_window_frame(const h2_window_update& frame) {
             co_return co_await raise_stream_error(h2_code::PROTOCOL_ERROR, frame.stream_id);
         }
         std::coroutine_handle<> handle = nullptr;
-        it->second->stream_current_window_remaining += frame.window_size_increment;
-        if(it->second->stream_current_window_remaining > 0x7fffffff) {
+        auto stream = it->second.lock();
+        if(stream != nullptr) {
+            co_return stream_result::closed;
+        }
+        stream->stream_current_window_remaining += frame.window_size_increment;
+        if(stream->stream_current_window_remaining > 0x7fffffff) {
             co_return co_await raise_stream_error(h2_code::PROTOCOL_ERROR, frame.stream_id);
         }
-        if(it->second->stream_current_window_remaining > 0) {
-            handle = std::exchange(it->second->m_writer, nullptr);
+        if(stream->stream_current_window_remaining > 0) {
+            handle = std::exchange(stream->m_writer, nullptr);
             if(handle != nullptr) {
                 handle.resume();
             }
@@ -173,9 +179,10 @@ task<stream_result> HTTP2::handle_window_frame(const h2_window_update& frame) {
 task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) {
     auto it = m_h2streams.find(stream_id);
     if(it != m_h2streams.end()) {
-        auto handle = std::exchange(it->second->m_writer, nullptr);
+        auto stream = it->second.lock();
+        auto handle = std::exchange(stream->m_writer, nullptr);
         if(handle == nullptr) {
-            handle = std::exchange(it->second->m_reader, nullptr);
+            handle = std::exchange(stream->m_reader, nullptr);
         }
         m_h2streams.erase(stream_id);
         if(handle != nullptr) {
@@ -208,6 +215,7 @@ std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
 }
 
 void HTTP2::handle_headers_frame(const h2_headers& frame) {
+    
     auto it = m_h2streams.find(frame.stream_id);
     if(it == m_h2streams.end()) {
         if(frame.stream_id <= last_stream_id) {
@@ -227,29 +235,32 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
             strm->client_sent_headers = stream_frame_state::headers_cont_expected;
         }
         strm->m_stream_id = frame.stream_id;
-        strm->wp_connection = shared_from_this();
+        strm->wp_connection = weak_from_this();
         strm->stream_current_window_remaining = server_settings.initial_window_size;
         auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
         strm->receive_headers(std::move(some_headers));
-        m_h2streams.insert({frame.stream_id, std::move(strm)});
+        m_h2streams.insert({frame.stream_id, strm});
         it = m_h2streams.find(frame.stream_id);
         assert(it != m_h2streams.end());
+        assert(strm != nullptr);
         sync_spawn(handle_stream(strm));
     } else {
-        if(it->second->client_sent_headers != data_expected) {
+        auto stream = it->second.lock();
+        if(stream->client_sent_headers != data_expected) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
         }
         if(frame.flags & h2_flags::END_STREAM) {
-            it->second->client_sent_headers = done;
+            stream->client_sent_headers = done;
         } else {
-            it->second->client_sent_headers = trailer_cont_expected;
+            stream->client_sent_headers = trailer_cont_expected;
         }
         auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
-        it->second->receive_trailers(std::move(some_headers));
+        stream->receive_trailers(std::move(some_headers));
     }
 }
 
 task<void> handle_stream(std::shared_ptr<h2_stream> stream) {
+    assert(stream != nullptr);
     co_await application_handler(stream);
     auto id = stream->m_stream_id;
     auto conn = stream->wp_connection.lock();
@@ -262,14 +273,15 @@ task<void> handle_stream(std::shared_ptr<h2_stream> stream) {
 
 void HTTP2::handle_continuation_frame(const h2_continuation& frame) {
     auto it = m_h2streams.find(frame.stream_id);
+    auto stream = it->second.lock();
     if(it == m_h2streams.end()) {
         throw h2_error("continuation of bad stream id", h2_code::PROTOCOL_ERROR);
     }
     auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
-    if(it->second->client_sent_headers == headers_cont_expected) {
-        it->second->receive_headers(std::move(some_headers));
-    } else if (it->second->client_sent_headers == trailer_cont_expected) {
-        it->second->receive_trailers(std::move(some_headers));
+    if(stream->client_sent_headers == headers_cont_expected) {
+        stream->receive_headers(std::move(some_headers));
+    } else if (stream->client_sent_headers == trailer_cont_expected) {
+        stream->receive_trailers(std::move(some_headers));
     } else {
         throw h2_error("continuation not expected", h2_code::PROTOCOL_ERROR);
     }
@@ -321,14 +333,18 @@ task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
             int64_t diff = setting.value - server_settings.initial_window_size;
             std::vector<std::coroutine_handle<>> resumable;
             std::vector<uint32_t> bad_streams;
-            for(const auto& stream : m_h2streams) {
-                stream.second->stream_current_window_remaining += diff;
-                if(stream.second->stream_current_window_remaining > 0x7fffffff) {
-                    bad_streams.push_back(stream.first);
+            for(const auto& stream_it : m_h2streams) {
+                auto stream = stream_it.second.lock();
+                if(stream != nullptr) {
+                    co_return stream_result::ok;
+                }
+                stream->stream_current_window_remaining += diff;
+                if(stream->stream_current_window_remaining > 0x7fffffff) {
+                    bad_streams.push_back(stream_it.first);
                     continue;
                 }
-                if(stream.second->stream_current_window_remaining > 0) {
-                    std::coroutine_handle<> handle = std::exchange(stream.second->m_writer, nullptr);
+                if(stream->stream_current_window_remaining > 0) {
+                    std::coroutine_handle<> handle = std::exchange(stream->m_writer, nullptr);
                     if(handle != nullptr) {
                         resumable.push_back(handle);
                     }
@@ -416,11 +432,12 @@ HTTP2::HTTP2(std::unique_ptr<stream> stream, std::string folder) : m_stream(std:
 HTTP2::~HTTP2() {
     notify_close_sent = true;
     for (auto it = m_h2streams.begin(); it != m_h2streams.end();) {
-        auto reader = std::exchange(it->second->m_reader, nullptr);
+        auto stream = it->second.lock();
+        auto reader = std::exchange(stream->m_reader, nullptr);
         if(reader) {
             reader.resume();
         }
-        auto writer = std::exchange(it->second->m_reader, nullptr);
+        auto writer = std::exchange(stream->m_reader, nullptr);
         if(writer) {
             writer.resume();
         }

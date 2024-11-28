@@ -31,6 +31,9 @@ bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
         return false;
     }
     auto conn = stream->wp_connection.lock();
+    if(!conn) {
+        return false;
+    }
     if(conn->connection_current_window_remaining <= 0) {
         conn->waiters_global.push(continuation);
         return true;
@@ -75,7 +78,7 @@ bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
         // if the connection is dead, we need to resume and fail
         return false;
     }
-    auto stream = conn->m_h2streams[m_stream_id];
+    auto stream = conn->m_h2streams[m_stream_id].lock();
     if(!stream) {
         // if the stream is dead, then resume and fail
         return false;
@@ -95,7 +98,7 @@ std::pair<std::optional<h2_data>, stream_result> h2readable::await_resume() {
         // if the connection is dead, we need to resume and fail
         return {std::nullopt, stream_result::closed};
     }
-    auto stream = conn->m_h2streams[m_stream_id];
+    auto stream = conn->m_h2streams[m_stream_id].lock();
     if(!stream) {
         // if the stream is dead, then resume and fail
         return {std::nullopt, stream_result::closed};

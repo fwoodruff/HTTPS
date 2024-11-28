@@ -16,34 +16,21 @@ using namespace std::chrono;
 
 namespace fbw {
 
-// todo: overused - many functions should just be members of the connection
-std::pair<std::shared_ptr<HTTP2>, std::shared_ptr<h2_stream>> lock_stream(std::weak_ptr<HTTP2> weak_conn, uint32_t stream_id) {
-    auto conn = weak_conn.lock();
-    if(conn == nullptr) {
-        return {nullptr, nullptr};
-    }
-    auto it = conn->m_h2streams.find(stream_id);
-    if(it == conn->m_h2streams.end()) {
-        return { conn, nullptr };
-    }
-    return { conn, it->second };
-}
+// Write data
 
-h2writewindowable::h2writewindowable(std::weak_ptr<HTTP2> connection, int32_t stream_id, uint32_t desired_size)
-    : m_connection(connection), m_stream_id(stream_id), m_desired_size(desired_size) {}
+h2writewindowable::h2writewindowable(std::weak_ptr<h2_stream> hstream, uint32_t desired_size)
+    : m_hstream(hstream), m_desired_size(desired_size) {}
 
 bool h2writewindowable::await_ready() const noexcept {
     return false;
 }
 
 bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
-    auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
-    if(!conn) {
-        return false;
-    }
+    auto stream = m_hstream.lock();
     if(!stream) {
         return false;
     }
+    auto conn = stream->wp_connection.lock();
     if(conn->connection_current_window_remaining <= 0) {
         conn->waiters_global.push(continuation);
         return true;
@@ -56,35 +43,39 @@ bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
 }
 
 int32_t h2writewindowable::await_resume() {
-    auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
-    if(!conn) {
-        return 0;
-    }
+    auto stream = m_hstream.lock();
     if(!stream) {
         return 0;
     }
     if(stream->stream_current_window_remaining < 0) {
         return 0;
     }
+    auto conn = stream->wp_connection.lock();
+    if(!conn) {
+        return 0;
+    }
     if(conn->connection_current_window_remaining < 0) {
         return 0;
     }
     const auto max_frame_size = std::min(conn->connection_current_window_remaining, stream->stream_current_window_remaining);
-    auto frame_size = std::min(max_frame_size, (int64_t)m_desired_size);
+    auto frame_size = std::min(max_frame_size, (int64_t)m_desired_size); // todo: use int32_t with proper wraparound checks
     conn->connection_current_window_remaining -= frame_size;
     stream->stream_current_window_remaining -= frame_size;
     return frame_size;
 }
 
+// Read data
+
 h2readable::h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id) :
     m_connection(connection), m_stream_id(stream_id) {}
 
 bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
-    auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
+    auto conn = m_connection.lock();
     if(!conn) {
         // if the connection is dead, we need to resume and fail
         return false;
     }
+    auto stream = conn->m_h2streams[m_stream_id];
     if(!stream) {
         // if the stream is dead, then resume and fail
         return false;
@@ -99,8 +90,14 @@ bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
 }
 
 std::pair<std::optional<h2_data>, stream_result> h2readable::await_resume() {
-    auto [ conn, stream ] = lock_stream(m_connection, m_stream_id);
+    auto conn = m_connection.lock();
+    if(!conn) {
+        // if the connection is dead, we need to resume and fail
+        return {std::nullopt, stream_result::closed};
+    }
+    auto stream = conn->m_h2streams[m_stream_id];
     if(!stream) {
+        // if the stream is dead, then resume and fail
         return {std::nullopt, stream_result::closed};
     }
     // the stream might not exist if this is called after closing the stream (logically ok but revisit)
@@ -116,6 +113,8 @@ std::pair<std::optional<h2_data>, stream_result> h2readable::await_resume() {
 bool h2readable::await_ready() const noexcept {
     return false;
 }
+
+// Read Headers
 
 h2read_headers::h2read_headers(std::weak_ptr<h2_stream> hstream) : m_hstream(hstream) {}
 

@@ -51,7 +51,9 @@ public:
 
     task<stream_result> write_headers(const std::vector<entry_t>& headers, bool end = false) override;
     task<stream_result> write_data(std::span<const uint8_t> data, bool end = true) override;
-    task<stream_result> read_headers(std::vector<entry_t>& headers) override;
+    task<stream_result> read_headers(std::vector<entry_t>& headers) override; // todo: return pair
+    task<std::pair<stream_result, bool>> append_http_data(ustring& buffer) override;
+
 
     std::weak_ptr<HTTP2> wp_connection;
 

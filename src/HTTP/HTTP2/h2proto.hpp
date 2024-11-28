@@ -51,7 +51,7 @@ public:
 
     task<stream_result> write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool data_end = false);
     task<stream_result> write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
-    task<stream_result> write_data(int32_t stream_id, std::span<const uint8_t> bytes, bool data_end = true);
+    
 
     hpack m_hpack;
     std::unordered_map<size_t, std::shared_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
@@ -74,7 +74,7 @@ public:
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
 
-task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
+task<void> handle_stream(std::shared_ptr<h2_stream> connection);
 
 } // namespace fbw
 

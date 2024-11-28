@@ -215,7 +215,7 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
             // maybe check that it's the next one not just a later one
         }
         last_stream_id = frame.stream_id;
-        auto strm = std::make_unique<h2_stream>();
+        auto strm = std::make_shared<h2_stream>();
         if(frame.flags & h2_flags::END_STREAM) {
             strm->state = stream_state::half_closed;
             strm->client_sent_headers = done;
@@ -234,7 +234,7 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
         m_h2streams.insert({frame.stream_id, std::move(strm)});
         it = m_h2streams.find(frame.stream_id);
         assert(it != m_h2streams.end());
-        sync_spawn(handle_stream(shared_from_this(), frame.stream_id));
+        sync_spawn(handle_stream(strm));
     } else {
         if(it->second->client_sent_headers != data_expected) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
@@ -249,11 +249,14 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
     }
 }
 
-task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
-    auto [ conn, stream ] = lock_stream(connection, stream_id);
+task<void> handle_stream(std::shared_ptr<h2_stream> stream) {
     co_await application_handler(stream);
-    // ensure we are running on the same thread as the connection here
-    conn->m_h2streams.erase(stream_id);
+    auto id = stream->m_stream_id;
+    auto conn = stream->wp_connection.lock();
+    if(conn) {
+        // ensure we are running on the same thread as the connection here
+        conn->m_h2streams.erase(id);
+    }
     co_return;
 }
 
@@ -430,8 +433,6 @@ HTTP2::~HTTP2() {
     assert(waiters_global.empty());
 }
 
-
-
 h2_stream::~h2_stream() {
     assert(m_reader == nullptr);
     assert(m_writer == nullptr);
@@ -439,7 +440,7 @@ h2_stream::~h2_stream() {
 
 // writes as much as window allows then return
 task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end) {
-    auto num_bytes = co_await h2writewindowable{ shared_from_this(), stream_id, (uint32_t)bytes.size() };
+    auto num_bytes = co_await h2writewindowable{ m_h2streams[stream_id], (uint32_t)bytes.size() };
     if(notify_close_sent) {
         co_return stream_result::closed;
     }
@@ -467,15 +468,6 @@ task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const ui
     co_return stream_result::ok;
 }
 
-task<stream_result> HTTP2::write_data(int32_t stream_id, std::span<const uint8_t> bytes, bool data_end) {
-    while(!bytes.empty()) {
-        auto stres = co_await write_some_data(stream_id, bytes, data_end);
-        if(stres != stream_result::ok) {
-            co_return stres;
-        }
-    }
-    co_return stream_result::ok;
-}
 
 } // namespace 
 

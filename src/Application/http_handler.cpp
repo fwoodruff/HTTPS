@@ -21,6 +21,28 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) {
         co_return;
     }
 
+    auto method_it = std::find_if(request_headers.begin(), request_headers.end(), [](const entry_t& entry){ return entry.name == ":method"; });
+    if(method_it == request_headers.end()) {
+        co_return;
+    }
+    
+    if(method_it->value == "POST") {
+        ustring some_data;
+        do {    
+            auto [ res, end ] = co_await connection->append_http_data(some_data);
+            if(res != stream_result::ok) {
+                co_return;
+            }
+            if(!end) {
+                continue;
+            }
+        } while(false);
+        for(unsigned c : some_data) {
+            std::cout << c << " ";
+        }
+        std::cout << std::endl;
+    }
+
     std::vector<entry_t> send_headers;
     const std::string message = "<HTML>HELLO WORLD.</HTML>";
     auto it = std::find_if(send_headers.begin(), send_headers.end(), [](const entry_t& val) { return val.name == ":method"; });

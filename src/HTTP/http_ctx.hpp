@@ -43,10 +43,11 @@ struct std::hash<fbw::entry_t> {
 
 namespace fbw {
 
+// todo: for full-duplex, we need an awaitable that signals if either reading or writing possible, consider both HTTP/1.1 and HTTP/2 here
 class http_ctx {
 public:
     virtual task<stream_result> read_headers(std::vector<entry_t>& headers) = 0;
-    //virtual task<stream_result> read_data(std::span<uint8_t>& buffer) = 0;
+    virtual task<std::pair<stream_result, bool>> append_http_data(ustring& buffer) = 0;
     virtual task<stream_result> write_headers(const std::vector<entry_t>& headers, bool end = false) = 0;
     //virtual task<stream_result> write_push_promise(std::vector<entry_t>& headers) = 0;
     virtual task<stream_result> write_data(std::span<const uint8_t> data, bool end = true) = 0;

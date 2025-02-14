@@ -1,6 +1,6 @@
 
 #include "h2frame.hpp"
-#include "../global.hpp"
+#include "../../global.hpp"
 
 
 namespace fbw {
@@ -19,12 +19,43 @@ std::unique_ptr<h2_window_update> deserialise_WINDOW_UPDATE(const ustring& frame
 std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const ustring& frame_bytes);
 void set_base_frame_values(h2frame& frame, const ustring& frame_bytes);
 
+h2_data::h2_data() {
+    type = h2_type::DATA;
+}
+h2_headers::h2_headers() {
+    type = h2_type::HEADERS;
+}
+h2_priority::h2_priority() {
+    type = h2_type::PRIORITY;
+}
+h2_rst_stream::h2_rst_stream() {
+    type = h2_type::RST_STREAM;
+}
+h2_settings::h2_settings() {
+    type = h2_type::SETTINGS;
+}
+h2_push_promise::h2_push_promise() {
+    type = h2_type::PUSH_PROMISE;
+}
+h2_ping::h2_ping() {
+    type = h2_type::PING;
+}
+h2_goaway::h2_goaway() {
+    type = h2_type::GOAWAY;
+}
+h2_window_update::h2_window_update() {
+    type = h2_type::WINDOW_UPDATE;
+}
+h2_continuation::h2_continuation() {
+    type = h2_type::CONTINUATION;
+}
+
 std::unique_ptr<h2frame> h2frame::deserialise(const ustring& frame_bytes) { // todo, span
-    assert(frame_bytes.size() >= H2_IDX_0);
+    assert(frame_bytes.size() >= H2_FRAME_HEADER_SIZE);
     auto type = static_cast<h2_type>(frame_bytes[3]);
     try {
         auto size = try_bigend_read(frame_bytes, 0, 3);
-        assert(size == frame_bytes.size() - H2_IDX_0);
+        assert(size == frame_bytes.size() - H2_FRAME_HEADER_SIZE);
         using enum h2_type;
         switch(type) {
             case DATA: 
@@ -61,38 +92,39 @@ std::unique_ptr<h2frame> h2frame::deserialise(const ustring& frame_bytes) { // t
 
 std::unique_ptr<h2_data> deserialise_DATA(const ustring& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
+    assert(size + H2_FRAME_HEADER_SIZE == frame_bytes.size());
     auto frame = std::make_unique<h2_data>();
     set_base_frame_values(*frame, frame_bytes);
     if(frame->flags % h2_flags::PADDED) {
-        frame->pad_length = try_bigend_read(frame_bytes, H2_IDX_0, 1);
-        frame->contents = frame_bytes.substr(H2_IDX_0+1, size-1 - frame->pad_length);
+        frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
+        frame->contents = frame_bytes.substr(H2_FRAME_HEADER_SIZE+1, size-1 - frame->pad_length);
     } else {
         frame->pad_length = 0;
-        frame->contents = frame_bytes.substr(H2_IDX_0);
+        frame->contents = frame_bytes.substr(H2_FRAME_HEADER_SIZE);
     }
     return frame;
 }
 
 std::unique_ptr<h2_headers> deserialise_HEADERS(const ustring& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
-    assert(size + H2_IDX_0 == frame_bytes.size());
+    assert(size + H2_FRAME_HEADER_SIZE == frame_bytes.size());
     auto frame = std::make_unique<h2_headers>();
     set_base_frame_values(*frame, frame_bytes);
     size_t idx = 0;
     if(frame->flags & h2_flags::PADDED) {
-        frame->pad_length = try_bigend_read(frame_bytes, H2_IDX_0, 1);
+        frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
         idx += 1;
     } else {
         frame->pad_length = 0;
     }
     if(frame->flags & h2_flags::PRIORITY) {
-        const uint32_t dep_ex = try_bigend_read(frame_bytes, H2_IDX_0 + idx, 4);
+        const uint32_t dep_ex = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 4);
         frame->stream_dependency = dep_ex & ~(1u << 31);
         frame->exclusive = (dep_ex & (1u << 31)) != 0;
-        frame->weight = try_bigend_read(frame_bytes, H2_IDX_0 + idx + 4, 1);
+        frame->weight = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx + 4, 1);
         idx += 5;
     }
-    frame->field_block_fragment = frame_bytes.substr(H2_IDX_0 + idx, size - idx - frame->pad_length);
+    frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE + idx, size - idx - frame->pad_length);
     assert(frame->field_block_fragment.size() + idx + frame->pad_length == size);
     return frame;
 }
@@ -101,10 +133,10 @@ std::unique_ptr<h2_priority> deserialise_PRIORITY(const ustring& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
     auto frame = std::make_unique<h2_priority>();
     set_base_frame_values(*frame, frame_bytes);
-    const uint32_t dep_ex = try_bigend_read(frame_bytes, H2_IDX_0, 4);
+    const uint32_t dep_ex = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
     frame->stream_dependency = dep_ex & ~(1u << 31);
     frame->exclusive = (dep_ex & (1u << 31)) != 0;
-    frame->weight = try_bigend_read(frame_bytes, H2_IDX_0 + 4, 1);
+    frame->weight = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 4, 1);
     if(size != 5) {
         throw h2_error("malformed PRIORITY frame", h2_code::FRAME_SIZE_ERROR);
     }
@@ -115,7 +147,7 @@ std::unique_ptr<h2_rst_stream> deserialise_RST_STREAM(const ustring& frame_bytes
     auto size = try_bigend_read(frame_bytes, 0, 3);
     auto frame = std::make_unique<h2_rst_stream>();
     set_base_frame_values(*frame, frame_bytes);
-    frame->error_code = (h2_code)try_bigend_read(frame_bytes, H2_IDX_0, 4);
+    frame->error_code = (h2_code)try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
     if(size != 4) {
         throw h2_error("malformed RST_STREAM frame", h2_code::FRAME_SIZE_ERROR);
     }
@@ -133,9 +165,9 @@ std::unique_ptr<h2_settings> deserialise_SETTINGS(const ustring& frame_bytes) {
         throw h2_error("malformed SETTINGS frame", h2_code::FRAME_SIZE_ERROR);
     }
     for(uint64_t i = 0; i < size; i+=6) {
-        h2_setting setting;
-        setting.identifier = static_cast<h2_settings_code>(try_bigend_read(frame_bytes, H2_IDX_0 + i, 2));
-        setting.value = try_bigend_read(frame_bytes, H2_IDX_0 + 2 + i, 4);
+        h2_setting_value setting;
+        setting.identifier = static_cast<h2_settings_code>(try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + i, 2));
+        setting.value = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 2 + i, 4);
         frame->settings.push_back(setting);
     }
     return frame;
@@ -147,11 +179,11 @@ std::unique_ptr<h2_push_promise> deserialise_PUSH_PROMISE(const ustring& frame_b
     set_base_frame_values(*frame, frame_bytes);
     size_t idx = 0;
     if(frame->flags & h2_flags::PADDED) {
-        frame->pad_length = try_bigend_read(frame_bytes, H2_IDX_0 + idx, 1);
+        frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 1);
         idx += 1;
     }
     frame->promised_stream_id = try_bigend_read(frame_bytes, idx, 4);
-    frame->field_block_fragment = frame_bytes.substr(H2_IDX_0 + idx + 4, size - idx - frame->pad_length);
+    frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE + idx + 4, size - idx - frame->pad_length);
     return frame;
 }
 
@@ -162,17 +194,17 @@ std::unique_ptr<h2_ping> deserialise_PING(const ustring& frame_bytes) {
     }
     auto frame = std::make_unique<h2_ping>();
     set_base_frame_values(*frame, frame_bytes);
-    frame->opaque = try_bigend_read(frame_bytes, H2_IDX_0, 8);
+    frame->opaque = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 8);
     return frame;
 }
 
 std::unique_ptr<h2_goaway> deserialise_GOAWAY(const ustring& frame_bytes) {
     auto frame = std::make_unique<h2_goaway>();
     set_base_frame_values(*frame, frame_bytes);
-    const uint32_t lastidres = try_bigend_read(frame_bytes, H2_IDX_0, 4);
+    const uint32_t lastidres = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
     frame->last_stream_id = lastidres & ~(1u << 31);
-    frame->error_code = (h2_code)try_bigend_read(frame_bytes, H2_IDX_0 + 4, 4);
-    frame->additional_debug_data = to_signed(frame_bytes.substr(H2_IDX_0 + 8));
+    frame->error_code = (h2_code)try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 4, 4);
+    frame->additional_debug_data = to_signed(frame_bytes.substr(H2_FRAME_HEADER_SIZE + 8));
     return frame;
 }
 
@@ -183,7 +215,7 @@ std::unique_ptr<h2_window_update> deserialise_WINDOW_UPDATE(const ustring& frame
     }
     auto frame = std::make_unique<h2_window_update>();
     set_base_frame_values(*frame, frame_bytes);
-    const uint32_t incres = try_bigend_read(frame_bytes, H2_IDX_0, 4);
+    const uint32_t incres = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
     frame->window_size_increment = incres & ~(1u << 31);
     return frame;
 }
@@ -191,7 +223,7 @@ std::unique_ptr<h2_window_update> deserialise_WINDOW_UPDATE(const ustring& frame
 std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const ustring& frame_bytes) {
     auto frame = std::make_unique<h2_continuation>();
     set_base_frame_values(*frame, frame_bytes);
-    frame->field_block_fragment = frame_bytes.substr(H2_IDX_0);
+    frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE);
     return frame;
 }
 
@@ -229,7 +261,7 @@ ustring h2_headers::serialise() const {
     }
     out.append(field_block_fragment.begin(), field_block_fragment.end());
     out.resize(out.size() + pad_length);
-    checked_bigend_write(out.size() - H2_IDX_0, out, 0, 3);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 

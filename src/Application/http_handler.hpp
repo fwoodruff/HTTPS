@@ -9,14 +9,15 @@
 #define h2handler_hpp
 
 #include "../Runtime/task.hpp"
+#include "../HTTP/http_ctx.hpp"
+
 #include <memory>
 
 namespace fbw {
 
-class HTTP2;
-task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
+class http_ctx;
+[[nodiscard]] task<void> application_handler(std::shared_ptr<http_ctx> connection);
 
-
-}
+} // namespace fbw
 
 #endif

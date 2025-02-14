@@ -8,7 +8,8 @@
 #ifndef hpack_hpp
 #define hpack_hpp
 
-#include "../global.hpp"
+#include "../../global.hpp"
+#include "../http_ctx.hpp"
 
 #include <unordered_map>
 #include <vector>
@@ -29,29 +30,7 @@ struct hpack_huffman_bit_pattern {
 struct setting_values;
 constexpr size_t static_entries = 61;
 
-enum class do_indexing : uint8_t {
-    incremental,
-    without,
-    never
-};
-
-struct entry_t {
-    std::string name;
-    std::string value;
-    do_indexing do_index = do_indexing::incremental;
-    auto operator<=>(const entry_t&) const = default;
-};
-
 }
-
-template<>
-struct std::hash<fbw::entry_t> {
-    size_t operator()(const fbw::entry_t& s) const noexcept {
-        size_t seed = 0;
-        fbw::hash_combine(seed, s.name, s.value, s.do_index);
-        return seed;
-    }
-};
 
 template<>
 struct std::hash<fbw::hpack_huffman_bit_pattern> {
@@ -63,7 +42,6 @@ struct std::hash<fbw::hpack_huffman_bit_pattern> {
 };
 
 namespace fbw {
-
 
 struct logged_entry {
     entry_t entry;

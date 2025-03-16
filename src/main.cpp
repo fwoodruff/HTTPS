@@ -21,6 +21,7 @@
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
 // Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
 // review unnecessary buffer copies, more subspan, less substr
+// ustring is UB!! Use vector<std::byte>
 // HTTP codes should be a map code -> { title, blurb }
 // HTTP/2
 // more functions should take const& and return a value
@@ -33,6 +34,8 @@
 // offload state to TLS HRR cookie
 // project point at infinity into Montgomery space, add with other points (including Pt@Inf), project back - check value still good
 // go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
+// Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
+// Add explicit to constructors liberally
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

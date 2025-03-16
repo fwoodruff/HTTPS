@@ -377,6 +377,7 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
             }
             if(tls_protocol_version == TLS13) {
                 if(handshake.is_hello_retry()) {
+                    // server hello message was a hello retry message so next record is client hello
                     co_return stream_result::ok;
                 }
                 if(handshake.middlebox_compatibility()) {
@@ -387,12 +388,14 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                 if(auto result = co_await server_encrypted_extensions(); result != stream_result::ok) {
                     co_return result;
                 }
-                // mTLS client_certificate_request message would go here
-                if(auto result = co_await server_certificate(); result != stream_result::ok) {
-                    co_return result;
-                }
-                if(auto result = co_await server_certificate_verify(); result != stream_result::ok) {
-                    co_return result;
+                if(!handshake.selected_preshared_key_id) {
+                    // mTLS client_certificate_request message would go here
+                    if(auto result = co_await server_certificate(); result != stream_result::ok) {
+                        co_return result;
+                    }
+                    if(auto result = co_await server_certificate_verify(); result != stream_result::ok) {
+                        co_return result;
+                    }
                 }
                 if(auto result = co_await server_handshake_finished13(); result != stream_result::ok) {
                     co_return result;

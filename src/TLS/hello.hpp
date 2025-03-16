@@ -51,6 +51,8 @@ struct hello_record_data {
     bool client_heartbeat = false;
     bool server_heartbeat = false;
 
+    std::vector<PskKeyExchangeMode> pskmodes;
+
     std::vector<SignatureAlgorithm> signature_algorithms{};
     std::vector<uint16_t> supported_versions{};
     std::vector<PskKeyExchangeMode> PSK_key_exchange_modes{};

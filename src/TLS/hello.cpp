@@ -143,6 +143,15 @@ preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
     return psk_exts;
 }
 
+std::vector<PskKeyExchangeMode> get_pskmodes(std::span<const uint8_t> extension_data) {
+    auto spn = der_span_read(extension_data, 0, 1);
+    std::vector<PskKeyExchangeMode> out;
+    for(auto c : spn) {
+        out.push_back(static_cast<PskKeyExchangeMode>(c));
+    }
+    return out;
+}
+
 void parse_extension(hello_record_data& record, extension ext) {
     switch(ext.type) {
         case ExtensionType::server_name:
@@ -178,6 +187,10 @@ void parse_extension(hello_record_data& record, extension ext) {
             break;
         case ExtensionType::signed_certificate_timestamp:
             record.parsed_extensions.insert(ext.type);
+            break;
+        case ExtensionType::psk_key_exchange_modes:
+            record.parsed_extensions.insert(ext.type);
+            record.pskmodes = get_pskmodes(ext.data);
             break;
         case ExtensionType::pre_shared_key:
             record.parsed_extensions.insert(ext.type);
@@ -323,7 +336,9 @@ void write_cookie(tls_record& record) {
 
 void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
     record.write2(ExtensionType::pre_shared_key);
+    record.start_size_header(2);
     record.write2(key_id);
+    record.end_size_header();
 }
 
 ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {

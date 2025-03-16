@@ -36,6 +36,8 @@
 // go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
 // Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
+// TLS session tickets are currently plaintext!!
+// not working for cURL
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

@@ -275,6 +275,11 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
         if(!client_hello.parsed_extensions.contains(ExtensionType::supported_groups)) {
             throw ssl_error("supported groups are required for TLS 1.3", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
+        if(client_hello.pre_shared_key) {
+            if(client_hello.pskmodes.size() == 0) {
+                throw ssl_error("preshared_key requires preshared_key_modes extension", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
+        }
         client_public_key = choose_client_public_key(client_hello.shared_keys, client_hello.supported_groups);
         if(is_hello_retry()) {
             if(hello_retry_count > 0) {
@@ -319,7 +324,6 @@ tls_record handshake_ctx::server_hello_record() {
     hello_record.start_size_header(3);
 
     hello_record.write2(TLS12);
-    
 
     hello_record.write(m_server_random);
 
@@ -556,7 +560,11 @@ void handshake_ctx::hello_extensions(tls_record& record) {
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::pre_shared_key)) {
         if(selected_preshared_key_id) {
-            write_pre_shared_key_extension(record, *selected_preshared_key_id);
+            for(auto mode : client_hello.pskmodes) {
+                if(mode == PskKeyExchangeMode::psk_dhe_ke) {
+                    write_pre_shared_key_extension(record, *selected_preshared_key_id);
+                }
+            }
         }
     }
     record.end_size_header();

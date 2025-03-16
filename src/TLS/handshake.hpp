@@ -44,6 +44,8 @@ public:
 
     std::string alpn;
 
+    std::optional<uint16_t> selected_preshared_key_id = std::nullopt;
+
     uint16_t* p_tls_version = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;
 
@@ -79,7 +81,7 @@ private:
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 
-    ustring get_psk();
+    std::pair<ustring, std::optional<size_t>> get_psk(const ustring& hello_message) const;
     
 };
 

@@ -27,10 +27,11 @@ struct TLS13SessionTicket {
     uint32_t ticket_age_add;
     cipher_suites cipher_suite;
     bool  early_data_allowed;
-    std::vector<uint8_t> resumption_secret;
+    ustring resumption_secret;
+    std::string sni;
     
     static std::optional<TLS13SessionTicket> decrypt(ustring ticket, std::array<uint8_t, 16> encryption_key);
-    static std::optional<tls_record> server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key);
+    static std::optional<tls_record> server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, ustring nonce);
 private:
     ustring encrypt(std::array<uint8_t, 16> encryption_key);
     ustring serialise();

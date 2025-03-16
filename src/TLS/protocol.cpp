@@ -511,18 +511,27 @@ void TLS::client_handshake_finished13(const ustring& handshake_message) {
     m_expected_record = HandshakeStage::application_data;
 }
 
+static std::atomic<uint64_t> global_nonce = 0;
 task<stream_result> TLS::server_session_ticket() {
     assert(m_expected_record == HandshakeStage::application_data);
+    auto nonce = global_nonce.fetch_add(1, std::memory_order_relaxed);
+    ustring nonce_bytes(8, 0);
+    checked_bigend_write(nonce, nonce_bytes, 0, 8);
+    assert(handshake.hash_ctor != nullptr);
+    auto secret = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", nonce_bytes, handshake.hash_ctor->get_hash_size());
+
     TLS13SessionTicket ticket;
     ticket.version = 1;
-    ticket.ticket_lifetime = 7200;
-    ticket.issued_at = time(NULL);
+    ticket.ticket_lifetime = 7200; // seconds
+    ticket.issued_at = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
     ticket.ticket_age_add = randomgen.randgen64();
     ticket.cipher_suite = handshake.cipher;
     ticket.early_data_allowed = false;
-    ticket.resumption_secret = {}; // placeholder
-
-    auto record = TLS13SessionTicket::server_session_ticket_record(ticket, {}); // todo: use secure key
+    ticket.resumption_secret = secret;
+    
+    auto record = TLS13SessionTicket::server_session_ticket_record(ticket, {}, nonce_bytes); // todo: use secure key
     if(record) {
         auto res = co_await write_record(*record, project_options.handshake_timeout);
         co_return res;

@@ -124,13 +124,14 @@ std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t
 preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
     preshared_key_ext psk_exts;
     auto psk_ids = der_span_read(extension_data, 0, 2);
+    psk_exts.idxbinders_ext = psk_ids.size() + 2;
     extension_data = extension_data.subspan(psk_ids.size() + 2);
     while(!psk_ids.empty()) {
         auto psk = der_span_read(psk_ids, 0, 2);
         pre_shared_key_entry psk_entry;
         psk_entry.m_key = {psk.begin(), psk.end()};
-        psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size(), 4);
-        psk_exts.m_keys.emplace_back(psk_entry);
+        psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size() + 2, 4);
+        psk_exts.m_keys.push_back(std::move(psk_entry));
         psk_ids = psk_ids.subspan(psk.size() + 6);
     }
     auto binder_data = der_span_read(extension_data, 0, 2);
@@ -243,6 +244,19 @@ hello_record_data parse_client_hello(const ustring& hello) {
         ustring ext_data(extension_span.begin(), extension_span.end());
         extension ext = {static_cast<ExtensionType>(extension_type), ext_data};
         parse_extension(record, ext);
+
+        if(ext.type == ExtensionType::pre_shared_key) {
+            if(!extensions.empty()) {
+                throw ssl_error("preshared key must be last extension", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
+            const uint8_t* dptr = &extension_span.front();
+            const uint8_t* dfrom = &hello.front();
+            assert(record.pre_shared_key);
+            auto diff = dptr - dfrom;
+            assert(record.pre_shared_key->idxbinders == 0);
+            assert( record.pre_shared_key->idxbinders_ext != 0);
+            record.pre_shared_key->idxbinders = record.pre_shared_key->idxbinders_ext + diff;
+        }
     }
     return record;
 }
@@ -305,6 +319,11 @@ void write_cookie(tls_record& record) {
     record.write(to_unsigned("cookie"));
     record.end_size_header();
     record.end_size_header();
+}
+
+void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
+    record.write2(ExtensionType::pre_shared_key);
+    record.write2(key_id);
 }
 
 ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {

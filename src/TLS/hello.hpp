@@ -25,6 +25,8 @@ struct pre_shared_key_entry {
 };
 
 struct preshared_key_ext {
+    std::ptrdiff_t idxbinders_ext = 0;
+    std::ptrdiff_t idxbinders = 0;
     std::vector<pre_shared_key_entry> m_keys;
     std::vector<ustring> m_psk_binder_entries;
 };
@@ -67,6 +69,7 @@ void write_key_share(tls_record& record, const key_share& pubkey_ephem);
 void write_key_share_request(tls_record& record, NamedGroup chosen_group);
 void write_supported_versions(tls_record& record, uint16_t version);
 void write_cookie(tls_record& record);
+void write_pre_shared_key_extension(tls_record& record, uint16_t key_id);
 ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
 std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype);
 ustring make_hello_random(uint16_t version, bool requires_hello_retry);

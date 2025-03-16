@@ -7,37 +7,45 @@
 
 namespace fbw {
 ustring TLS13SessionTicket::serialise() {
+    constexpr int header_size = 22;
     ustring out;
-    out.reserve(22+resumption_secret.size());
-    out.resize(22);
+    out.reserve(header_size + resumption_secret.size() + sni.size() + 2);
+    out.resize(header_size);
     checked_bigend_write(version, out, 0, 2);
-    checked_bigend_write(ticket_lifetime, out, 2, 4);
-    checked_bigend_write(issued_at, out, 6, 8);
-    checked_bigend_write(ticket_age_add, out, 14, 4);
-    checked_bigend_write(uint16_t(cipher_suite), out, 18, 2);
-    checked_bigend_write(uint8_t(early_data_allowed), out, 20, 1);
+    checked_bigend_write(ticket_lifetime, out, 2, 3);
+    checked_bigend_write(issued_at, out, 5, 8);
+    checked_bigend_write(ticket_age_add, out, 13, 4);
+    checked_bigend_write(uint16_t(cipher_suite), out, 17, 2);
+    checked_bigend_write(uint8_t(early_data_allowed), out, 19, 1);
     assert(resumption_secret.size() < 256);
-    checked_bigend_write(resumption_secret.size(), out, 21, 1);
+    checked_bigend_write(resumption_secret.size(), out, 20, 1);
+    checked_bigend_write(sni.size(), out, 21, 1);
     out.append(resumption_secret.begin(), resumption_secret.end());
+    out.append(sni.begin(), sni.end());
     return out;
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket) {
-    if(ticket.size() < 22) {
+    constexpr int header_size = 22;
+    if(ticket.size() < header_size) {
         return std::nullopt;
     }
     TLS13SessionTicket out;
     out.version = try_bigend_read(ticket, 0, 2);
-    out.ticket_lifetime = try_bigend_read(ticket, 2, 4);
-    out.issued_at = try_bigend_read(ticket, 6, 8);
-    out.ticket_age_add = try_bigend_read(ticket, 14, 4);
-    out.cipher_suite = static_cast<cipher_suites>(try_bigend_read(ticket, 18, 2));
-    out.early_data_allowed = try_bigend_read(ticket, 20, 1) != 0ull;
-    uint8_t size = try_bigend_read(ticket, 21, 1);
-    out.resumption_secret.assign(ticket.begin() + 22, ticket.end());
-    if(size != ticket.size()) {
+    out.ticket_lifetime = try_bigend_read(ticket, 2, 3);
+    out.issued_at = try_bigend_read(ticket, 5, 8);
+    out.ticket_age_add = try_bigend_read(ticket, 13, 4);
+    out.cipher_suite = static_cast<cipher_suites>(try_bigend_read(ticket, 17, 2));
+    out.early_data_allowed = try_bigend_read(ticket, 19, 1) != 0ull;
+    const uint16_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
+    const uint16_t sni_len = try_bigend_read(ticket, 21, 1);
+    if(ticket.size() != header_size + resumption_secret_len + sni_len) {
         return std::nullopt;
     }
+    auto it = ticket.begin() + header_size;
+    out.resumption_secret.assign(it, it + resumption_secret_len);
+    it += resumption_secret_len;
+    out.sni.assign(it, it + sni_len);
     return out;
 }
 
@@ -50,8 +58,7 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt(ustring ticket, st
     return out;
 }
 
-static std::atomic<uint64_t> global_nonce = 0;
-std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key) {
+std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, ustring nonce) {
     constexpr uint32_t MAX_TICKET_LIFETIME = 604800;
     tls_record record(ContentType::Handshake);
     if(ticket.ticket_lifetime > MAX_TICKET_LIFETIME) {
@@ -65,14 +72,11 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
     record.write(ticket_lifetime_bytes);
 
     std::array<uint8_t, 4> ticket_age_add;
-    randomgen.randgen(ticket_age_add);
+    checked_bigend_write(ticket.ticket_age_add, ticket_age_add, 0, 4);
     record.write(ticket_age_add);
     
-    std::array<uint8_t, 8> ticket_nonce_bytes;
-    checked_bigend_write(global_nonce, ticket_nonce_bytes, 0, 8);
-    global_nonce.fetch_add(1,std::memory_order_relaxed);
     record.start_size_header(1);
-    record.write(ticket_nonce_bytes);
+    record.write(nonce);
     record.end_size_header();
 
     record.start_size_header(2);

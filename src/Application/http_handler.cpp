@@ -37,10 +37,6 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) {
                 continue;
             }
         } while(false);
-        for(unsigned c : some_data) {
-            std::cout << c << " ";
-        }
-        std::cout << std::endl;
     }
 
     std::vector<entry_t> send_headers;

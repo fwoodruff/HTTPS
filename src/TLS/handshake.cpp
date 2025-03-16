@@ -212,24 +212,57 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& cli
     return record;
 }
 
-ustring handshake_ctx::get_psk() {
-    auto key = this->client_hello.pre_shared_key;
+std::pair<ustring, std::optional<size_t>> handshake_ctx::get_psk(const ustring& hello_message) const {
+    auto key = client_hello.pre_shared_key;
+    assert(hash_ctor != nullptr);
     auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
     if(!key) {
-        return null_psk;
+        return {null_psk, std::nullopt};
     }
-    for(auto key_entry : key->m_keys) {
+    if(client_hello.pre_shared_key->idxbinders > hello_message.size()) {
+        return {null_psk, std::nullopt};
+    } 
+    
+    const std::span<const uint8_t> truncated_hello( hello_message.begin(), hello_message.begin() + client_hello.pre_shared_key->idxbinders );
+    
+
+    for(int i = 0; i < key->m_keys.size(); i++) { 
+        auto key_entry = key->m_keys[i];
         auto ticket = TLS13SessionTicket::decrypt(key_entry.m_key, {});
         if(!ticket) {
+            continue;
+        }
+        if(ticket->version != 1) {
             continue;
         }
         if(ticket->cipher_suite != cipher) {
             continue;
         }
-        // more checks on ticket, then get psk
-        return null_psk; // placeholder
+        if(ticket->sni != "" && ticket->sni != m_SNI) {
+            continue;
+        }
+        if(ticket->early_data_allowed == true) {
+            continue; // not implemented yet
+        }
+        uint64_t computed_age_millis = uint32_t(key_entry.m_obfuscated_age - ticket->ticket_age_add);
+        uint64_t lifetime_millis = uint64_t(ticket->ticket_lifetime) * 1000ull;
+        if(computed_age_millis > lifetime_millis ) {
+            continue;
+        }
+        if(ticket->resumption_secret.size() != hash_ctor->get_hash_size()) {
+            continue;
+        }
+        if(i >= key->m_psk_binder_entries.size()) {
+            break;
+        }
+        auto received_binder = client_hello.pre_shared_key->m_psk_binder_entries[i];
+        auto computed_binder = do_hmac(*hash_ctor, tls13_key_schedule.resumption_binder_key, truncated_hello); // todo: handle hello retries by using the handshake hash context instead of an explicitly truncated hash
+        if(received_binder != computed_binder ) {
+            continue;
+        }
+        return {ticket->resumption_secret, i};
     }
-    return null_psk;
+    return {null_psk, std::nullopt};
 }
 
 void handshake_ctx::client_hello_record(const ustring& handshake_message) {
@@ -264,8 +297,9 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     }
     
     if(*p_tls_version == TLS13 and !is_hello_retry()) {
-        auto psk = get_psk();
+        auto [psk, selected_identity] = get_psk(handshake_message); // todo: fix this
         tls13_early_key_calc(*hash_ctor, tls13_key_schedule, psk, handshake_hasher->hash());
+        selected_preshared_key_id = selected_identity;
     }
 }
 
@@ -520,6 +554,11 @@ void handshake_ctx::hello_extensions(tls_record& record) {
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::heartbeat)) {
         write_heartbeat(record);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::pre_shared_key)) {
+        if(selected_preshared_key_id) {
+            write_pre_shared_key_extension(record, *selected_preshared_key_id);
+        }
     }
     record.end_size_header();
 }

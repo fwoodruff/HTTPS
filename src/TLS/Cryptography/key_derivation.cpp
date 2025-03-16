@@ -10,6 +10,14 @@
 
 namespace fbw {
 
+// get the binder key for this preshared key but don't commit to the key schedule yet
+ustring candidate_binder_key(const hash_base& base, ustring psk) {
+    ustring early_secret = hkdf_extract(base, ustring{}, psk);
+    auto empty_hash = do_hash(base, ustring{});
+    ustring resumption_binder_key = hkdf_expand_label(base, early_secret, "res binder", empty_hash, base.get_hash_size());
+    return resumption_binder_key;
+}
+
 void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, ustring psk, ustring client_hello_hash) {
     auto empty_hash = do_hash(base, ustring{});
 

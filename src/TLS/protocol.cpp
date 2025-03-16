@@ -518,7 +518,7 @@ task<stream_result> TLS::server_session_ticket() {
     ustring nonce_bytes(8, 0);
     checked_bigend_write(nonce, nonce_bytes, 0, 8);
     assert(handshake.hash_ctor != nullptr);
-    auto secret = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", nonce_bytes, handshake.hash_ctor->get_hash_size());
+    auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", nonce_bytes, handshake.hash_ctor->get_hash_size());
 
     TLS13SessionTicket ticket;
     ticket.version = 1;
@@ -529,7 +529,7 @@ task<stream_result> TLS::server_session_ticket() {
     ticket.ticket_age_add = randomgen.randgen64();
     ticket.cipher_suite = handshake.cipher;
     ticket.early_data_allowed = false;
-    ticket.resumption_secret = secret;
+    ticket.resumption_secret = resumption_ticket_psk;
     
     auto record = TLS13SessionTicket::server_session_ticket_record(ticket, {}, nonce_bytes); // todo: use secure key
     if(record) {

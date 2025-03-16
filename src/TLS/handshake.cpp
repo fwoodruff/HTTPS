@@ -212,7 +212,7 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& cli
     return record;
 }
 
-std::pair<ustring, std::optional<size_t>> handshake_ctx::get_psk(const ustring& hello_message) const {
+std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(const ustring& hello_message) const {
     auto key = client_hello.pre_shared_key;
     assert(hash_ctor != nullptr);
     auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
@@ -224,7 +224,6 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_psk(const ustring& 
     } 
     
     const std::span<const uint8_t> truncated_hello( hello_message.begin(), hello_message.begin() + client_hello.pre_shared_key->idxbinders );
-    
 
     for(int i = 0; i < key->m_keys.size(); i++) { 
         auto key_entry = key->m_keys[i];
@@ -256,7 +255,7 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_psk(const ustring& 
             break;
         }
         auto received_binder = client_hello.pre_shared_key->m_psk_binder_entries[i];
-        auto computed_binder = do_hmac(*hash_ctor, tls13_key_schedule.resumption_binder_key, truncated_hello); // todo: handle hello retries by using the handshake hash context instead of an explicitly truncated hash
+        ustring computed_binder = compute_binder(*hash_ctor, ticket->resumption_secret, truncated_hello);
         if(received_binder != computed_binder ) {
             continue;
         }
@@ -297,8 +296,8 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     }
     
     if(*p_tls_version == TLS13 and !is_hello_retry()) {
-        auto [psk, selected_identity] = get_psk(handshake_message); // todo: fix this
-        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, psk, handshake_hasher->hash());
+        auto [resumption_psk, selected_identity] = get_resumption_psk(handshake_message);
+        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, resumption_psk, handshake_hasher->hash());
         selected_preshared_key_id = selected_identity;
     }
 }

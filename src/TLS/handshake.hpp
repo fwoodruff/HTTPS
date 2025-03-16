@@ -78,6 +78,8 @@ private:
     void hello_retry_extensions(tls_record& record);
 
     void set_cipher_ctx(cipher_suites cipher_suite);
+
+    ustring get_psk();
     
 };
 

@@ -21,6 +21,7 @@
 #include "../TCP/tcp_stream.hpp"
 #include "Cryptography/key_derivation.hpp"
 #include "TLS_utils.hpp"
+#include "session_ticket.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -416,6 +417,9 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
         case static_cast<uint8_t>(HandshakeType::finished):
             if(tls_protocol_version == TLS13) {
                 client_handshake_finished13(std::move(handshake_message));
+                if(auto result = co_await server_session_ticket(); result != stream_result::ok) {
+                    co_return result;
+                }
             } else {
                 client_handshake_finished12(std::move(handshake_message));
                 if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
@@ -505,6 +509,25 @@ void TLS::client_handshake_finished13(const ustring& handshake_message) {
     tls13_context.set_server_traffic_key(handshake.tls13_key_schedule.server_application_traffic_secret);
     tls13_context.set_client_traffic_key(handshake.tls13_key_schedule.client_application_traffic_secret);
     m_expected_record = HandshakeStage::application_data;
+}
+
+task<stream_result> TLS::server_session_ticket() {
+    assert(m_expected_record == HandshakeStage::application_data);
+    TLS13SessionTicket ticket;
+    ticket.version = 1;
+    ticket.ticket_lifetime = 7200;
+    ticket.issued_at = time(NULL);
+    ticket.ticket_age_add = randomgen.randgen64();
+    ticket.cipher_suite = handshake.cipher;
+    ticket.early_data_allowed = false;
+    ticket.resumption_secret = {}; // placeholder
+
+    auto record = TLS13SessionTicket::server_session_ticket_record(ticket, {}); // todo: use secure key
+    if(record) {
+        auto res = co_await write_record(*record, project_options.handshake_timeout);
+        co_return res;
+    }
+    co_return stream_result::ok;
 }
 
 task<stream_result> TLS::server_key_exchange() {

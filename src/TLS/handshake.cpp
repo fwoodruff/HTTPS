@@ -18,6 +18,7 @@
 #include "Cryptography/cipher/chacha20poly1305.hpp"
 #include "TLS_utils.hpp"
 #include "hello.hpp"
+#include "session_ticket.hpp"
 
 namespace fbw {
 
@@ -211,6 +212,26 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& cli
     return record;
 }
 
+ustring handshake_ctx::get_psk() {
+    auto key = this->client_hello.pre_shared_key;
+    auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
+    if(!key) {
+        return null_psk;
+    }
+    for(auto key_entry : key->m_keys) {
+        auto ticket = TLS13SessionTicket::decrypt(key_entry.m_key, {});
+        if(!ticket) {
+            continue;
+        }
+        if(ticket->cipher_suite != cipher) {
+            continue;
+        }
+        // more checks on ticket, then get psk
+        return null_psk; // placeholder
+    }
+    return null_psk;
+}
+
 void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     client_hello = parse_client_hello(handshake_message);
     if(hello_retry_count == 0) {
@@ -243,8 +264,8 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     }
     
     if(*p_tls_version == TLS13 and !is_hello_retry()) {
-        auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
-        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, null_psk, handshake_hasher->hash());
+        auto psk = get_psk();
+        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, psk, handshake_hasher->hash());
     }
 }
 

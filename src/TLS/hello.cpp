@@ -121,6 +121,27 @@ std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t
     return alpn_types;
 }
 
+preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
+    preshared_key_ext psk_exts;
+    auto psk_ids = der_span_read(extension_data, 0, 2);
+    extension_data = extension_data.subspan(psk_ids.size() + 2);
+    while(!psk_ids.empty()) {
+        auto psk = der_span_read(psk_ids, 0, 2);
+        pre_shared_key_entry psk_entry;
+        psk_entry.m_key = {psk.begin(), psk.end()};
+        psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size(), 4);
+        psk_exts.m_keys.emplace_back(psk_entry);
+        psk_ids = psk_ids.subspan(psk.size() + 6);
+    }
+    auto binder_data = der_span_read(extension_data, 0, 2);
+    while(!binder_data.empty()) {
+        auto binder = der_span_read(binder_data, 0, 1);
+        binder_data = binder_data.subspan(binder.size() + 1);
+        psk_exts.m_psk_binder_entries.emplace_back(binder.begin(), binder.end());
+    }
+    return psk_exts;
+}
+
 void parse_extension(hello_record_data& record, extension ext) {
     switch(ext.type) {
         case ExtensionType::server_name:
@@ -157,6 +178,9 @@ void parse_extension(hello_record_data& record, extension ext) {
         case ExtensionType::signed_certificate_timestamp:
             record.parsed_extensions.insert(ext.type);
             break;
+        case ExtensionType::pre_shared_key:
+            record.parsed_extensions.insert(ext.type);
+            record.pre_shared_key = get_preshared_keys(ext.data);
         default:
             break;
     }

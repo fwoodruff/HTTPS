@@ -19,6 +19,16 @@ struct key_share {
     ustring key;
 };
 
+struct pre_shared_key_entry {
+    ustring m_key;
+    uint32_t m_obfuscated_age;
+};
+
+struct preshared_key_ext {
+    std::vector<pre_shared_key_entry> m_keys;
+    std::vector<ustring> m_psk_binder_entries;
+};
+
 struct hello_record_data {
     std::unordered_set<ExtensionType> parsed_extensions;
 
@@ -33,7 +43,7 @@ struct hello_record_data {
     std::vector<NamedGroup> supported_groups{};
     std::vector<SignatureScheme> signature_schemes{};
     std::vector<uint8_t> ec_point_formats{};
-    ustring session_ticket{};
+    std::optional<preshared_key_ext> pre_shared_key{};
     bool encrypt_then_mac = true;
     bool extended_master_secret = true;
     bool client_heartbeat = false;

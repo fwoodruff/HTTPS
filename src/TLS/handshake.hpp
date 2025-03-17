@@ -45,6 +45,7 @@ public:
     std::string alpn;
 
     std::optional<uint16_t> selected_preshared_key_id = std::nullopt;
+    std::optional<PskKeyExchangeMode> selected_psk_mode = std::nullopt;
 
     uint16_t* p_tls_version = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;

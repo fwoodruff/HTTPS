@@ -562,6 +562,7 @@ void handshake_ctx::hello_extensions(tls_record& record) {
         if(selected_preshared_key_id) {
             for(auto mode : client_hello.pskmodes) {
                 if(mode == PskKeyExchangeMode::psk_dhe_ke) {
+                    selected_psk_mode = PskKeyExchangeMode::psk_dhe_ke;
                     write_pre_shared_key_extension(record, *selected_preshared_key_id);
                 }
             }

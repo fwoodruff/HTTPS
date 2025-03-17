@@ -388,7 +388,9 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                 if(auto result = co_await server_encrypted_extensions(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(!handshake.selected_psk_mode or *handshake.selected_psk_mode != PskKeyExchangeMode::psk_dhe_ke) {
+                if(handshake.selected_psk_mode) {
+                    m_expected_record = HandshakeStage::server_handshake_finished;
+                } else {
                     // mTLS client_certificate_request message would go here
                     if(auto result = co_await server_certificate(); result != stream_result::ok) {
                         co_return result;
@@ -396,8 +398,6 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                     if(auto result = co_await server_certificate_verify(); result != stream_result::ok) {
                         co_return result;
                     }
-                } else {
-                    m_expected_record = HandshakeStage::server_handshake_finished;
                 }
                 if(auto result = co_await server_handshake_finished13(); result != stream_result::ok) {
                     co_return result;

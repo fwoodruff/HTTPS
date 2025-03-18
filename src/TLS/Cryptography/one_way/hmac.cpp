@@ -65,6 +65,7 @@ std::unique_ptr<hash_base> hmac::clone() const {
 
 
 hmac& hmac::update_impl(const uint8_t* data, size_t data_len) noexcept {
+    assert(m_hasher);
     m_hasher->update_impl(data, data_len);
     return *this;
 }

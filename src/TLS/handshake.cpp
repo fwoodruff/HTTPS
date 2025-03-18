@@ -133,6 +133,7 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
         default:
             assert(false);
     }
+    assert(hash_ctor);
     handshake_hasher = hash_ctor->clone();
 }
 
@@ -289,7 +290,7 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
         const bool has_psk_dhe_ke = std::any_of(client_hello.pskmodes.begin(), client_hello.pskmodes.end(),
                                    [](auto mode) { return mode == PskKeyExchangeMode::psk_dhe_ke; });
 
-        if (!has_key_share && (!has_psk_ke || has_psk_dhe_ke)) {
+        if(!has_key_share && (!has_psk_ke || has_psk_dhe_ke)) {
             throw ssl_error("no key share sent", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
         if(!has_psk_modes && has_preshared_key ) {
@@ -302,32 +303,30 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
             throw ssl_error("offered PSK DHE without offering a key", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
 
-        auto idx_bind = client_hello.pre_shared_key->idxbinders;
-        const std::span<const uint8_t> truncated_hello( handshake_message.begin(), handshake_message.begin() + idx_bind );
-        auto handshake_prefix_hasher = handshake_hasher->clone();
-        handshake_prefix_hasher->update(truncated_hello);
-        auto prefix_hash = handshake_prefix_hasher->hash();
         
-        if(has_key_share) {
-            std::cout << "did share key" << std::endl;
-            client_public_key = choose_client_public_key(client_hello.shared_keys, client_hello.supported_groups);
-        }
-        const bool established_dh_key = !client_public_key.key.empty();
-
         if(has_preshared_key) {
+            assert(client_hello.pre_shared_key);
+            size_t idx_bind = client_hello.pre_shared_key->idxbinders;
+            const std::span<const uint8_t> truncated_hello( handshake_message.begin(), handshake_message.begin() + idx_bind );
+            auto handshake_prefix_hasher = handshake_hasher->clone();
+            handshake_prefix_hasher->update(truncated_hello);
+            const auto prefix_hash = handshake_prefix_hasher->hash();
             auto [resumption_psk, selected_identity] = get_resumption_psk(prefix_hash);
             psk = resumption_psk;
             selected_preshared_key_id = selected_identity;
         }
         const bool established_ps_key = selected_preshared_key_id.has_value();
 
+        if(has_key_share) {
+            client_public_key = choose_client_public_key(client_hello.shared_keys, client_hello.supported_groups);
+        }
+        const bool established_dh_key = !client_public_key.key.empty();
+
         if(has_psk_dhe_ke and established_ps_key and established_dh_key) {
             server_hello_type = ServerHelloType::preshared_key_dh;
-            std::cout << "did choose psk dh" << std::endl;
         } else if(has_psk_ke and established_ps_key) {
             server_hello_type = ServerHelloType::preshared_key;
         } else if(established_dh_key) {
-            std::cout << "did choose diffie hellman" << std::endl;
             server_hello_type = ServerHelloType::diffie_hellman;
         } else {
             if(server_hello_type == ServerHelloType::hello_retry) {
@@ -335,7 +334,6 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
             }
             server_hello_type = ServerHelloType::hello_retry;
             auto message_hash_record = synthetic_message_hash(*hash_ctor, handshake_message);
-            std::cout << "updated with synth" << std::endl;
             handshake_hasher->update(message_hash_record.m_contents);
             return;
         }
@@ -345,7 +343,6 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     alpn = choose_alpn(client_hello.application_layer_protocols);
     m_SNI = choose_server_name(client_hello.server_names);
 
-    std::cout << "updated with msg hash" << std::endl;
     handshake_hasher->update(handshake_message);
     if(*p_tls_version == TLS13) {
         tls13_early_key_calc(*hash_ctor, tls13_key_schedule, psk, handshake_hasher->hash());
@@ -637,6 +634,7 @@ ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) 
     ustring client_hello_str(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
     tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", client_hello_str + m_server_random, 48);
 
+    assert(handshake_hasher);
     handshake_hasher->update(key_exchange);
 
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes

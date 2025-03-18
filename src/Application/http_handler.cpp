@@ -14,6 +14,7 @@ namespace fbw {
 
 // handle stream starts when headers have been received
 task<void> application_handler(std::shared_ptr<http_ctx> connection) {
+    assert(connection);
 
     std::vector<entry_t> request_headers;
     auto res_in = co_await connection->read_headers(request_headers);

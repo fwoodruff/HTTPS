@@ -193,7 +193,7 @@ task<void> TLS::close_notify() {
             co_await server_alert(AlertLevel::fatal, AlertDescription::unexpected_message);
             co_return;
         }
-        using namespace std::literals::chrono_literals;
+        assert(m_client);
         co_await m_client->close_notify();
     } catch(const std::exception& e) { }
 }
@@ -231,11 +231,9 @@ task<std::string> TLS::perform_handshake() {
             record = decrypt_record(record);
             switch ( static_cast<ContentType>(record.get_type()) ) {
                 case Handshake:
-                    std::cout << "handshake" << std::endl;
                     if(co_await client_handshake_record(std::move(record)) != stream_result::ok) {
                         co_return "";
                     }
-                    std::cout << "handled client record" << std::endl;
                     if(m_expected_record == HandshakeStage::application_data) {
                         co_return handshake.alpn;
                     }
@@ -244,10 +242,8 @@ task<std::string> TLS::perform_handshake() {
                     client_change_cipher_spec(std::move(record));
                     break;
                 [[unlikely]] case Application:
-                    std::cout << "app" << std::endl;
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
                 case Alert:
-                    std::cout << "alert" << std::endl;
                     co_await client_alert(std::move(record), project_options.handshake_timeout);
                     co_return "";
                 case Heartbeat:
@@ -271,6 +267,7 @@ task<std::string> TLS::perform_handshake() {
         goto END2;
     }
 END:
+    assert(error_ssl != std::nullopt);
     co_await server_alert(error_ssl->m_l, error_ssl->m_d);
     co_return "";
 END2:
@@ -297,6 +294,7 @@ tls_record TLS::decrypt_record(tls_record record) {
         return record;
     }
     if(client_cipher_spec) {
+        assert(cipher_context);
         record = cipher_context->decrypt(std::move(record));
     }
     return record;
@@ -325,6 +323,7 @@ task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<mi
         if (m_buffer.size() > TLS_RECORD_SIZE + TLS_HEADER_SIZE + TLS_EXPANSION_MAX) [[unlikely]] {
             throw ssl_error("oversized record", AlertLevel::fatal, AlertDescription::record_overflow);
         }
+        assert(m_client);
         stream_result connection_alive = co_await m_client->read_append(m_buffer, timeout);
         if(connection_alive != stream_result::ok) {
             co_return { {}, connection_alive };
@@ -334,8 +333,10 @@ task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<mi
 
 task<stream_result> TLS::write_record(tls_record record, std::optional<milliseconds> timeout) {
     if(server_cipher_spec && record.get_type() != ChangeCipherSpec) {
+        assert(cipher_context);
         record = cipher_context->encrypt(record);
     }
+    assert(m_client);
     co_return co_await m_client->write(record.serialise(), timeout);
 }
 
@@ -371,7 +372,6 @@ task<stream_result> TLS::client_handshake_record(tls_record record) {
 }
 
 task<stream_result> TLS::client_handshake_message(const ustring& handshake_message) {
-    std::cout << "handshake message" << std::endl;
     switch (handshake_message.at(0)) {
         [[unlikely]] case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
@@ -404,13 +404,11 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                         co_return result;
                     }
                 }
-                std::cout << "reached here" << std::endl;
                 if(auto result = co_await server_handshake_finished13(); result != stream_result::ok) {
                     co_return result;
                 }
             }
             if(tls_protocol_version == TLS12) {
-                std::cout << "using tls 1.2" << std::endl;
                 if(auto result = co_await server_certificate(); result != stream_result::ok) {
                     co_return result;
                 }
@@ -432,7 +430,6 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                 if(auto result = co_await server_session_ticket(); result != stream_result::ok) {
                     co_return result;
                 }
-                std::cout << "reached client handshake finished" << std::endl;
             } else {
                 client_handshake_finished12(std::move(handshake_message));
                 if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
@@ -509,7 +506,6 @@ task<stream_result> TLS::server_handshake_finished13() {
     auto record = handshake.server_handshake_finished13_record();
     m_expected_record = HandshakeStage::client_handshake_finished; // mTLS would change this
     auto res = co_await write_record(record, project_options.handshake_timeout);
-    std::cout << "and here" << std::endl;
     co_return res;
 }
 
@@ -665,6 +661,7 @@ task<void> TLS::client_alert(tls_record record, std::optional<milliseconds> time
 task<stream_result> TLS::client_heartbeat(tls_record client_record, std::optional<milliseconds> timeout) {
     auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
     if(heartblead) {
+        assert(m_client);
         co_await m_client->write(to_unsigned("heartbleed?"), project_options.error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }

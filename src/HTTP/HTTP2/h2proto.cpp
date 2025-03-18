@@ -26,7 +26,7 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     using namespace std::chrono_literals;
     try {
         do {
-            
+            assert(m_stream);
             auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
             if(res == stream_result::closed) {
                 co_return;
@@ -79,6 +79,7 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     }
     co_return;
     END:
+    assert(error);
     co_await send_goaway(error->m_error_code, error->what());
 }
 
@@ -159,7 +160,7 @@ task<stream_result> HTTP2::handle_window_frame(const h2_window_update& frame) {
         }
         std::coroutine_handle<> handle = nullptr;
         auto stream = it->second.lock();
-        if(stream != nullptr) {
+        if(stream == nullptr) {
             co_return stream_result::closed;
         }
         stream->stream_current_window_remaining += frame.window_size_increment;
@@ -180,6 +181,9 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
     auto it = m_h2streams.find(stream_id);
     if(it != m_h2streams.end()) {
         auto stream = it->second.lock();
+        if(!stream) {
+            co_return stream_result::closed;
+        }
         auto handle = std::exchange(stream->m_writer, nullptr);
         if(handle == nullptr) {
             handle = std::exchange(stream->m_reader, nullptr);
@@ -193,6 +197,7 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
     frame.stream_id = stream_id;
     frame.error_code = code;
     auto frame_bytes = frame.serialise();
+    assert(m_stream);
     co_return co_await m_stream->write(frame_bytes, project_options.session_timeout);
 }
 
@@ -433,6 +438,9 @@ HTTP2::~HTTP2() {
     notify_close_sent = true;
     for (auto it = m_h2streams.begin(); it != m_h2streams.end();) {
         auto stream = it->second.lock();
+        if(!stream) {
+            return;
+        }
         auto reader = std::exchange(stream->m_reader, nullptr);
         if(reader) {
             reader.resume();
@@ -474,6 +482,7 @@ task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const ui
         assert(!notify_close_sent);
         
         auto frame_bytes = frame.serialise();
+        assert(m_stream);
         auto strmres = co_await m_stream->write(frame_bytes, project_options.session_timeout);
         if(strmres != stream_result::ok) {
             co_return strmres;

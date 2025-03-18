@@ -55,15 +55,12 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 }
 
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
-    std::cout << "entering " << std::endl;
     assert(client_stream != nullptr);
     std::string alpn = co_await client_stream->perform_handshake();
     if(alpn.empty()) {
         co_return;
     }
-    std::cout << "did perform handshkae" << std::endl;
     co_await http_client(std::move(client_stream), false, std::move(ip_connections), alpn);
-    std::cout << "did handle client" << std::endl;
 }
 
 // accepts connections and spins up per-client asynchronous tasks
@@ -73,6 +70,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
     try {
         for(;;) {
             if(auto client = co_await listener.accept()) {
+                assert(ip_connections != nullptr);
                 auto conn = ip_connections->add_connection(client->m_ip);
                 if(conn == std::nullopt) [[unlikely]] {
                     continue;
@@ -93,6 +91,8 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
     try {
         for(;;) {
             if(auto client = co_await listener.accept()) {
+                assert(ip_connections != nullptr);
+                assert(client != std::nullopt);
                 auto conn = ip_connections->add_connection(client->m_ip);
                 if(conn == std::nullopt) [[unlikely]] {
                     continue;

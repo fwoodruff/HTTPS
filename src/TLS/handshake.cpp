@@ -219,7 +219,7 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
     if(!key) {
         return {null_psk, std::nullopt};
     }
-    for(int i = 0; i < key->m_keys.size(); i++) { 
+    for(size_t i = 0; i < key->m_keys.size(); i++) { 
         auto key_entry = key->m_keys[i];
         auto ticket = TLS13SessionTicket::decrypt(key_entry.m_key, {});
         if(!ticket) {
@@ -302,9 +302,9 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
         return;
     }
     auto idx_bind = client_hello.pre_shared_key->idxbinders;
-    assert(idx_bind != 0);
+    assert(idx_bind >= 0);
 
-    if(idx_bind >= handshake_message.size()) {
+    if(static_cast<size_t>(idx_bind) >= handshake_message.size()) {
         throw ssl_error("bad binder", AlertLevel::fatal, AlertDescription::internal_error);
     } 
     

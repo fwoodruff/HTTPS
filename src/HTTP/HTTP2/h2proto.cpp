@@ -467,7 +467,7 @@ task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const ui
         h2_data frame;
         frame.type = h2_type::DATA;
         frame.stream_id = stream_id;
-        if(data_end and bytes_to_write == bytes.size()) {
+        if(data_end and bytes_to_write == static_cast<ssize_t>(bytes.size())) {
             frame.flags |= h2_flags::END_STREAM;
         }
         frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);

@@ -26,7 +26,7 @@ ustring TLS13SessionTicket::serialise() {
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket) {
-    constexpr int header_size = 22;
+    constexpr size_t header_size = 22;
     if(ticket.size() < header_size) {
         return std::nullopt;
     }
@@ -37,8 +37,8 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket
     out.ticket_age_add = try_bigend_read(ticket, 13, 4);
     out.cipher_suite = static_cast<cipher_suites>(try_bigend_read(ticket, 17, 2));
     out.early_data_allowed = try_bigend_read(ticket, 19, 1) != 0ull;
-    const uint16_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
-    const uint16_t sni_len = try_bigend_read(ticket, 21, 1);
+    const size_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
+    const size_t sni_len = try_bigend_read(ticket, 21, 1);
     if(ticket.size() != header_size + resumption_secret_len + sni_len) {
         return std::nullopt;
     }

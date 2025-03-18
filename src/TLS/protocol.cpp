@@ -231,9 +231,11 @@ task<std::string> TLS::perform_handshake() {
             record = decrypt_record(record);
             switch ( static_cast<ContentType>(record.get_type()) ) {
                 case Handshake:
+                    std::cout << "handshake" << std::endl;
                     if(co_await client_handshake_record(std::move(record)) != stream_result::ok) {
                         co_return "";
                     }
+                    std::cout << "handled client record" << std::endl;
                     if(m_expected_record == HandshakeStage::application_data) {
                         co_return handshake.alpn;
                     }
@@ -242,8 +244,10 @@ task<std::string> TLS::perform_handshake() {
                     client_change_cipher_spec(std::move(record));
                     break;
                 [[unlikely]] case Application:
+                    std::cout << "app" << std::endl;
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
                 case Alert:
+                    std::cout << "alert" << std::endl;
                     co_await client_alert(std::move(record), project_options.handshake_timeout);
                     co_return "";
                 case Heartbeat:
@@ -367,6 +371,7 @@ task<stream_result> TLS::client_handshake_record(tls_record record) {
 }
 
 task<stream_result> TLS::client_handshake_message(const ustring& handshake_message) {
+    std::cout << "handshake message" << std::endl;
     switch (handshake_message.at(0)) {
         [[unlikely]] case static_cast<uint8_t>(HandshakeType::hello_request):
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
@@ -376,7 +381,7 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                 co_return result;
             }
             if(tls_protocol_version == TLS13) {
-                if(handshake.is_hello_retry()) {
+                if(handshake.server_hello_type == ServerHelloType::hello_retry) {
                     // server hello message was a hello retry message so next record is client hello
                     co_return stream_result::ok;
                 }
@@ -388,7 +393,7 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                 if(auto result = co_await server_encrypted_extensions(); result != stream_result::ok) {
                     co_return result;
                 }
-                if(handshake.selected_psk_mode) {
+                if(handshake.server_hello_type == ServerHelloType::preshared_key or handshake.server_hello_type == ServerHelloType::preshared_key_dh) {
                     m_expected_record = HandshakeStage::server_handshake_finished;
                 } else {
                     // mTLS client_certificate_request message would go here
@@ -399,11 +404,13 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                         co_return result;
                     }
                 }
+                std::cout << "reached here" << std::endl;
                 if(auto result = co_await server_handshake_finished13(); result != stream_result::ok) {
                     co_return result;
                 }
             }
             if(tls_protocol_version == TLS12) {
+                std::cout << "using tls 1.2" << std::endl;
                 if(auto result = co_await server_certificate(); result != stream_result::ok) {
                     co_return result;
                 }
@@ -425,6 +432,7 @@ task<stream_result> TLS::client_handshake_message(const ustring& handshake_messa
                 if(auto result = co_await server_session_ticket(); result != stream_result::ok) {
                     co_return result;
                 }
+                std::cout << "reached client handshake finished" << std::endl;
             } else {
                 client_handshake_finished12(std::move(handshake_message));
                 if(auto result = co_await server_change_cipher_spec(); result != stream_result::ok) {
@@ -455,7 +463,7 @@ task<stream_result> TLS::server_hello() {
     auto result = co_await write_record(hello_record, project_options.handshake_timeout);
 
     if(tls_protocol_version == TLS13) {
-        if(handshake.is_hello_retry()) {
+        if(handshake.server_hello_type == ServerHelloType::hello_retry) {
             m_expected_record = HandshakeStage::client_hello;
         } else {
             auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
@@ -501,6 +509,7 @@ task<stream_result> TLS::server_handshake_finished13() {
     auto record = handshake.server_handshake_finished13_record();
     m_expected_record = HandshakeStage::client_handshake_finished; // mTLS would change this
     auto res = co_await write_record(record, project_options.handshake_timeout);
+    std::cout << "and here" << std::endl;
     co_return res;
 }
 

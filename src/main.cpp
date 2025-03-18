@@ -55,11 +55,15 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 }
 
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
+    std::cout << "entering " << std::endl;
+    assert(client_stream != nullptr);
     std::string alpn = co_await client_stream->perform_handshake();
     if(alpn.empty()) {
         co_return;
     }
+    std::cout << "did perform handshkae" << std::endl;
     co_await http_client(std::move(client_stream), false, std::move(ip_connections), alpn);
+    std::cout << "did handle client" << std::endl;
 }
 
 // accepts connections and spins up per-client asynchronous tasks

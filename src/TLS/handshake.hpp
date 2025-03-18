@@ -28,6 +28,14 @@
 
 namespace fbw {
 
+enum class ServerHelloType {
+    unspecified,
+    preshared_key,
+    preshared_key_dh,
+    diffie_hellman,
+    hello_retry,
+};
+
 class handshake_ctx {  
     
 public:
@@ -45,7 +53,8 @@ public:
     std::string alpn;
 
     std::optional<uint16_t> selected_preshared_key_id = std::nullopt;
-    std::optional<PskKeyExchangeMode> selected_psk_mode = std::nullopt;
+
+    ServerHelloType server_hello_type = ServerHelloType::unspecified;
 
     uint16_t* p_tls_version = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;
@@ -53,8 +62,6 @@ public:
     cipher_suites cipher;
 
     bool middlebox_compatibility();
-
-    int hello_retry_count = 0;
 
     std::string m_SNI {};
 
@@ -75,7 +82,6 @@ public:
     tls_record server_handshake_finished12_record();
     tls_record server_handshake_finished13_record();
 
-    bool is_hello_retry();
 private:
     void hello_extensions(tls_record& buffer);
     void hello_retry_extensions(tls_record& record);

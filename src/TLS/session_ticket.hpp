@@ -20,6 +20,8 @@
 
 namespace fbw {
 
+extern std::array<uint8_t, 16> session_ticket_master_secret;
+
 struct TLS13SessionTicket {
     uint16_t version;
     uint32_t ticket_lifetime;
@@ -30,10 +32,10 @@ struct TLS13SessionTicket {
     ustring resumption_secret;
     std::string sni;
     
-    static std::optional<TLS13SessionTicket> decrypt(ustring ticket, std::array<uint8_t, 16> encryption_key);
+    static std::optional<TLS13SessionTicket> decrypt_ticket(ustring ticket, const std::array<uint8_t, 16>& encryption_key);
     static std::optional<tls_record> server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, ustring nonce);
 private:
-    ustring encrypt(std::array<uint8_t, 16> encryption_key);
+    ustring encrypt_ticket(const std::array<uint8_t, 16>& encryption_key);
     ustring serialise();
     static std::optional<TLS13SessionTicket> deserialise(ustring ticket);
 };

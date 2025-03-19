@@ -541,7 +541,7 @@ task<stream_result> TLS::server_session_ticket() {
     ticket.early_data_allowed = false;
     ticket.resumption_secret = resumption_ticket_psk;
     
-    auto record = TLS13SessionTicket::server_session_ticket_record(ticket, {}, nonce_bytes); // todo: use secure key
+    auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, nonce_bytes); // todo: use secure key
     if(record) {
         auto res = co_await write_record(*record, project_options.handshake_timeout);
         co_return res;

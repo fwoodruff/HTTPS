@@ -9,6 +9,8 @@
 #include "TLS/PEMextract.hpp"
 #include "HTTP/HTTP1_1/string_utils.hpp"
 #include "limiter.hpp"
+#include "TLS/session_ticket.hpp"
+#include "TLS/Cryptography/one_way/keccak.hpp"
 
 #include <memory>
 #include <fstream>
@@ -144,6 +146,7 @@ int main(int argc, const char * argv[]) {
         auto http_listener = fbw::tcplistener::bind(http_port);
         auto https_port = fbw::project_options.server_port;
         auto https_listener = fbw::tcplistener::bind(https_port);
+        fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {
         std::cerr << "main: " << e.what() << std::endl;

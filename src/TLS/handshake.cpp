@@ -222,7 +222,8 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
     }
     for(size_t i = 0; i < key->m_keys.size(); i++) { 
         auto key_entry = key->m_keys[i];
-        auto ticket = TLS13SessionTicket::decrypt(key_entry.m_key, {});
+        auto ticket = TLS13SessionTicket::decrypt_ticket(key_entry.m_key, session_ticket_master_secret);
+        // todo: if ticket is old, rotate session_ticket_master_secret
         if(!ticket) {
             continue;
         }

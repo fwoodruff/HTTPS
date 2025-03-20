@@ -198,6 +198,7 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
     frame.error_code = code;
     auto frame_bytes = frame.serialise();
     assert(m_stream);
+
     co_return co_await m_stream->write(frame_bytes, project_options.session_timeout);
 }
 

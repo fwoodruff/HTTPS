@@ -18,6 +18,7 @@
 #include "Cryptography/cipher/chacha20poly1305.hpp"
 #include "TLS_utils.hpp"
 #include "hello.hpp"
+#include "session_ticket.hpp"
 
 namespace fbw {
 
@@ -132,6 +133,7 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
         default:
             assert(false);
     }
+    assert(hash_ctor);
     handshake_hasher = hash_ctor->clone();
 }
 
@@ -211,23 +213,130 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& cli
     return record;
 }
 
+std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(const ustring& prefix_hash) const {
+    auto key = client_hello.pre_shared_key;
+    assert(hash_ctor != nullptr);
+    auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
+    if(!key) {
+        return {null_psk, std::nullopt};
+    }
+    for(size_t i = 0; i < key->m_keys.size(); i++) { 
+        auto key_entry = key->m_keys[i];
+        auto ticket = TLS13SessionTicket::decrypt_ticket(key_entry.m_key, session_ticket_master_secret);
+        // todo: if ticket is old, rotate session_ticket_master_secret
+        if(!ticket) {
+            continue;
+        }
+        if(ticket->version != 1) {
+            continue;
+        }
+        if(ticket->cipher_suite != cipher) {
+            continue;
+        }
+        if(ticket->sni != "" && ticket->sni != m_SNI) {
+            continue;
+        }
+        if(ticket->early_data_allowed == true) {
+            continue; // not implemented yet
+        }
+        uint64_t computed_age_millis = uint32_t(key_entry.m_obfuscated_age - ticket->ticket_age_add);
+        uint64_t lifetime_millis = uint64_t(ticket->ticket_lifetime) * 1000ull;
+        if(computed_age_millis > lifetime_millis ) {
+            continue;
+        }
+        if(ticket->resumption_secret.size() != hash_ctor->get_hash_size()) {
+            continue;
+        }
+        if(i >= key->m_psk_binder_entries.size()) {
+            break;
+        }
+        auto received_binder = client_hello.pre_shared_key->m_psk_binder_entries[i];
+        ustring computed_binder = compute_binder(*hash_ctor, ticket->resumption_secret, prefix_hash);
+        if(received_binder != computed_binder ) {
+            continue;
+        }
+        return {ticket->resumption_secret, i};
+    }
+    return {null_psk, std::nullopt};
+}
+
 void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     client_hello = parse_client_hello(handshake_message);
-    if(hello_retry_count == 0) {
+    if(server_hello_type != ServerHelloType::hello_retry) {
         auto cipher_id = choose_cipher(client_hello);
         set_cipher_ctx(cipher_id); 
     }
+    assert(handshake_hasher != nullptr);
+    assert(hash_ctor != nullptr);
+    assert(p_tls_version != nullptr);
     
+    ustring psk = ustring(hash_ctor->get_hash_size(), 0);
     if(*p_tls_version == TLS13) {
         if(!client_hello.parsed_extensions.contains(ExtensionType::supported_groups)) {
             throw ssl_error("supported groups are required for TLS 1.3", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
-        client_public_key = choose_client_public_key(client_hello.shared_keys, client_hello.supported_groups);
-        if(is_hello_retry()) {
-            if(hello_retry_count > 0) {
+        if(client_hello.pre_shared_key) {
+            if(client_hello.pskmodes.empty()) {
+                throw ssl_error("preshared_key requires preshared_key_modes extension", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
+        }
+        const bool has_key_share = client_hello.parsed_extensions.contains(ExtensionType::key_share);
+        const bool has_preshared_key = client_hello.parsed_extensions.contains(ExtensionType::pre_shared_key);
+        const bool has_psk_modes = client_hello.parsed_extensions.contains(ExtensionType::psk_key_exchange_modes);
+        const bool has_supported_groups = client_hello.parsed_extensions.contains(ExtensionType::supported_groups);
+
+        const bool has_psk_ke = std::any_of(client_hello.pskmodes.begin(), client_hello.pskmodes.end(),
+                              [](auto mode) { return mode == PskKeyExchangeMode::psk_ke; });
+
+        const bool has_psk_dhe_ke = std::any_of(client_hello.pskmodes.begin(), client_hello.pskmodes.end(),
+                                   [](auto mode) { return mode == PskKeyExchangeMode::psk_dhe_ke; });
+
+        if(!has_key_share && (!has_psk_ke || has_psk_dhe_ke)) {
+            throw ssl_error("no key share sent", AlertLevel::fatal, AlertDescription::illegal_parameter);
+        }
+        if(!has_psk_modes && has_preshared_key ) {
+            throw ssl_error("preshared key sent without accepting any psk modes", AlertLevel::fatal, AlertDescription::illegal_parameter);
+        }
+        if(has_key_share != has_supported_groups) {
+            throw ssl_error("key share must be sent with supported groups", AlertLevel::fatal, AlertDescription::illegal_parameter);
+        }
+        if(has_psk_dhe_ke && !has_key_share) {
+            throw ssl_error("offered PSK DHE without offering a key", AlertLevel::fatal, AlertDescription::illegal_parameter);
+        }
+
+        
+        if(has_preshared_key) {
+            assert(client_hello.pre_shared_key);
+            size_t idx_bind = client_hello.pre_shared_key->idxbinders;
+            const std::span<const uint8_t> truncated_hello( handshake_message.begin(), handshake_message.begin() + idx_bind );
+            auto handshake_prefix_hasher = handshake_hasher->clone();
+            handshake_prefix_hasher->update(truncated_hello);
+            const auto prefix_hash = handshake_prefix_hasher->hash();
+            auto [resumption_psk, selected_identity] = get_resumption_psk(prefix_hash);
+            psk = resumption_psk;
+            selected_preshared_key_id = selected_identity;
+        }
+        const bool established_ps_key = selected_preshared_key_id.has_value();
+
+        if(has_key_share) {
+            client_public_key = choose_client_public_key(client_hello.shared_keys, client_hello.supported_groups);
+        }
+        const bool established_dh_key = !client_public_key.key.empty();
+
+        if(has_psk_dhe_ke and established_ps_key and established_dh_key) {
+            server_hello_type = ServerHelloType::preshared_key_dh;
+        } else if(has_psk_ke and established_ps_key) {
+            server_hello_type = ServerHelloType::preshared_key;
+        } else if(established_dh_key) {
+            server_hello_type = ServerHelloType::diffie_hellman;
+        } else {
+            if(server_hello_type == ServerHelloType::hello_retry) {
                 throw ssl_error("one hello retry should be sufficient", AlertLevel::fatal, AlertDescription::handshake_failure);
             }
-            hello_retry_count++;
+            server_hello_type = ServerHelloType::hello_retry;
+            auto message_hash_record = synthetic_message_hash(*hash_ctor, handshake_message);
+            handshake_hasher->update(message_hash_record.m_contents);
+            return;
         }
     }
     
@@ -235,22 +344,10 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     alpn = choose_alpn(client_hello.application_layer_protocols);
     m_SNI = choose_server_name(client_hello.server_names);
 
-    if(is_hello_retry()) {
-        auto message_hash_record = synthetic_message_hash(*hash_ctor, handshake_message);
-        handshake_hasher->update(message_hash_record.m_contents);
-    } else {
-        handshake_hasher->update(handshake_message);
+    handshake_hasher->update(handshake_message);
+    if(*p_tls_version == TLS13) {
+        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, psk, handshake_hasher->hash());
     }
-    
-    if(*p_tls_version == TLS13 and !is_hello_retry()) {
-        auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
-        tls13_early_key_calc(*hash_ctor, tls13_key_schedule, null_psk, handshake_hasher->hash());
-    }
-}
-
-bool handshake_ctx::is_hello_retry() {
-    assert(p_tls_version != nullptr);
-    return client_public_key.key.empty() and *p_tls_version == TLS13;
 }
 
 tls_record handshake_ctx::server_hello_record() {
@@ -258,14 +355,13 @@ tls_record handshake_ctx::server_hello_record() {
     hello_record.m_contents.reserve(128);
 
     // server random
-    m_server_random = make_hello_random(*p_tls_version, is_hello_retry());
+    m_server_random = make_hello_random(*p_tls_version, server_hello_type == ServerHelloType::hello_retry);
 
     hello_record.write1(HandshakeType::server_hello);
     
     hello_record.start_size_header(3);
 
     hello_record.write2(TLS12);
-    
 
     hello_record.write(m_server_random);
 
@@ -279,7 +375,7 @@ tls_record handshake_ctx::server_hello_record() {
     hello_record.write2(cipher);
     hello_record.write1(0); // no compression
 
-    if(is_hello_retry()) {
+    if(server_hello_type == ServerHelloType::hello_retry) {
         hello_retry_extensions(hello_record);
     } else {
         hello_extensions(hello_record);
@@ -292,8 +388,13 @@ tls_record handshake_ctx::server_hello_record() {
     
     handshake_hasher->update(hello_record.m_contents);
 
-    if(*p_tls_version == TLS13 and !is_hello_retry()) {
-        ustring shared_secret = get_shared_secret(server_private_key_ephem, client_public_key);
+    if(*p_tls_version == TLS13 and server_hello_type != ServerHelloType::hello_retry) {
+        ustring shared_secret;
+        if(server_hello_type == ServerHelloType::preshared_key) {
+            shared_secret = ustring();
+        } else {
+            shared_secret = get_shared_secret(server_private_key_ephem, client_public_key);
+        }
         tls13_handshake_key_calc(*hash_ctor, tls13_key_schedule, shared_secret, handshake_hasher->hash());
     }
     return hello_record;
@@ -469,7 +570,7 @@ void handshake_ctx::hello_retry_extensions(tls_record& record) {
     assert(p_tls_version != nullptr);
     assert(*p_tls_version == TLS13);
     assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
-    assert(is_hello_retry());
+    assert(server_hello_type == ServerHelloType::hello_retry);
     record.start_size_header(2);
     write_supported_versions(record, *p_tls_version);
     write_cookie(record);
@@ -480,11 +581,13 @@ void handshake_ctx::hello_retry_extensions(tls_record& record) {
 void handshake_ctx::hello_extensions(tls_record& record) {
     record.start_size_header(2);
     if(*p_tls_version == TLS13) {
-        assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
-        assert(!client_public_key.key.empty());
-        auto [ privkey, pubkey_ephem ] = server_keypair(client_public_key.key_type);
-        server_private_key_ephem = privkey;
-        write_key_share(record, pubkey_ephem);
+        if(server_hello_type == ServerHelloType::diffie_hellman or server_hello_type == ServerHelloType::preshared_key_dh) {
+            assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
+            assert(!client_public_key.key.empty());
+            auto [ privkey, pubkey_ephem ] = server_keypair(client_public_key.key_type);
+            server_private_key_ephem = privkey;
+            write_key_share(record, pubkey_ephem);
+        }
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {
         write_supported_versions(record, *p_tls_version);
@@ -499,6 +602,11 @@ void handshake_ctx::hello_extensions(tls_record& record) {
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::heartbeat)) {
         write_heartbeat(record);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::pre_shared_key)) {
+        if(server_hello_type == ServerHelloType::preshared_key or server_hello_type == ServerHelloType::preshared_key_dh) {
+            write_pre_shared_key_extension(record, *selected_preshared_key_id);
+        }
     }
     record.end_size_header();
 }
@@ -527,6 +635,7 @@ ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) 
     ustring client_hello_str(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
     tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", client_hello_str + m_server_random, 48);
 
+    assert(handshake_hasher);
     handshake_hasher->update(key_exchange);
 
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes

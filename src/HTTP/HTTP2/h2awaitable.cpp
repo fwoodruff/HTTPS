@@ -127,6 +127,9 @@ bool h2read_headers::await_ready() const noexcept {
 
 bool h2read_headers::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
     auto conn = m_hstream.lock();
+    if(!conn) {
+        return false;
+    }
     if(conn->client_sent_headers == stream_frame_state::data_expected) {
         return false;
     }
@@ -144,7 +147,7 @@ std::pair<std::vector<entry_t>, stream_result> h2read_headers::await_resume() {
         return { {}, stream_result::closed };
     }
     if(conn->client_sent_headers == stream_frame_state::data_expected) {
-        return { std::move(conn->m_received_headers), stream_result::ok };
+        return { std::move(conn->m_received_headers), stream_result::ok }; // todo check if this move gets reused
     } else if(conn->client_sent_headers == stream_frame_state::done) {
         return { std::move(conn->m_received_headers), stream_result::ok };
     }

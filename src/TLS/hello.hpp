@@ -19,6 +19,18 @@ struct key_share {
     ustring key;
 };
 
+struct pre_shared_key_entry {
+    ustring m_key;
+    uint32_t m_obfuscated_age;
+};
+
+struct preshared_key_ext {
+    std::ptrdiff_t idxbinders_ext = 0;
+    std::ptrdiff_t idxbinders = 0;
+    std::vector<pre_shared_key_entry> m_keys;
+    std::vector<ustring> m_psk_binder_entries;
+};
+
 struct hello_record_data {
     std::unordered_set<ExtensionType> parsed_extensions;
 
@@ -33,11 +45,13 @@ struct hello_record_data {
     std::vector<NamedGroup> supported_groups{};
     std::vector<SignatureScheme> signature_schemes{};
     std::vector<uint8_t> ec_point_formats{};
-    ustring session_ticket{};
+    std::optional<preshared_key_ext> pre_shared_key{};
     bool encrypt_then_mac = true;
     bool extended_master_secret = true;
     bool client_heartbeat = false;
     bool server_heartbeat = false;
+
+    std::vector<PskKeyExchangeMode> pskmodes;
 
     std::vector<SignatureAlgorithm> signature_algorithms{};
     std::vector<uint16_t> supported_versions{};
@@ -57,6 +71,7 @@ void write_key_share(tls_record& record, const key_share& pubkey_ephem);
 void write_key_share_request(tls_record& record, NamedGroup chosen_group);
 void write_supported_versions(tls_record& record, uint16_t version);
 void write_cookie(tls_record& record);
+void write_pre_shared_key_extension(tls_record& record, uint16_t key_id);
 ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
 std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype);
 ustring make_hello_random(uint16_t version, bool requires_hello_retry);

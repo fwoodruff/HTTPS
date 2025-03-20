@@ -10,9 +10,17 @@
 
 namespace fbw {
 
+ustring compute_binder(const hash_base& base, ustring resumption_psk, std::span<const uint8_t> binder_hash) {
+    auto empty_hash = do_hash(base, ustring{});
+    ustring early_secret = hkdf_extract(base, ustring{}, resumption_psk);
+    ustring binder_key = hkdf_expand_label(base, early_secret, "res binder", empty_hash, base.get_hash_size());
+    auto expanded_computed_binder = hkdf_expand_label(base, binder_key, "finished", fbw::ustring{}, 32);
+    auto computed_binder = hkdf_extract(base, expanded_computed_binder, binder_hash);
+    return computed_binder;
+}
+
 void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, ustring psk, ustring client_hello_hash) {
     auto empty_hash = do_hash(base, ustring{});
-
     key_sch.early_secret = hkdf_extract(base, ustring{}, psk);
     key_sch.resumption_binder_key = hkdf_expand_label(base, key_sch.early_secret, "res binder", empty_hash, base.get_hash_size());
     key_sch.external_binder_key = hkdf_expand_label(base, key_sch.early_secret, "ext binder", empty_hash, base.get_hash_size());

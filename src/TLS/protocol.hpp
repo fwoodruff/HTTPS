@@ -87,12 +87,13 @@ private:
     [[nodiscard]] task<stream_result> server_hello_done();
     [[nodiscard]] task<stream_result> server_handshake_finished12();
     [[nodiscard]] task<stream_result> server_handshake_finished13();
+    [[nodiscard]] task<stream_result> server_session_ticket();
     [[nodiscard]] task<stream_result> server_key_update();
     [[nodiscard]] task<stream_result> server_encrypted_extensions();
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     [[nodiscard]] task<stream_result> server_change_cipher_spec();
     void client_change_cipher_spec(tls_record);
-
+    
 
     static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
 

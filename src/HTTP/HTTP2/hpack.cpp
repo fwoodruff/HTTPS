@@ -149,7 +149,9 @@ size_t table::index(const entry_t& entry) {
     if(it == lookup_idx.end()) {
         return 0;
     }
-    return it->second->idx;
+    auto deque_entry = it->second;
+    assert(deque_entry != entries_ordered.end());
+    return deque_entry->idx;
 }
 
 std::optional<entry_t> table::field(size_t key) {

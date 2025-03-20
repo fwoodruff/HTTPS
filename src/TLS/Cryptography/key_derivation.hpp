@@ -41,6 +41,7 @@ struct key_schedule {
     ustring resumption_master_secret;
 };
 
+ustring compute_binder(const hash_base& base, ustring resumption_psk, std::span<const uint8_t> hello_prefix);
 void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, ustring psk, ustring client_hello_hash);
 void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, ustring ecdh, ustring server_hello_hash);
 void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, ustring server_finished_hash);

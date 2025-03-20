@@ -121,6 +121,37 @@ std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t
     return alpn_types;
 }
 
+preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
+    preshared_key_ext psk_exts;
+    auto psk_ids = der_span_read(extension_data, 0, 2);
+    psk_exts.idxbinders_ext = psk_ids.size() + 2;
+    extension_data = extension_data.subspan(psk_ids.size() + 2);
+    while(!psk_ids.empty()) {
+        auto psk = der_span_read(psk_ids, 0, 2);
+        pre_shared_key_entry psk_entry;
+        psk_entry.m_key = {psk.begin(), psk.end()};
+        psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size() + 2, 4);
+        psk_exts.m_keys.push_back(std::move(psk_entry));
+        psk_ids = psk_ids.subspan(psk.size() + 6);
+    }
+    auto binder_data = der_span_read(extension_data, 0, 2);
+    while(!binder_data.empty()) {
+        auto binder = der_span_read(binder_data, 0, 1);
+        binder_data = binder_data.subspan(binder.size() + 1);
+        psk_exts.m_psk_binder_entries.emplace_back(binder.begin(), binder.end());
+    }
+    return psk_exts;
+}
+
+std::vector<PskKeyExchangeMode> get_pskmodes(std::span<const uint8_t> extension_data) {
+    auto spn = der_span_read(extension_data, 0, 1);
+    std::vector<PskKeyExchangeMode> out;
+    for(auto c : spn) {
+        out.push_back(static_cast<PskKeyExchangeMode>(c));
+    }
+    return out;
+}
+
 void parse_extension(hello_record_data& record, extension ext) {
     switch(ext.type) {
         case ExtensionType::server_name:
@@ -157,6 +188,13 @@ void parse_extension(hello_record_data& record, extension ext) {
         case ExtensionType::signed_certificate_timestamp:
             record.parsed_extensions.insert(ext.type);
             break;
+        case ExtensionType::psk_key_exchange_modes:
+            record.parsed_extensions.insert(ext.type);
+            record.pskmodes = get_pskmodes(ext.data);
+            break;
+        case ExtensionType::pre_shared_key:
+            record.parsed_extensions.insert(ext.type);
+            record.pre_shared_key = get_preshared_keys(ext.data);
         default:
             break;
     }
@@ -219,6 +257,19 @@ hello_record_data parse_client_hello(const ustring& hello) {
         ustring ext_data(extension_span.begin(), extension_span.end());
         extension ext = {static_cast<ExtensionType>(extension_type), ext_data};
         parse_extension(record, ext);
+
+        if(ext.type == ExtensionType::pre_shared_key) {
+            if(!extensions.empty()) {
+                throw ssl_error("preshared key must be last extension", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
+            const uint8_t* dptr = &extension_span.front();
+            const uint8_t* dfrom = &hello.front();
+            assert(record.pre_shared_key);
+            auto diff = dptr - dfrom;
+            assert(record.pre_shared_key->idxbinders == 0);
+            assert( record.pre_shared_key->idxbinders_ext != 0);
+            record.pre_shared_key->idxbinders = record.pre_shared_key->idxbinders_ext + diff;
+        }
     }
     return record;
 }
@@ -280,6 +331,13 @@ void write_cookie(tls_record& record) {
     record.start_size_header(2);
     record.write(to_unsigned("cookie"));
     record.end_size_header();
+    record.end_size_header();
+}
+
+void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
+    record.write2(ExtensionType::pre_shared_key);
+    record.start_size_header(2);
+    record.write2(key_id);
     record.end_size_header();
 }
 

@@ -18,6 +18,7 @@
 #include <sstream>
 #include <filesystem>
 #include <unordered_map>
+#include <print>
 
 // todo:
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
@@ -38,8 +39,7 @@
 // go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
 // Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
-// TLS session tickets are currently plaintext!!
-// not working for cURL
+// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket nonce, with eviction
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -52,10 +52,13 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {
-        std::cerr << e.what();
+        std::print(std::cerr, "{}\n", e.what());
     }
 }
 
+// todo: refactor this so that the http client just reads and writes to the stream, where handshakes are an implementation detail
+// add a method for the http client to 'peak and review' early data if any.
+// then consider replacing the existing stateful mechanism for preventing ticket replay attacks with a stateless one
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
     std::string alpn = co_await client_stream->perform_handshake();
@@ -85,7 +88,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             }
         }
     } catch(const std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        std::print(std::cerr, "{}\n", e.what());
     }
 }
 
@@ -104,7 +107,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             }
         }
     } catch(const std::exception& e ) {
-        std::cerr << e.what() << std::endl;
+        std::print(std::cerr, "{}\n", e.what());
     }
 }
 
@@ -115,29 +118,21 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         static_cast<void>(fbw::privkey_for_domain(fbw::project_options.default_subfolder));
         fbw::parse_tlds(fbw::project_options.tld_file);
 
-        std::stringstream ss;
-        std::clog << ss.str() << std::flush;
-        ss << "Redirect running on port " << http_port << std::endl;
-        std::clog << ss.str();
-        std::stringstream ss_s;
-        ss_s << "HTTPS running on port " << https_port << std::endl;
-        std::clog << ss_s.str() << std::flush;
+        std::print("Redirect running on port {}\n", http_port);
+        std::print("HTTPS running on port {}\n", https_port);
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-        std::cerr << "Mime folder: " << std::filesystem::absolute(fbw::project_options.mime_folder) << std::endl;
-        std::cerr << "Key file: " << std::filesystem::absolute(fbw::project_options.key_file) << std::endl;
-        std::cerr << "Certificate file: " << std::filesystem::absolute(fbw::project_options.certificate_file) << std::endl;
+        std::print(std::cerr, "{}\n", e.what());
+        std::print(std::cerr, "Mime folder: {}\n", std::filesystem::absolute(fbw::project_options.mime_folder).string());
+        std::print(std::cerr, "Key file: {}\n", std::filesystem::absolute(fbw::project_options.key_file).string());
+        std::print(std::cerr, "Certificate file: {}\n", std::filesystem::absolute(fbw::project_options.certificate_file).string());
     }
     co_return;
 }
-
-
-
 
 int main(int argc, const char * argv[]) {
     try {

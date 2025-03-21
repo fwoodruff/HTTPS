@@ -211,7 +211,7 @@ void parse_tlds(const std::string& tld_filename) {
 }
 
 bool is_tld(std::string domain) {
-    return known_tlds.find(domain) != known_tlds.end();
+    return known_tlds.contains(domain);
 }
 
 std::string parse_domain(std::string hostname) {

@@ -31,12 +31,12 @@ struct hazard_pointer_batch {
     std::atomic<hazard_pointer_batch*> m_next = nullptr;
     // if the program has more threads than this expected upper bound, next() is used to expand the list
     hazard_pointer_batch* next() {
-        hazard_pointer_batch* lnext = m_next.load(consume);
+        hazard_pointer_batch* lnext = m_next.load(acquire);
         if(lnext != nullptr) {
             return lnext;
         }
         hazard_pointer_batch* new_batch = new hazard_pointer_batch{};
-        if(!m_next.compare_exchange_strong(lnext, new_batch, release, consume)) {
+        if(!m_next.compare_exchange_strong(lnext, new_batch, release, acquire)) {
             delete new_batch;
             new_batch = lnext;
         }

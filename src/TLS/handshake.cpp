@@ -20,7 +20,11 @@
 #include "hello.hpp"
 #include "session_ticket.hpp"
 
+#include <print>
+
 namespace fbw {
+
+std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_nonces {};
 
 // once client sends over their supported ciphers
 // if client supports ChaCha20 we enforce that, ideally with TLS 1.3
@@ -255,6 +259,10 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
         if(received_binder != computed_binder ) {
             continue;
         }
+        auto set_nonce = session_ticket_nonces[ticket->nonce % SESSION_HASHSET_SIZE].exchange(0, std::memory_order_relaxed);
+        if(set_nonce != ticket->nonce) {
+            continue;
+        }
         return {ticket->resumption_secret, i};
     }
     return {null_psk, std::nullopt};
@@ -304,7 +312,6 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
             throw ssl_error("offered PSK DHE without offering a key", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
 
-        
         if(has_preshared_key) {
             assert(client_hello.pre_shared_key);
             size_t idx_bind = client_hello.pre_shared_key->idxbinders;
@@ -325,8 +332,14 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
 
         if(has_psk_dhe_ke and established_ps_key and established_dh_key) {
             server_hello_type = ServerHelloType::preshared_key_dh;
+            if(client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+                zero_rtt = true;
+            }
         } else if(has_psk_ke and established_ps_key) {
             server_hello_type = ServerHelloType::preshared_key;
+            if(client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+                zero_rtt = true;
+            }
         } else if(established_dh_key) {
             server_hello_type = ServerHelloType::diffie_hellman;
         } else {
@@ -407,6 +420,11 @@ tls_record handshake_ctx::server_encrypted_extensions_record() {
     out.start_size_header(2);
     if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation)) {
         write_alpn_extension(out, alpn);
+    }
+    if(client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+        if(zero_rtt) {
+            write_early_data_encrypted_ext(out);
+        }
     }
     out.end_size_header();
     out.end_size_header();

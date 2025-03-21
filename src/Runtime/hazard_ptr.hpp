@@ -32,7 +32,7 @@ struct hazard_pointer_obj_base;
 
 struct hazard_pointer {
     
-    template<class T>
+    template<typename T>
     T* protect(const std::atomic<T*>& src) noexcept {
         using enum std::memory_order;
         for(;;) {

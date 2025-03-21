@@ -58,7 +58,7 @@ public:
 //private: // Linux doesn't like this template friend trick so must expose as public
     constexpr static int RADIXBITS = sizeof(radix) * CHAR_BIT;
     constexpr static int INTBYTES = (INTBITS + CHAR_BIT - 1)/CHAR_BIT;
-    template<int b = INTBITS>
+    template<auto b = INTBITS>
     constexpr static int INTRADICES = (b + RADIXBITS - 1) /RADIXBITS;
     using rep = std::array<radix, INTRADICES<INTBITS> >;
     rep v {0};
@@ -289,7 +289,7 @@ public:
     constexpr bool operator>=(const uVar &b) const noexcept { return !(b > *this); }
     constexpr bool operator<=(const uVar &b) const noexcept { return !(b < *this); }
 
-    template<int LBITS>
+    template<auto LBITS>
     friend constexpr uVar<INTBITS+LBITS> operator*(const uVar<LBITS>& lhs, const uVar& rhs) noexcept {
         uVar<INTBITS+LBITS> out;
         static_assert(sizeof(radix2) >= 2*sizeof(radix));
@@ -310,7 +310,7 @@ public:
         return out;
     }
     
-    template<int LBITS>
+    template<auto LBITS>
     constexpr friend std::pair<uVar<LBITS>,uVar> divmod(const uVar<LBITS>& numerator, const uVar& denominator) noexcept {
         std::pair<uVar<LBITS>,uVar> out {{},{}};
         uVar<LBITS+INTBITS> quotient_shifted;

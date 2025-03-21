@@ -85,7 +85,7 @@ std::string extension_from_path(const std::filesystem::path& path) {
     for(ssize_t i = filename.size() - delimiter.size(); i >= 0; --i) {
         if(filename.substr(i, delimiter.size()) == delimiter) {
             auto ext = filename.substr(i + delimiter.size());
-            if(MIMEmap.find(ext) != MIMEmap.end()) {
+            if(MIMEmap.contains(ext)) {
                 return ext;
             }
         }

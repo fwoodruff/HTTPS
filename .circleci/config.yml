@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   test:
     docker:
-      - image: cimg/base:2024.07
+      - image: gcc:14
     steps:
       - checkout
       - run:
@@ -22,6 +22,11 @@ jobs:
             curl -kv https://localhost:8443
             curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost:8443
             curl http://localhost:8080
+      - run:
+          name: Test session tickets
+          command: |
+            echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
+            echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" | openssl s_client -connect localhost:8443 -tls1_3 -sess_in session.pem 2>&1 | grep -q "Reused, TLSv1.3"
 
 workflows:
   run_tests:

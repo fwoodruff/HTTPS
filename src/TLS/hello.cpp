@@ -275,8 +275,7 @@ hello_record_data parse_client_hello(const ustring& hello) {
 }
 
 void write_alpn_extension(tls_record& record, std::string alpn) {
-    ustring alpn_protocol_data { 0x00, 0x10 };
-    record.write(alpn_protocol_data);
+    record.write2(ExtensionType::application_layer_protocol_negotiation);
     record.start_size_header(2);
     record.start_size_header(2);
     record.start_size_header(1);
@@ -284,6 +283,12 @@ void write_alpn_extension(tls_record& record, std::string alpn) {
     record.end_size_header();
     record.end_size_header();
     record.end_size_header();
+}
+
+void write_early_data_encrypted_ext(tls_record& record) {
+    record.write2(ExtensionType::early_data);
+    record.start_size_header(2);
+    record.start_size_header(2);
 }
 
 void write_renegotiation_info(tls_record& record) {

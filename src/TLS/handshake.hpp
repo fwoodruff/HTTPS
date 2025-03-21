@@ -36,6 +36,9 @@ enum class ServerHelloType {
     hello_retry,
 };
 
+constexpr size_t SESSION_HASHSET_SIZE = 256;
+extern std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_nonces;
+
 class handshake_ctx {  
     
 public:
@@ -55,6 +58,7 @@ public:
     std::optional<uint16_t> selected_preshared_key_id = std::nullopt;
 
     ServerHelloType server_hello_type = ServerHelloType::unspecified;
+    bool zero_rtt = false;
 
     uint16_t* p_tls_version = nullptr;
     std::unique_ptr<cipher_base>* p_cipher_context;

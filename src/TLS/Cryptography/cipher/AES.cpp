@@ -12,9 +12,8 @@
 #include <cassert>
 #include <stdint.h>
 #include <algorithm>
-#include <iostream>
-#include <iomanip>
 #include <vector>
+#include <print>
 
 // This performs AES encryption and decryption on 16 byte blocks of data, using 128 bit, 192 bit and 256 bit keys
 
@@ -32,12 +31,12 @@ void SubBytes(aes_block&) noexcept;
 
 // rotates left the bits of a byte e.g.  10001001 -> 00010011
 // this is one of the steps in AES
-constexpr uint8_t ROTL8(uint8_t x, int shift) {
+consteval uint8_t ROTL8(uint8_t x, int shift) {
     return (x << shift) | (x >> (8 - shift));
 }
 
 // AES has a reversible substitution step
-constexpr std::array<uint8_t,256> SBOX = [](){
+constexpr std::array<uint8_t,256> SBOX = []() consteval {
     // https://en.wikipedia.org/wiki/Rijndael_S-box
     std::array<uint8_t,256> sbox {0};
     uint8_t p = 1, q = 1;
@@ -61,7 +60,7 @@ constexpr std::array<uint8_t,256> SBOX = [](){
 }();
 
 // This inverts the array computed above
-constexpr std::array<uint8_t,256> INVSBOX = [](){
+constexpr std::array<uint8_t,256> INVSBOX = []() consteval {
     std::array<uint8_t,256> invsbox {0};
     for(int i = 0; i < 256; i++) {
         invsbox[SBOX[i]] = i;
@@ -112,7 +111,7 @@ void InvShiftRows(aes_block& b) noexcept {
 }
 
 // performs all Galois field multiplications at runtime
-constexpr uint8_t GMul_explicit(uint8_t a, uint8_t b) {
+consteval uint8_t GMul_explicit(uint8_t a, uint8_t b) {
     uint8_t p = 0;
     for (int i = 0; i < 8; i++) {
         if ((b & 1) != 0) {
@@ -130,7 +129,7 @@ constexpr uint8_t GMul_explicit(uint8_t a, uint8_t b) {
 
 
 // Caches the Galois field multiplications and retrieves from the cache
-constexpr auto GMULRES = []() {
+constexpr auto GMULRES = []() consteval {
     std::array<std::array<uint8_t,256>,16> resa {{}};
     for(int i = 0; i < 16; i++) {
         for(int j = 0; j < 256; j++) {
@@ -184,7 +183,7 @@ void AddRoundKey(aes_block& b, const byte_word* const roundkey) noexcept {
 }
 
 // Round constants used in the key expansion
-constexpr auto Rcon = [](){
+constexpr auto Rcon = []() consteval {
     std::array<uint8_t,32> res {0};
     uint8_t c = 1;
     for(int i = 1; i < 32; i ++) {

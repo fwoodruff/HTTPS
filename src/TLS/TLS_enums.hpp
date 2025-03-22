@@ -308,6 +308,12 @@ enum class ExtensionType : uint16_t{
     renegotiation_info = 65281
 };
 
+enum class CertificateCompressionAlgorithm : uint16_t {
+    zlib = 1,
+    brotli = 2,
+    zstd = 3,
+};
+
 enum class HashAlgorithm : uint8_t {
     none = 0,
     md5 = 1,

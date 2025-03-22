@@ -197,7 +197,7 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
     }
     for(const auto& group : groups) {
         switch(group) {
-            case NamedGroup::x25519:
+            case NamedGroup::x25519: [[fallthrough]];
             case NamedGroup::secp256r1:
                 return key_share{ group, {} };
             default:
@@ -241,12 +241,26 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
         if(ticket->sni != "" && ticket->sni != m_SNI) {
             continue;
         }
-        if(ticket->early_data_allowed == true) {
-            continue; // not implemented yet
+        if(!ticket->early_data_allowed && client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+            continue;
         }
         uint64_t computed_age_millis = uint32_t(key_entry.m_obfuscated_age - ticket->ticket_age_add);
         uint64_t lifetime_millis = uint64_t(ticket->ticket_lifetime) * 1000ull;
         if(computed_age_millis > lifetime_millis ) {
+            continue;
+        }
+        uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+
+        if(ticket->issued_at > now) {
+            continue;
+        }
+        uint64_t measured_age_millis = now - ticket->issued_at;
+        if(measured_age_millis + 3000 < computed_age_millis) {
+            continue;
+        }
+        if(measured_age_millis > computed_age_millis + 10000) {
             continue;
         }
         if(ticket->resumption_secret.size() != hash_ctor->get_hash_size()) {
@@ -264,7 +278,6 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
         if(set_nonce != ticket->nonce) {
             continue;
         }
-
         return {ticket->resumption_secret, i};
     }
     return {null_psk, std::nullopt};
@@ -332,14 +345,16 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
         }
         const bool established_dh_key = !client_public_key.key.empty();
 
+        bool can_handle_0rtt = client_hello.parsed_extensions.contains(ExtensionType::early_data) and selected_preshared_key_id == 0;
+
         if(has_psk_dhe_ke and established_ps_key and established_dh_key) {
             server_hello_type = ServerHelloType::preshared_key_dh;
-            if(client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+            if(can_handle_0rtt) {
                 zero_rtt = true;
             }
         } else if(has_psk_ke and established_ps_key) {
             server_hello_type = ServerHelloType::preshared_key;
-            if(client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+            if(can_handle_0rtt) {
                 zero_rtt = true;
             }
         } else if(established_dh_key) {
@@ -423,10 +438,9 @@ tls_record handshake_ctx::server_encrypted_extensions_record() {
     if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation)) {
         write_alpn_extension(out, alpn);
     }
-    if(client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
-        if(zero_rtt) {
-            write_early_data_encrypted_ext(out);
-        }
+    if(zero_rtt) {
+        assert(client_hello.parsed_extensions.contains(ExtensionType::early_data));
+        write_early_data_encrypted_ext(out);
     }
     out.end_size_header();
     out.end_size_header();
@@ -624,7 +638,7 @@ void handshake_ctx::hello_extensions(tls_record& record) {
     if(client_hello.parsed_extensions.contains(ExtensionType::application_layer_protocol_negotiation) and *p_tls_version == TLS12) {
         write_alpn_extension(record, alpn);
     }
-    if(client_hello.parsed_extensions.contains(ExtensionType::heartbeat)) {
+    if(client_hello.parsed_extensions.contains(ExtensionType::heartbeat) and *p_tls_version == TLS12) {
         write_heartbeat(record);
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::pre_shared_key)) {

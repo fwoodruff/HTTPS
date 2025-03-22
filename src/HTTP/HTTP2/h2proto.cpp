@@ -246,7 +246,8 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
         auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
         strm->receive_headers(std::move(some_headers));
         m_h2streams.insert({frame.stream_id, strm});
-        it = m_h2streams.find(frame.stream_id);
+        it = m_h2streams.find(frame.stream_id); // todo: check logic
+
         assert(it != m_h2streams.end());
         assert(strm != nullptr);
         sync_spawn(handle_stream(strm));

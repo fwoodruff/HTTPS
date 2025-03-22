@@ -56,7 +56,7 @@ extern options project_options;
 void init_options();
 
 template<typename T>
-[[nodiscard]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {
+[[nodiscard("returns read integer")]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {
     uint64_t len = 0;
     for(size_t i = idx; i < idx + nbytes; i ++) {
         len <<= 8;
@@ -69,7 +69,7 @@ template<typename T>
 }
 
 template<typename T>
-[[nodiscard]] inline std::span<const uint8_t> der_span_read(const T& container, size_t idx, size_t nbytes) {
+[[nodiscard("returns span")]] inline std::span<const uint8_t> der_span_read(const T& container, size_t idx, size_t nbytes) {
     auto size = try_bigend_read(container, idx, nbytes );
     if(container.size() < idx + nbytes + size) {
         throw std::out_of_range{"out of range"};
@@ -93,13 +93,13 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     }
 }
 
-[[nodiscard]] inline ustring to_unsigned(std::string s) {
+[[nodiscard("returns unsigned string")]] inline ustring to_unsigned(std::string s) {
     ustring out;
     out.append(s.cbegin(), s.cend());
     return out;
 }
 
-[[nodiscard]] inline std::string to_signed(ustring s) {
+[[nodiscard("returns signed string")]] inline std::string to_signed(ustring s) {
     std::string out;
     out.append(s.cbegin(), s.cend());
     return out;

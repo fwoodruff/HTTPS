@@ -37,6 +37,7 @@ class HTTP {
     bool m_redirect;
     std::unique_ptr<stream> m_stream;
     ustring m_buffer;
+    bool handled_request = false;
 public:
     [[nodiscard]] task<void> client();
     HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect);

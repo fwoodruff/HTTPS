@@ -21,7 +21,7 @@
 namespace fbw {
 
 void remove_whitespace(std::string& str) {
-    str.erase(std::remove_if(str.begin(), str.end(), ::isspace), str.end());
+    std::erase_if(str, ::isspace);
 }
 
 std::vector<std::string> split(const std::string& line, const std::string& delim) {
@@ -47,7 +47,7 @@ void init_options() {
     const std::filesystem::path config_file = "config.txt"; // todo: make this a command line argument
     
     auto file = std::ifstream(config_file);
-    if(! file.good()) {
+    if(!file.is_open()) {
         throw std::runtime_error("no config.txt file at " + (std::filesystem::current_path()/config_file.relative_path()).string());
     }
     std::string key;
@@ -78,7 +78,6 @@ void init_options() {
     project_options.handshake_timeout = 180s;
     project_options.keep_alive = 5s;
     project_options.error_timeout = 2s;
-
 }
 
 

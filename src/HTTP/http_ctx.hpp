@@ -47,10 +47,6 @@ namespace fbw {
 class http_ctx {
 public:
 
-    // peak_early_headers()
-    // peak_early_data()
-    // accept_early()
-    // reject_early()
     virtual task<stream_result> read_headers(std::vector<entry_t>& headers) = 0;
     virtual task<std::pair<stream_result, bool>> append_http_data(ustring& buffer) = 0;
     virtual task<stream_result> write_headers(const std::vector<entry_t>& headers, bool end = false) = 0;

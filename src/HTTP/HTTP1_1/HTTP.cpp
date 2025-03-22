@@ -11,12 +11,12 @@
 #include "mimemap.hpp"
 #include "../../TLS/Cryptography/one_way/keccak.hpp"
 
-#include <iostream>
 #include <sstream>
 #include <memory>
 #include <optional>
 #include <fstream>
 #include <string>
+#include <print>
 
 
 namespace fbw {
@@ -107,7 +107,8 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
             break;
         }
         assert(m_stream != nullptr);
-        stream_result connection_alive = co_await m_stream->read_append(m_buffer, project_options.keep_alive);
+        auto timeout = handled_request ? project_options.keep_alive : project_options.session_timeout;
+        stream_result connection_alive = co_await m_stream->read_append(m_buffer, timeout);
         if (connection_alive == stream_result::read_timeout) {
             co_await m_stream->close_notify();
             co_return std::nullopt;
@@ -186,12 +187,13 @@ task<void> HTTP::client() {
                     co_return;
                 }
             }
+            handled_request = true;
         }
     } catch(const http_error& e) {
         http_err = e;
         goto ERROR; // cannot co_await inside catch block
     } catch(const std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        std::println(std::cerr, "{}", e.what());
         co_return;
     } catch(...) {
         assert(false);
@@ -341,7 +343,6 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdirectory,
 
     ustring header_str = make_header("206 Partial Content", headers);
     assert(m_stream);
-
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;
@@ -386,7 +387,6 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
     headers["Content-Type"] = "multipart/byteranges; boundary=" + boundary_string;
     
     ustring header_str = make_header("206 Partial Content", headers);
-
     assert(m_stream);
 
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
@@ -424,7 +424,7 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
     while(t.tellg() != end && !t.eof()) {
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
-        t.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
+        t.read(std::bit_cast<char*>(buffer.data()), buffer.size());
         assert(m_stream);
 
         auto res = co_await m_stream->write(buffer, project_options.session_timeout);

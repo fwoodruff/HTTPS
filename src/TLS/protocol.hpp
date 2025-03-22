@@ -58,6 +58,8 @@ private:
 
     handshake_ctx handshake;
 
+    ustring application_early_buffer; // note we should actually just pass this to the application layer, i.e. refactor to remove the separation of handshake and app
+
 
     std::deque<tls_record> encrypt_send;
 
@@ -76,6 +78,7 @@ private:
     void client_key_exchange(ustring key_exchange);
     void client_handshake_finished12(const ustring& finish); 
     void client_handshake_finished13(const ustring& finish);
+    void client_end_of_early_data(ustring handshake_message);
     
     [[nodiscard]] task<stream_result> server_hello_request();
     

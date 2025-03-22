@@ -27,6 +27,7 @@ enum class HandshakeStage {
     client_change_cipher_spec,
     server_encrypted_extensions,
     server_certificate_verify,
+    client_early_data,
     client_handshake_finished,
     server_change_cipher_spec,
     server_handshake_finished,

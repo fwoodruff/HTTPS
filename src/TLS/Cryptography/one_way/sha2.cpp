@@ -69,7 +69,7 @@ uint64_t SIG1(uint64_t x) noexcept {
     return rotate_right(x, 19) ^ rotate_right(x, 61) ^ (x >> 6);
 }
 
-constexpr double sq_root(double x) noexcept {
+consteval double sq_root(double x) noexcept {
     assert(x >= 0);
     constexpr double small = 9 * std::numeric_limits<double>::epsilon();
     double guess = 1;
@@ -232,7 +232,7 @@ sha384::sha384() noexcept {
 }
 
 sha256::sha256() noexcept  : datalen(0),  bitlen(0), m_data() {
-    constexpr auto state0 = [](){
+    constexpr auto state0 = []() consteval {
         int idx = 0;
         std::array<uint32_t,8> kl {};
         for (int i = 2; i <= 19; i++) {

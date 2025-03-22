@@ -10,6 +10,8 @@
 #include "../global.hpp"
 #include "PEMextract.hpp"
 
+#include <print>
+
 namespace fbw {
 
 void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
@@ -18,7 +20,7 @@ void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
     try {
         certs = der_cert_for_domain(domain);
     } catch(std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        std::println(std::cerr, "{}", e.what());
         throw e;
     }
     for (const auto& cert : certs) {

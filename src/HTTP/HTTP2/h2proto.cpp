@@ -26,8 +26,8 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     using namespace std::chrono_literals;
     try {
         do {
-            assert(m_stream);
-            auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
+            assert(sms.m_stream);
+            auto res = co_await sms.m_stream->read_append(buffer, project_options.keep_alive);
             if(res == stream_result::closed) {
                 co_return;
             }
@@ -43,8 +43,10 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
         buffer = buffer.substr(connection_init.size());
 
         while(true) {
-            if(m_h2streams.size() < client_settings.max_concurrent_streams) {
-                auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
+            if(sms.m_h2streams.size() < client_settings.max_concurrent_streams) {
+                co_await m_async_mut.lock();
+                auto res = co_await sms.m_stream->read_append(buffer, project_options.keep_alive);
+                m_async_mut.unlock();
                 if(res == stream_result::closed) {
                     co_return;
                 }
@@ -111,7 +113,7 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
             if(!(frame.flags & h2_flags::ACK)) {
                 h2_ping response_frame = dynamic_cast<const h2_ping&>(frame);
                 response_frame.flags |= ACK;
-                auto res = co_await m_stream->write(response_frame.serialise(), project_options.session_timeout);
+                auto res = co_await sms.m_stream->write(response_frame.serialise(), project_options.session_timeout);
                 co_return res;
             }
             break;
@@ -127,9 +129,10 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
     co_return stream_result::ok;
 }
 
+// called by h2streams, must be async safe
 task<stream_result> HTTP2::write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool end) {
     h2_headers frame;
-    auto fragment = m_hpack.generate_field_block_fragment(headers);
+    auto fragment = sms.m_hpack.generate_field_block_fragment(headers);
     frame.field_block_fragment = fragment;
     if(end) {
         frame.flags |= h2_flags::END_STREAM;
@@ -138,7 +141,7 @@ task<stream_result> HTTP2::write_headers(int32_t stream_id, const std::vector<en
     frame.stream_id = stream_id;
     frame.type = h2_type::HEADERS;
     auto frame_bytes = frame.serialise();
-    auto stream_res = co_await m_stream->write(frame_bytes, project_options.session_timeout);
+    auto stream_res = co_await sms.m_stream->write(frame_bytes, project_options.session_timeout);
     co_return stream_res;
 }
 
@@ -147,14 +150,14 @@ task<stream_result> HTTP2::handle_window_frame(const h2_window_update& frame) {
         if(frame.window_size_increment == 0) {
             throw h2_error("received 0 size window update", h2_code::PROTOCOL_ERROR);
         }
-        connection_current_window_remaining += frame.window_size_increment;
-        while(!waiters_global.empty() and connection_current_window_remaining > 0) {
-            waiters_global.front().resume();
-            waiters_global.pop();
+        sms.connection_current_window_remaining += frame.window_size_increment;
+        while(!sms.waiters_global.empty() and sms.connection_current_window_remaining > 0) {
+            sms.waiters_global.front().resume();
+            sms.waiters_global.pop();
         }
     } else if(frame.stream_id > last_stream_id) {
         throw h2_error("bad window update", h2_code::PROTOCOL_ERROR);
-    } else if(auto it = m_h2streams.find(frame.stream_id); it != m_h2streams.end()) {
+    } else if(auto it = sms.m_h2streams.find(frame.stream_id); it != sms.m_h2streams.end()) {
         if(frame.window_size_increment == 0) {
             co_return co_await raise_stream_error(h2_code::PROTOCOL_ERROR, frame.stream_id);
         }
@@ -178,8 +181,8 @@ task<stream_result> HTTP2::handle_window_frame(const h2_window_update& frame) {
 }
 
 task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) {
-    auto it = m_h2streams.find(stream_id);
-    if(it != m_h2streams.end()) {
+    auto it = sms.m_h2streams.find(stream_id);
+    if(it != sms.m_h2streams.end()) {
         auto stream = it->second.lock();
         if(!stream) {
             co_return stream_result::closed;
@@ -188,7 +191,7 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
         if(handle == nullptr) {
             handle = std::exchange(stream->m_reader, nullptr);
         }
-        m_h2streams.erase(stream_id);
+        sms.m_h2streams.erase(stream_id);
         if(handle != nullptr) {
             handle.resume();
         }
@@ -197,9 +200,9 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
     frame.stream_id = stream_id;
     frame.error_code = code;
     auto frame_bytes = frame.serialise();
-    assert(m_stream);
+    assert(sms.m_stream);
 
-    co_return co_await m_stream->write(frame_bytes, project_options.session_timeout);
+    co_return co_await sms.m_stream->write(frame_bytes, project_options.session_timeout);
 }
 
 void HTTP2::handle_data_frame(const h2_data& frame) {
@@ -222,8 +225,8 @@ std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
 
 void HTTP2::handle_headers_frame(const h2_headers& frame) {
     
-    auto it = m_h2streams.find(frame.stream_id);
-    if(it == m_h2streams.end()) {
+    auto it = sms.m_h2streams.find(frame.stream_id);
+    if(it == sms.m_h2streams.end()) {
         if(frame.stream_id <= last_stream_id) {
             throw h2_error("bad stream id", h2_code::PROTOCOL_ERROR);
             // maybe check that it's the next one not just a later one
@@ -242,13 +245,13 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
         }
         strm->m_stream_id = frame.stream_id;
         strm->wp_connection = weak_from_this();
-        strm->stream_current_window_remaining = server_settings.initial_window_size;
-        auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
+        strm->stream_current_window_remaining = sms.server_settings.initial_window_size;
+        auto some_headers = sms.m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
         strm->receive_headers(std::move(some_headers));
-        m_h2streams.insert({frame.stream_id, strm});
-        it = m_h2streams.find(frame.stream_id); // todo: check logic
+        sms.m_h2streams.insert({frame.stream_id, strm});
+        it = sms.m_h2streams.find(frame.stream_id); // todo: check logic
 
-        assert(it != m_h2streams.end());
+        assert(it != sms.m_h2streams.end());
         assert(strm != nullptr);
         sync_spawn(handle_stream(strm));
     } else {
@@ -261,7 +264,7 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
         } else {
             stream->client_sent_headers = trailer_cont_expected;
         }
-        auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
+        auto some_headers = sms.m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
         stream->receive_trailers(std::move(some_headers));
     }
 }
@@ -272,19 +275,18 @@ task<void> handle_stream(std::shared_ptr<h2_stream> stream) {
     auto id = stream->m_stream_id;
     auto conn = stream->wp_connection.lock();
     if(conn) {
-        // ensure we are running on the same thread as the connection here
-        conn->m_h2streams.erase(id);
+        conn->sms.m_h2streams.erase(id);
     }
     co_return;
 }
 
 void HTTP2::handle_continuation_frame(const h2_continuation& frame) {
-    auto it = m_h2streams.find(frame.stream_id);
+    auto it = sms.m_h2streams.find(frame.stream_id);
     auto stream = it->second.lock();
-    if(it == m_h2streams.end()) {
+    if(it == sms.m_h2streams.end()) {
         throw h2_error("continuation of bad stream id", h2_code::PROTOCOL_ERROR);
     }
-    auto some_headers = m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
+    auto some_headers = sms.m_hpack.parse_field_block_fragment(std::move(frame.field_block_fragment));
     if(stream->client_sent_headers == headers_cont_expected) {
         stream->receive_headers(std::move(some_headers));
     } else if (stream->client_sent_headers == trailer_cont_expected) {
@@ -295,7 +297,7 @@ void HTTP2::handle_continuation_frame(const h2_continuation& frame) {
 }
 
 void HTTP2::handle_rst_stream(const h2_rst_stream& frame) {
-    m_h2streams.erase(frame.stream_id);
+    sms.m_h2streams.erase(frame.stream_id);
 }
 
 task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
@@ -316,31 +318,31 @@ task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
         using enum h2_settings_code;
         switch(setting.identifier) {
         case SETTINGS_HEADER_TABLE_SIZE:
-            m_hpack.set_encoder_max_capacity(setting.value);
+            sms.m_hpack.set_encoder_max_capacity(setting.value);
             break;
         case SETTINGS_ENABLE_PUSH:
             switch(setting.value) {
             case 0:
-                server_settings.push_promise_enabled = false;
+            sms.server_settings.push_promise_enabled = false;
                 break;
             case 1:
-                server_settings.push_promise_enabled = true;
+                sms.server_settings.push_promise_enabled = true;
                 break;
             default:
                 throw h2_error("bad push promise setting", h2_code::PROTOCOL_ERROR);
             }
             break;
         case SETTINGS_MAX_CONCURRENT_STREAMS:
-            server_settings.max_concurrent_streams = setting.value;
+        sms.server_settings.max_concurrent_streams = setting.value;
             break;
         case SETTINGS_INITIAL_WINDOW_SIZE: {
             if(setting.value > MAX_WINDOW_SIZE) {
                 throw h2_error("bad flow control settings", h2_code::FLOW_CONTROL_ERROR);
             }
-            int64_t diff = setting.value - server_settings.initial_window_size;
+            int64_t diff = setting.value - sms.server_settings.initial_window_size;
             std::vector<std::coroutine_handle<>> resumable;
             std::vector<uint32_t> bad_streams;
-            for(const auto& stream_it : m_h2streams) {
+            for(const auto& stream_it : sms.m_h2streams) {
                 auto stream = stream_it.second.lock();
                 if(stream != nullptr) {
                     co_return stream_result::ok;
@@ -372,10 +374,10 @@ task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
             if(setting.value < MIN_FRAME_SIZE or setting.value > MAX_FRAME_SIZE) {
                 throw h2_error("bad max frame control settings", h2_code::PROTOCOL_ERROR);
             }
-            server_settings.max_frame_size = setting.value;
+            sms.server_settings.max_frame_size = setting.value;
             break;
         case SETTINGS_MAX_HEADER_LIST_SIZE:
-            server_settings.max_header_size = setting.value;
+            sms.server_settings.max_header_size = setting.value;
             break;
         default:
             // rfc9113 6.5.2, unknown settings are ignored
@@ -400,7 +402,7 @@ task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
 
     auto server_settings_bytes = server_settings.serialise();
 
-    auto res2 = co_await m_stream->write(server_settings_bytes, project_options.keep_alive);
+    auto res2 = co_await sms.m_stream->write(server_settings_bytes, project_options.keep_alive);
     awaiting_settings_ack = true;
 
     if(res2 != stream_result::ok) {
@@ -412,7 +414,7 @@ task<stream_result> HTTP2::handle_peer_settings(h2_settings settings) {
     ack_frame.stream_id = 0;
     ack_frame.settings.clear();
     auto ack_bytes = ack_frame.serialise();
-    auto res = co_await m_stream->write(ack_bytes, project_options.session_timeout);
+    auto res = co_await sms.m_stream->write(ack_bytes, project_options.session_timeout);
     co_return res;
 }
 
@@ -422,23 +424,28 @@ task<void> HTTP2::send_goaway(h2_code code, std::string message) {
     goawayframe.error_code = code;
     goawayframe.additional_debug_data = std::move(message);
     auto serial_go_away = goawayframe.serialise();
-    auto res = co_await m_stream->write(serial_go_away, project_options.error_timeout);
+    auto res = co_await sms.m_stream->write(serial_go_away, project_options.error_timeout);
     if(res != stream_result::ok) {
         co_return;
     }
-    co_await m_stream->close_notify();
+    co_await sms.m_stream->close_notify();
 }
 
-HTTP2::HTTP2(std::unique_ptr<stream> stream, std::string folder) : m_stream(std::move(stream)), m_folder(folder), 
-    connection_current_window_remaining(INITIAL_WINDOW_SIZE), 
-    last_stream_id(0),
-    received_settings(false),
-    awaiting_settings_ack(false),
-    notify_close_sent(false) {}
+HTTP2::HTTP2(std::unique_ptr<stream> stream, std::string folder) {
+    sms.m_stream = std::move(stream);
+    sms.connection_current_window_remaining = INITIAL_WINDOW_SIZE;
+    sms.notify_close_sent = false;
+
+    m_folder = folder;
+    last_stream_id = 0;
+    received_settings = false;
+    awaiting_settings_ack = false;
+}
+    
 
 HTTP2::~HTTP2() {
-    notify_close_sent = true;
-    for (auto it = m_h2streams.begin(); it != m_h2streams.end();) {
+    sms.notify_close_sent = true;
+    for (auto it = sms.m_h2streams.begin(); it != sms.m_h2streams.end();) {
         auto stream = it->second.lock();
         if(!stream) {
             return;
@@ -452,12 +459,12 @@ HTTP2::~HTTP2() {
             writer.resume();
         }
     }
-    while(!waiters_global.empty()) {
-        auto coro = waiters_global.front();
-        waiters_global.pop();
+    while(!sms.waiters_global.empty()) {
+        auto coro = sms.waiters_global.front();
+        sms.waiters_global.pop();
         coro.resume();
     }
-    assert(waiters_global.empty());
+    assert(sms.waiters_global.empty());
 }
 
 h2_stream::~h2_stream() {
@@ -466,14 +473,17 @@ h2_stream::~h2_stream() {
 }
 
 // writes as much as window allows then return
+// must be async safe
 task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end) {
-    auto num_bytes = co_await h2writewindowable{ m_h2streams[stream_id], (uint32_t)bytes.size() };
-    if(notify_close_sent) {
+    co_await m_async_mut.lock();
+    guard lk{&m_async_mut};
+    auto num_bytes = co_await h2writewindowable{ sms.m_h2streams[stream_id], static_cast<uint32_t>(bytes.size()) };
+    if(sms.notify_close_sent) {
         co_return stream_result::closed;
     }
     ssize_t bytes_to_write = std::min(size_t(num_bytes), bytes.size());
     while(bytes_to_write > 0) {
-        auto frame_size = std::min(ssize_t(server_settings.max_frame_size), bytes_to_write);
+        auto frame_size = std::min(ssize_t(sms.server_settings.max_frame_size), bytes_to_write);
         h2_data frame;
         frame.type = h2_type::DATA;
         frame.stream_id = stream_id;
@@ -481,11 +491,11 @@ task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const ui
             frame.flags |= h2_flags::END_STREAM;
         }
         frame.contents.assign(bytes.begin(), bytes.begin() + frame_size);
-        assert(!notify_close_sent);
+        assert(!sms.notify_close_sent);
         
         auto frame_bytes = frame.serialise();
-        assert(m_stream);
-        auto strmres = co_await m_stream->write(frame_bytes, project_options.session_timeout);
+        assert(sms.m_stream);
+        auto strmres = co_await sms.m_stream->write(frame_bytes, project_options.session_timeout);
         if(strmres != stream_result::ok) {
             co_return strmres;
         }

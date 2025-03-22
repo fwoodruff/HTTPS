@@ -26,6 +26,7 @@
 #include <optional>
 #include <atomic>
 #include <queue>
+#include <shared_mutex>
 
 namespace fbw {
 
@@ -54,6 +55,8 @@ private:
     bool can_heartbeat = false;
     uint16_t tls_protocol_version = 0;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
+
+    std::shared_mutex m_smut;
 
     [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, bool early, bool client_finished);
 

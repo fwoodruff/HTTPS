@@ -240,7 +240,7 @@ bool squeeze_last_chunk(ssize_t additional_data_len) {
 
 // application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
-    assert(m_expected_record == HandshakeStage::application_data or m_expected_record == HandshakeStage::client_early_data);
+
     std::optional<ssl_error> error_ssl{};
     try {
         size_t idx = 0;
@@ -798,10 +798,10 @@ task<stream_result> TLS::server_key_update() {
         co_return res;
     }
     auto& srv_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+    auto new_srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
     auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
     assert(tls13_context != nullptr);
-    tls13_context->set_server_traffic_key(srv_key);
+    tls13_context->set_server_traffic_key(new_srv_key);
     co_return stream_result::ok;
 }
 
@@ -826,7 +826,7 @@ task<stream_result> TLS::client_post_handshake(const ustring& message,  std::opt
                 case KeyUpdateRequest::update_not_requested:
                 {
                     auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-                    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    auto new_cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
                     auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
                     assert(tls13_context != nullptr);
                     tls13_context->set_client_traffic_key(cli_key);
@@ -840,13 +840,13 @@ task<stream_result> TLS::client_post_handshake(const ustring& message,  std::opt
                         co_return res;
                     }
                     auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-                    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    auto new_cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
                     auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
-                    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    auto new_srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
                     auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
                     assert(tls13_context != nullptr);
-                    tls13_context->set_server_traffic_key(srv_key);
-                    tls13_context->set_client_traffic_key(cli_key);
+                    tls13_context->set_server_traffic_key(new_srv_key);
+                    tls13_context->set_client_traffic_key(new_cli_key);
                     break;
                 }
                 default:

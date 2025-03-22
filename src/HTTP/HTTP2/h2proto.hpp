@@ -15,6 +15,8 @@
 #include "hpack.hpp"
 #include "h2awaitable.hpp"
 #include "h2frame.hpp"
+#include "async_mutex.hpp"
+
 #include <queue>
 #include <unordered_map>
 #include <memory>
@@ -52,21 +54,28 @@ public:
     task<stream_result> write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool data_end = false);
     task<stream_result> write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
     
+    async_mutex m_async_mut;
 
-    hpack m_hpack;
-    std::unordered_map<size_t, std::weak_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
-    // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
-    setting_values server_settings; // applies to server, sent by client
-    setting_values client_settings;
-    
-    std::unique_ptr<stream> m_stream;
-    std::queue<std::coroutine_handle<>> waiters_global;
-    std::string m_folder;
-    int64_t connection_current_window_remaining;
-    uint32_t last_stream_id; // most recent id
+    struct shared_mutable_state {
+        hpack m_hpack;
+        std::unordered_map<size_t, std::weak_ptr<h2_stream>> m_h2streams;
+        setting_values server_settings; // max_frame_size
+        std::unique_ptr<stream> m_stream;
+        std::queue<std::coroutine_handle<>> waiters_global;
+        int64_t connection_current_window_remaining;
+        bool notify_close_sent;
+    };
+
+    shared_mutable_state sms;
     bool received_settings;
+    std::string m_folder;
+    uint32_t last_stream_id; // most recent id
+    setting_values client_settings;
     bool awaiting_settings_ack;
-    bool notify_close_sent;
+
+    // contains all streams but not all coroutines
+        // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
+    
     
     [[nodiscard]] task<void> send_goaway(h2_code code, std::string message);
     [[nodiscard]] task<stream_result> raise_stream_error(h2_code code, uint32_t stream_id);

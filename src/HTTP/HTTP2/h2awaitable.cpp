@@ -25,6 +25,7 @@ bool h2writewindowable::await_ready() const noexcept {
     return false;
 }
 
+// must be async safe
 bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
     auto stream = m_hstream.lock();
     if(!stream) {
@@ -34,8 +35,8 @@ bool h2writewindowable::await_suspend(std::coroutine_handle<> continuation) {
     if(!conn) {
         return false;
     }
-    if(conn->connection_current_window_remaining <= 0) {
-        conn->waiters_global.push(continuation);
+    if(conn->sms.connection_current_window_remaining <= 0) {
+        conn->sms.waiters_global.push(continuation);
         return true;
     }
     if(stream->stream_current_window_remaining <= 0) {
@@ -57,12 +58,14 @@ int32_t h2writewindowable::await_resume() {
     if(!conn) {
         return 0;
     }
-    if(conn->connection_current_window_remaining < 0) {
+    auto& connection = conn->sms;
+    
+    if(connection.connection_current_window_remaining < 0) {
         return 0;
     }
-    const auto max_frame_size = std::min(conn->connection_current_window_remaining, stream->stream_current_window_remaining);
+    const auto max_frame_size = std::min(connection.connection_current_window_remaining, stream->stream_current_window_remaining);
     auto frame_size = std::min(max_frame_size, (int64_t)m_desired_size); // todo: use int32_t with proper wraparound checks
-    conn->connection_current_window_remaining -= frame_size;
+    connection.connection_current_window_remaining -= frame_size;
     stream->stream_current_window_remaining -= frame_size;
     return frame_size;
 }
@@ -78,7 +81,9 @@ bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
         // if the connection is dead, we need to resume and fail
         return false;
     }
-    auto stream = conn->m_h2streams[m_stream_id].lock();
+    auto& connection = conn->sms;
+
+    auto stream = connection.m_h2streams[m_stream_id].lock();
     if(!stream) {
         // if the stream is dead, then resume and fail
         return false;
@@ -98,7 +103,8 @@ std::pair<std::optional<h2_data>, stream_result> h2readable::await_resume() {
         // if the connection is dead, we need to resume and fail
         return {std::nullopt, stream_result::closed};
     }
-    auto stream = conn->m_h2streams[m_stream_id].lock();
+    auto& connection = conn->sms;
+    auto stream = connection.m_h2streams[m_stream_id].lock();
     if(!stream) {
         // if the stream is dead, then resume and fail
         return {std::nullopt, stream_result::closed};

@@ -9,8 +9,20 @@
 #define async_mutex_hpp
 
 #include <mutex>
+#include <coroutine>
+#include <queue>
 
 namespace fbw {
+
+class guard {
+public:
+    guard(const guard&) = delete;
+    guard& operator=(const guard&) = delete;
+    guard(async_mutex*);
+    ~guard();
+private:
+    async_mutex* m_ctx = nullptr;
+};
 
 class async_mutex {
 public:

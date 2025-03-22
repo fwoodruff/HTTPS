@@ -6,7 +6,7 @@
 //
 
 #include "async_mutex.hpp"
-#include "../Runtime/task.hpp"
+#include "../../Runtime/task.hpp"
 
 namespace fbw {
 
@@ -44,5 +44,13 @@ bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) noe
 }
 
 void async_mutex::lockable::await_resume() {}
+
+
+guard::guard(async_mutex* ctx) : m_ctx(ctx) {}
+guard::~guard() {
+    assert( m_ctx != nullptr);
+    m_ctx->unlock();
+}
+
 
 } // fbw

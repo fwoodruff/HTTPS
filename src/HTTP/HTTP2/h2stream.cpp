@@ -24,6 +24,7 @@ void h2_stream::receive_trailers(std::vector<entry_t> headers) {
     }
 }
 
+// accesses connection, must be async safe
 task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers, bool end) {
     auto conn = wp_connection.lock();
     if(!conn) {
@@ -32,6 +33,7 @@ task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers
     co_return co_await conn->write_headers(m_stream_id, headers, end);
 }
 
+// accesses connection must be async safe
 task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool end) {
     auto conn = wp_connection.lock();
     if(!conn) {

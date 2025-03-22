@@ -75,7 +75,8 @@ public:
     [[nodiscard]] tls_record server_certificate_verify_record();
     tls_record server_encrypted_extensions_record();
     tls_record server_hello_done_record();
-    
+
+    void client_end_of_early_data_record(const ustring& handshake_message);
 
     void client_hello_record(const ustring& handshake_message);
     ustring client_key_exchange_receipt(const ustring& handshake_message);

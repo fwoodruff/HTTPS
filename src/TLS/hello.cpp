@@ -192,6 +192,9 @@ void parse_extension(hello_record_data& record, extension ext) {
             record.parsed_extensions.insert(ext.type);
             record.pskmodes = get_pskmodes(ext.data);
             break;
+        case ExtensionType::early_data:
+            record.parsed_extensions.insert(ext.type);
+            break;
         case ExtensionType::pre_shared_key:
             record.parsed_extensions.insert(ext.type);
             record.pre_shared_key = get_preshared_keys(ext.data);
@@ -288,7 +291,7 @@ void write_alpn_extension(tls_record& record, std::string alpn) {
 void write_early_data_encrypted_ext(tls_record& record) {
     record.write2(ExtensionType::early_data);
     record.start_size_header(2);
-    record.start_size_header(2);
+    record.end_size_header();
 }
 
 void write_renegotiation_info(tls_record& record) {

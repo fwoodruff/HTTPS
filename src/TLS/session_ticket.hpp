@@ -21,6 +21,7 @@
 namespace fbw {
 
 extern std::array<uint8_t, 16> session_ticket_master_secret;
+constexpr uint32_t MAX_EARLY_DATA = 0x4000;
 
 struct TLS13SessionTicket {
     uint16_t version;

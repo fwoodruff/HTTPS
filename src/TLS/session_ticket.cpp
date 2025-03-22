@@ -131,8 +131,7 @@ void write_early_data_ticket_ext(tls_record& record) {
     record.write2(ExtensionType::early_data);
     record.start_size_header(2);
     std::array<uint8_t, 4> max_0rtt_bytes;
-    constexpr uint32_t max_0rtt = 0x4000;
-    checked_bigend_write(max_0rtt, max_0rtt_bytes, 0, 4);
+    checked_bigend_write(MAX_EARLY_DATA, max_0rtt_bytes, 0, 4);
     record.write(max_0rtt_bytes);
     record.end_size_header();
 }
@@ -165,7 +164,7 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
 
     record.start_size_header(2);
     if(zero_rtt) {
-        //write_early_data_ticket_ext(record);
+        write_early_data_ticket_ext(record);
     }
     
     record.end_size_header();

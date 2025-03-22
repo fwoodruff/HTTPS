@@ -25,8 +25,9 @@ jobs:
       - run:
           name: Test session tickets
           command: |
-            echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
-            echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" | openssl s_client -connect localhost:8443 -tls1_3 -sess_in session.pem 2>&1 | grep -q "Reused, TLSv1.3"
+            echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" > request.txt
+            cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
+            cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_in session.pem 2>&1 | grep -q "Reused, TLSv1.3"
 
 workflows:
   run_tests:

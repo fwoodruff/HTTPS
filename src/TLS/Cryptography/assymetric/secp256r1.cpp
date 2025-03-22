@@ -171,7 +171,7 @@ affine_point256 point_add(const affine_point256& P, const affine_point256& Q) no
     auto S2 = REDC(Q.ycoord * Z13);
     if(U1 == U2) [[unlikely]] {
         if(S1 != S2) {
-            std::print(std::cerr, "Point at infinity\n"); // unreachable in practice therefore CT
+            std::println(std::cerr, "Point at infinity"); // unreachable in practice therefore CT
             return POINT_AT_INFINITY;
         } else {
             return point_double(P);
@@ -203,7 +203,7 @@ affine_point256 point_double(const affine_point256& P) noexcept {
     assert(P.ycoord <= secp256r1_p);
     
     if(P.ycoord == "0x0"_xl or P.ycoord == secp256r1_p) [[unlikely]] {
-        std::print("PD Point at Infinity\n");
+        std::println(std::cerr, "PD Point at Infinity");
         return POINT_AT_INFINITY;
     }
     affine_point256 out;

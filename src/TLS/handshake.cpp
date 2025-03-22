@@ -490,6 +490,10 @@ tls_record handshake_ctx::server_handshake_finished13_record() {
     return record;
 }
 
+void handshake_ctx::client_end_of_early_data_record(const ustring& handshake_message) {
+    handshake_hasher->update(handshake_message);
+}
+
 void handshake_ctx::client_handshake_finished13_record(const ustring& handshake_message) {
     auto server_finished_hash = handshake_hasher->hash();
     auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());

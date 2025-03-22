@@ -52,7 +52,7 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {
-        std::print(std::cerr, "{}\n", e.what());
+        std::println(std::cerr, "{}", e.what());
     }
 }
 
@@ -88,7 +88,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             }
         }
     } catch(const std::exception& e) {
-        std::print(std::cerr, "{}\n", e.what());
+        std::println(std::cerr, "{}", e.what());
     }
 }
 
@@ -107,7 +107,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             }
         }
     } catch(const std::exception& e ) {
-        std::print(std::cerr, "{}\n", e.what());
+        std::println(std::cerr, "{}", e.what());
     }
 }
 
@@ -118,18 +118,18 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         static_cast<void>(fbw::privkey_for_domain(fbw::project_options.default_subfolder));
         fbw::parse_tlds(fbw::project_options.tld_file);
 
-        std::print("Redirect running on port {}\n", http_port);
-        std::print("HTTPS running on port {}\n", https_port);
+        std::println("Redirect running on port {}", http_port);
+        std::println("HTTPS running on port {}", https_port);
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
-        std::print(std::cerr, "{}\n", e.what());
-        std::print(std::cerr, "Mime folder: {}\n", std::filesystem::absolute(fbw::project_options.mime_folder).string());
-        std::print(std::cerr, "Key file: {}\n", std::filesystem::absolute(fbw::project_options.key_file).string());
-        std::print(std::cerr, "Certificate file: {}\n", std::filesystem::absolute(fbw::project_options.certificate_file).string());
+        std::println(std::cerr, "{}", e.what());
+        std::println(std::cerr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).string());
+        std::println(std::cerr, "Key file: {}", std::filesystem::absolute(fbw::project_options.key_file).string());
+        std::println(std::cerr, "Certificate file: {}", std::filesystem::absolute(fbw::project_options.certificate_file).string());
     }
     co_return;
 }

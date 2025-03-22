@@ -193,7 +193,7 @@ task<void> HTTP::client() {
         http_err = e;
         goto ERROR; // cannot co_await inside catch block
     } catch(const std::exception& e) {
-        std::print(std::cerr, "{}\n", e.what());
+        std::println(std::cerr, "{}", e.what());
         co_return;
     } catch(...) {
         assert(false);

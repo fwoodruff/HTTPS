@@ -59,7 +59,7 @@ task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> 
         assert(m_expected_record == HandshakeStage::application_data);
         
         if(!application_early_buffer.empty()) {
-            data.append(std::move(application_early_buffer));
+            data.append(std::move(application_early_buffer)); // todo: combine handshake with app data
             application_early_buffer.clear();
             co_return stream_result::ok;
         }
@@ -251,6 +251,9 @@ task<std::string> TLS::perform_handshake() {
                 case Application:
                     if(handshake.zero_rtt) {
                         application_early_buffer.append(std::move(record.m_contents));
+                        if(application_early_buffer.size() > MAX_EARLY_DATA) {
+                            throw ssl_error("too much early data", AlertLevel::fatal, AlertDescription::unexpected_message);
+                        }
                         break;
                     }
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
@@ -522,7 +525,11 @@ task<stream_result> TLS::server_certificate_verify() {
 task<stream_result> TLS::server_handshake_finished13() {
     assert(m_expected_record == HandshakeStage::server_handshake_finished);
     auto record = handshake.server_handshake_finished13_record();
-    m_expected_record = HandshakeStage::client_handshake_finished; // mTLS would change this
+    if(handshake.zero_rtt) {
+        m_expected_record = HandshakeStage::client_early_data;
+    } else {
+        m_expected_record = HandshakeStage::client_handshake_finished; // mTLS would change this
+    }
     auto res = co_await write_record(record, project_options.handshake_timeout);
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
     tls13_context.set_server_traffic_key(handshake.tls13_key_schedule.server_application_traffic_secret);
@@ -604,6 +611,7 @@ void TLS::client_end_of_early_data(ustring handshake_message) {
     if(m_expected_record != HandshakeStage::client_early_data) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
+    handshake.client_end_of_early_data_record(handshake_message);
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
     tls13_context.set_client_traffic_key(handshake.tls13_key_schedule.client_handshake_traffic_secret);
     m_expected_record = HandshakeStage::client_handshake_finished;

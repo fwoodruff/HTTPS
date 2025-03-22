@@ -70,6 +70,8 @@ task<stream_result> TLS::await_handshake_finished() {
 task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseconds> app_timeout, bool return_early_data, bool return_client_finished) {
     assert(!(return_early_data && return_client_finished));
     std::optional<ssl_error> error_ssl {};
+    co_await m_write_async_mut.lock(); // read-write concurrency can lead to write-write races particularly around alerts
+    guard g{&m_write_async_mut};
     try {
         if(return_client_finished and m_expected_record == HandshakeStage::application_data) {
             co_return stream_result::ok;
@@ -80,7 +82,7 @@ task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseco
         }
 
         if(m_expected_record == HandshakeStage::application_data or m_expected_record == HandshakeStage::client_early_data) {
-            auto res = co_await flush();
+            auto res = co_await flush_internal();
             if(res != stream_result::ok) {
                 co_return res;
             }
@@ -95,7 +97,9 @@ task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseco
         
         for(;;) {
             auto timeout = (m_expected_record == HandshakeStage::application_data) ? app_timeout : project_options.handshake_timeout;
+            m_write_async_mut.unlock(); // unlock for read operation
             auto [record, result] = co_await try_read_record(timeout);
+            co_await m_write_async_mut.lock();
             if(result != stream_result::ok) {
                 co_return result;
             }
@@ -240,6 +244,8 @@ bool squeeze_last_chunk(ssize_t additional_data_len) {
 
 // application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
+    co_await m_write_async_mut.lock(); // one writer-at a time
+    guard g{&m_write_async_mut};
     assert(m_expected_record == HandshakeStage::application_data or m_expected_record == HandshakeStage::client_early_data);
     std::optional<ssl_error> error_ssl{};
     try {
@@ -279,7 +285,7 @@ END2:
 }
 
 // application data is sent on a buffered stream so the pattern of record sizes reveals much less
-task<stream_result> TLS::flush() {
+task<stream_result> TLS::flush_internal() {
     if(encrypt_send.size() >= 2) {
         if(squeeze_last_chunk(encrypt_send.back().m_contents.size())) {
             auto back = std::move(encrypt_send.back());
@@ -302,10 +308,18 @@ task<stream_result> TLS::flush() {
     co_return stream_result::ok;
 }
 
+task<stream_result> TLS::flush() {
+    co_await m_write_async_mut.lock();
+    guard g{&m_write_async_mut};
+    co_return co_await flush_internal();
+}
+
 // applications call this when graceful not abrupt closing of a connection is desired
 task<void> TLS::close_notify() {
     try {
-        co_await flush();
+        co_await m_write_async_mut.lock();
+        guard g{&m_write_async_mut};
+        co_await flush_internal();
         co_await server_alert(AlertLevel::warning, AlertDescription::close_notify);
         auto [record, result] = co_await try_read_record(project_options.error_timeout);
         if(result != stream_result::ok) {
@@ -385,11 +399,16 @@ task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<mi
 }
 
 task<stream_result> TLS::write_record(tls_record record, std::optional<milliseconds> timeout) {
+    if(m_closing) {
+        co_return stream_result::closed;
+    }
     if(server_cipher_spec && record.get_type() != ChangeCipherSpec) {
         assert(cipher_context);
         record = cipher_context->encrypt(record);
     }
-    assert(m_client);
+    if(record.get_type() == Alert) {
+        m_closing = true;
+    }
     co_return co_await m_client->write(record.serialise(), timeout);
 }
 

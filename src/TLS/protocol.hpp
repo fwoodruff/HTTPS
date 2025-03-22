@@ -19,6 +19,7 @@
 #include "../Runtime/task.hpp"
 #include "../TCP/stream_base.hpp"
 #include "handshake.hpp"
+#include "../Runtime/async_mutex.hpp"
 
 #include <array>
 #include <string>
@@ -47,6 +48,8 @@ public:
     [[nodiscard]] task<std::string> perform_hello();
     [[nodiscard]] task<stream_result> flush() override;
 private:
+    [[nodiscard]] task<stream_result> flush_internal();
+
     std::unique_ptr<stream> m_client;
     std::unique_ptr<cipher_base> cipher_context = nullptr;
     HandshakeStage m_expected_record = HandshakeStage::client_hello;
@@ -70,11 +73,14 @@ private:
 
     std::deque<tls_record> encrypt_send;
 
+    async_mutex m_write_async_mut;
+    bool m_closing = false;
+
     [[nodiscard]] tls_record decrypt_record(tls_record);
     
     [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
-    
+
     [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_record(tls_record);
     [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_message(const ustring& handshake_message);
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.

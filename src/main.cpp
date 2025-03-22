@@ -4,11 +4,17 @@
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP1_1/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
+#include "HTTP/HTTP1_1/HTTP.hpp"
+#include "HTTP/HTTP2/h2proto.hpp"
 #include "global.hpp"
+#include "HTTP/HTTP1_1/mimemap.hpp"
 #include "HTTP/HTTP1_1/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
 #include "HTTP/HTTP1_1/string_utils.hpp"
+#include "HTTP/HTTP1_1/string_utils.hpp"
 #include "limiter.hpp"
+#include "TLS/session_ticket.hpp"
+#include "TLS/Cryptography/one_way/keccak.hpp"
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
 
@@ -24,6 +30,7 @@
 // Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
 // Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
 // review unnecessary buffer copies, more subspan, less substr
+// ustring is UB!! Use vector<std::byte>
 // ustring is UB!! Use vector<std::byte>
 // HTTP codes should be a map code -> { title, blurb }
 // HTTP/2
@@ -61,6 +68,7 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 // then consider replacing the existing stateful mechanism for preventing ticket replay attacks with a stateless one
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
+    assert(client_stream != nullptr);
     std::string alpn = co_await client_stream->perform_handshake();
     if(alpn.empty()) {
         co_return;
@@ -75,6 +83,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
     try {
         for(;;) {
             if(auto client = co_await listener.accept()) {
+                assert(ip_connections != nullptr);
                 assert(ip_connections != nullptr);
                 auto conn = ip_connections->add_connection(client->m_ip);
                 if(conn == std::nullopt) [[unlikely]] {
@@ -96,6 +105,8 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
     try {
         for(;;) {
             if(auto client = co_await listener.accept()) {
+                assert(ip_connections != nullptr);
+                assert(client != std::nullopt);
                 assert(ip_connections != nullptr);
                 assert(client != std::nullopt);
                 auto conn = ip_connections->add_connection(client->m_ip);
@@ -134,6 +145,9 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
     co_return;
 }
 
+
+
+
 int main(int argc, const char * argv[]) {
     try {
         fbw::init_options();
@@ -141,6 +155,7 @@ int main(int argc, const char * argv[]) {
         auto http_listener = fbw::tcplistener::bind(http_port);
         auto https_port = fbw::project_options.server_port;
         auto https_listener = fbw::tcplistener::bind(https_port);
+        fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {

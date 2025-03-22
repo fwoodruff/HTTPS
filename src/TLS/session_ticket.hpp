@@ -23,6 +23,7 @@ namespace fbw {
 extern std::array<uint8_t, 16> session_ticket_master_secret;
 constexpr uint32_t MAX_EARLY_DATA = 0x4000;
 
+
 struct TLS13SessionTicket {
     uint16_t version;
     uint32_t ticket_lifetime;
@@ -36,6 +37,7 @@ struct TLS13SessionTicket {
     
     static std::optional<TLS13SessionTicket> decrypt_ticket(ustring ticket, const std::array<uint8_t, 16>& encryption_key);
     static std::optional<tls_record> server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, ustring nonce, bool zero_rtt);
+
 private:
     ustring encrypt_ticket(const std::array<uint8_t, 16>& encryption_key);
     ustring serialise();
@@ -43,6 +45,7 @@ private:
 };
 
 void write_early_data_ticket_ext(tls_record& record);
+
 
 }
 

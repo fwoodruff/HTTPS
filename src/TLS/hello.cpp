@@ -195,6 +195,7 @@ void parse_extension(hello_record_data& record, extension ext) {
         case ExtensionType::early_data:
             record.parsed_extensions.insert(ext.type);
             break;
+
         case ExtensionType::pre_shared_key:
             record.parsed_extensions.insert(ext.type);
             record.pre_shared_key = get_preshared_keys(ext.data);

@@ -309,6 +309,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
     auto status_code = (file_size != 0)? "200 OK": "206 No Content";
     ustring header_str = make_header(status_code, headers);
     assert(m_stream);
+
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;
@@ -387,6 +388,7 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
     
     ustring header_str = make_header("206 Partial Content", headers);
     assert(m_stream);
+
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;
@@ -424,6 +426,7 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
         buffer.resize(next_buffer_size);
         t.read(std::bit_cast<char*>(buffer.data()), buffer.size());
         assert(m_stream);
+
         auto res = co_await m_stream->write(buffer, project_options.session_timeout);
         if(res != stream_result::ok) [[unlikely]] {
             co_return res;
@@ -479,6 +482,7 @@ task<void> HTTP::redirect(http_frame request) {
     
     std::string var = oss.str();
     assert(m_stream);
+
     co_await m_stream->write(to_unsigned(var), project_options.session_timeout);
     co_await m_stream->close_notify();
 }

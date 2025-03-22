@@ -548,6 +548,7 @@ void TLS::client_handshake_finished13(const ustring& handshake_message) {
 }
 
 static std::atomic<uint64_t> global_nonce = 1;
+
 task<stream_result> TLS::server_session_ticket() {
     assert(m_expected_record == HandshakeStage::application_data);
     auto nonce = global_nonce.fetch_add(1, std::memory_order_relaxed);
@@ -567,12 +568,14 @@ task<stream_result> TLS::server_session_ticket() {
     ticket.ticket_age_add = randomgen.randgen64();
     ticket.cipher_suite = handshake.cipher;
     ticket.early_data_allowed = false;
+
     ticket.nonce = nonce;
     ticket.resumption_secret = resumption_ticket_psk;
     
     bool offer_0rtt = handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data);
 
     auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, nonce_bytes, offer_0rtt);
+
     if(record) {
         auto res = co_await write_record(*record, project_options.handshake_timeout);
         co_return res;

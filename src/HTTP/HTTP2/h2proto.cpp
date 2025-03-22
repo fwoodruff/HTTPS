@@ -198,6 +198,7 @@ task<stream_result> HTTP2::raise_stream_error(h2_code code, uint32_t stream_id) 
     frame.error_code = code;
     auto frame_bytes = frame.serialise();
     assert(m_stream);
+
     co_return co_await m_stream->write(frame_bytes, project_options.session_timeout);
 }
 
@@ -246,6 +247,7 @@ void HTTP2::handle_headers_frame(const h2_headers& frame) {
         strm->receive_headers(std::move(some_headers));
         m_h2streams.insert({frame.stream_id, strm});
         it = m_h2streams.find(frame.stream_id); // todo: check logic
+
         assert(it != m_h2streams.end());
         assert(strm != nullptr);
         sync_spawn(handle_stream(strm));

@@ -22,6 +22,7 @@
 
 #include <print>
 
+
 namespace fbw {
 
 std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_nonces {};
@@ -263,6 +264,7 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
         if(set_nonce != ticket->nonce) {
             continue;
         }
+
         return {ticket->resumption_secret, i};
     }
     return {null_psk, std::nullopt};

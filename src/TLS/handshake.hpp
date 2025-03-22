@@ -58,6 +58,7 @@ public:
     std::optional<uint16_t> selected_preshared_key_id = std::nullopt;
 
     ServerHelloType server_hello_type = ServerHelloType::unspecified;
+
     bool zero_rtt = false;
 
     uint16_t* p_tls_version = nullptr;

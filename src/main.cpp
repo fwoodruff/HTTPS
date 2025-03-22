@@ -69,7 +69,7 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
     assert(client_stream != nullptr);
-    std::string alpn = co_await client_stream->perform_handshake();
+    std::string alpn = co_await client_stream->perform_hello();
     if(alpn.empty()) {
         co_return;
     }

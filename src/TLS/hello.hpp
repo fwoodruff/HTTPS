@@ -46,6 +46,9 @@ struct hello_record_data {
     std::vector<SignatureScheme> signature_schemes{};
     std::vector<uint8_t> ec_point_formats{};
     std::optional<preshared_key_ext> pre_shared_key{};
+    std::vector<CertificateCompressionAlgorithm> certificate_compression{};
+    std::optional<uint16_t> record_size_limit = std::nullopt;
+    uint16_t padding_size = 0;
     bool encrypt_then_mac = true;
     bool extended_master_secret = true;
     bool client_heartbeat = false;

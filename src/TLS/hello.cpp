@@ -91,6 +91,17 @@ std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_
     return out;
 }
 
+std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
+    std::vector<CertificateCompressionAlgorithm> out;
+    auto cert_algos = der_span_read(extension_data, 0, 1);
+    while(!cert_algos.empty()) {
+        auto algo = static_cast<CertificateCompressionAlgorithm>(try_bigend_read(cert_algos, 0, 2));
+        out.push_back(algo);
+        cert_algos = cert_algos.subspan(2);
+    }
+    return out;
+}
+
 std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_data) {
     size_t ext_len = try_bigend_read(extension_data, 0, 2);
     if(ext_len + 2 != extension_data.size()) {
@@ -158,6 +169,14 @@ void parse_extension(hello_record_data& record, extension ext) {
             record.parsed_extensions.insert(ext.type);
             record.server_names = get_SNI(ext.data);
             break;
+        case ExtensionType::max_fragment_length:
+            record.parsed_extensions.insert(ext.type);
+            record.record_size_limit = try_bigend_read(ext.data, 0, 2);
+            break;
+        case ExtensionType::padding:
+            record.parsed_extensions.insert(ext.type);
+            record.padding_size = der_span_read(ext.data, 0, 2).size();
+            break;
         case ExtensionType::supported_groups:
             record.parsed_extensions.insert(ext.type);
             record.supported_groups = get_supported_groups(ext.data);
@@ -170,35 +189,39 @@ void parse_extension(hello_record_data& record, extension ext) {
             record.client_heartbeat = client_heartbeat;
             break;
         }
-        case ExtensionType::supported_versions:
-            record.parsed_extensions.insert(ext.type);
-            record.supported_versions = get_supported_versions(ext.data);
-            break;
-        case ExtensionType::key_share:
-            record.parsed_extensions.insert(ext.type);
-            record.shared_keys = get_named_group_keys(ext.data);
-            break;
         case ExtensionType::application_layer_protocol_negotiation:
             record.parsed_extensions.insert(ext.type);
             record.application_layer_protocols = get_application_layer_protocols(ext.data);
             break;
-        case ExtensionType::renegotiation_info:
-            record.parsed_extensions.insert(ext.type);
-            break;
         case ExtensionType::signed_certificate_timestamp:
             record.parsed_extensions.insert(ext.type);
+            break;
+        case ExtensionType::pre_shared_key:
+            record.parsed_extensions.insert(ext.type);
+            record.pre_shared_key = get_preshared_keys(ext.data);
+            break;
+        case ExtensionType::early_data:
+            record.parsed_extensions.insert(ext.type);
+            break;
+        case ExtensionType::supported_versions:
+            record.parsed_extensions.insert(ext.type);
+            record.supported_versions = get_supported_versions(ext.data);
             break;
         case ExtensionType::psk_key_exchange_modes:
             record.parsed_extensions.insert(ext.type);
             record.pskmodes = get_pskmodes(ext.data);
             break;
-        case ExtensionType::early_data:
+        case ExtensionType::key_share:
+            record.parsed_extensions.insert(ext.type);
+            record.shared_keys = get_named_group_keys(ext.data);
+            break;
+        case ExtensionType::compressed_certificate:
+            record.parsed_extensions.insert(ext.type);
+            record.certificate_compression = get_certificate_compression_algos(ext.data);
+            break;
+        case ExtensionType::renegotiation_info:
             record.parsed_extensions.insert(ext.type);
             break;
-
-        case ExtensionType::pre_shared_key:
-            record.parsed_extensions.insert(ext.type);
-            record.pre_shared_key = get_preshared_keys(ext.data);
         default:
             break;
     }

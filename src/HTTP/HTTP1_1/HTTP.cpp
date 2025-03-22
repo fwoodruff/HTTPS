@@ -10,6 +10,7 @@
 #include "../../global.hpp"
 #include "mimemap.hpp"
 #include "../../TLS/Cryptography/one_way/keccak.hpp"
+#include "../../TLS/protocol.hpp"
 
 #include <sstream>
 #include <memory>
@@ -108,7 +109,13 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         }
         assert(m_stream != nullptr);
         auto timeout = handled_request ? project_options.keep_alive : project_options.session_timeout;
-        stream_result connection_alive = co_await m_stream->read_append(m_buffer, timeout);
+        auto m_tls_stream = dynamic_cast<TLS*>(m_stream.get());
+        stream_result connection_alive;
+        if(m_tls_stream) {
+            connection_alive = co_await m_tls_stream->read_append_early(m_buffer, timeout);
+        } else {
+            connection_alive = co_await m_stream->read_append(m_buffer, timeout);
+        }
         if (connection_alive == stream_result::read_timeout) {
             co_await m_stream->close_notify();
             co_return std::nullopt;

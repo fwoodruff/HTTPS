@@ -37,10 +37,14 @@ public:
     ~TLS() = default;
     
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
+
+    [[nodiscard]] task<stream_result> read_append_early(ustring&, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> await_handshake_finished();
+
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
 
-    [[nodiscard]] task<std::string> perform_handshake();
+    [[nodiscard]] task<std::string> perform_hello();
     [[nodiscard]] task<stream_result> flush() override;
 private:
     std::unique_ptr<stream> m_client;
@@ -51,6 +55,10 @@ private:
     uint16_t tls_protocol_version = 0;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
 
+    [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, bool early, bool client_finished);
+
+    ustring early_buffer;
+
     bool server_cipher_spec = false;
     bool client_cipher_spec = false;
 
@@ -58,8 +66,7 @@ private:
 
     handshake_ctx handshake;
 
-    ustring application_early_buffer; // note we should actually just pass this to the application layer, i.e. refactor to remove the separation of handshake and app
-
+    uint32_t early_data_received = 0;
 
     std::deque<tls_record> encrypt_send;
 
@@ -68,8 +75,8 @@ private:
     [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
     
-    [[nodiscard]] task<stream_result> client_handshake_record(tls_record);
-    [[nodiscard]] task<stream_result> client_handshake_message(const ustring& handshake_message);
+    [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_record(tls_record);
+    [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_message(const ustring& handshake_message);
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout);

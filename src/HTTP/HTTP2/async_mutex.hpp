@@ -1,0 +1,40 @@
+//
+//  async_mutex.hpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 22/03/2025.
+//
+
+#ifndef async_mutex_hpp
+#define async_mutex_hpp
+
+#include <mutex>
+
+namespace fbw {
+
+class async_mutex {
+public:
+    class lockable {
+        public:
+        lockable(async_mutex* ctx);
+        bool await_ready() const noexcept;
+        bool await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
+        void await_resume();
+    private:
+        async_mutex* m_ctx;
+    };
+    lockable lock();
+    void unlock();
+private:
+    bool locked = false;
+    std::mutex m_mut;
+    std::queue<std::coroutine_handle<>> m_queue;
+
+    
+};
+
+
+}
+
+
+#endif // async_mutex_hpp

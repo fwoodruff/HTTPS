@@ -15,6 +15,8 @@
 #include "hpack.hpp"
 #include "h2awaitable.hpp"
 #include "h2frame.hpp"
+#include "../../Runtime/async_mutex.hpp"
+
 #include <queue>
 #include <unordered_map>
 #include <memory>
@@ -52,7 +54,6 @@ public:
     task<stream_result> write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool data_end = false);
     task<stream_result> write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
     
-
     hpack m_hpack;
     std::unordered_map<size_t, std::weak_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
     // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
@@ -67,6 +68,8 @@ public:
     bool received_settings;
     bool awaiting_settings_ack;
     bool notify_close_sent;
+
+    async_mutex m_write_async_mut; // coarse-grained locking
     
     [[nodiscard]] task<void> send_goaway(h2_code code, std::string message);
     [[nodiscard]] task<stream_result> raise_stream_error(h2_code code, uint32_t stream_id);

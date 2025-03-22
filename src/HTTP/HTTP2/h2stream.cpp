@@ -47,6 +47,12 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
 }
 
 task<stream_result> h2_stream::read_headers(std::vector<entry_t>& headers) {
+    auto conn = shared_from_this()->wp_connection.lock();
+    if(!conn) {
+        co_return stream_result::closed;
+    }
+    co_await conn->m_write_async_mut.lock();
+    guard(&conn->m_write_async_mut);
     auto [ vec, res ] = co_await h2read_headers(weak_from_this());
     headers = std::move(vec);
     // if method == GET then state == half-closed, otherwise throw

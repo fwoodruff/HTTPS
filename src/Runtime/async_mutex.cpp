@@ -17,7 +17,7 @@ async_mutex::lockable async_mutex::lock() {
 }
 
 // safe to unlock same async_mutex twice 
-void async_mutex::unlock() {
+void async_mutex::maybe_unlock() {
     std::coroutine_handle<> atask = nullptr;
     {
         std::scoped_lock lk {m_mut};
@@ -56,7 +56,7 @@ void async_mutex::lockable::await_resume() {}
 guard::guard(async_mutex* ctx) : m_ctx(ctx) {}
 guard::~guard() {
     assert( m_ctx != nullptr);
-    m_ctx->unlock();
+    m_ctx->maybe_unlock();
 }
 
 

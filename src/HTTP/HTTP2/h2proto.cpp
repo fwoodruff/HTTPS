@@ -24,6 +24,7 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
     std::optional<h2_error> error;
     ustring buffer;
     using namespace std::chrono_literals;
+    guard g{&m_write_async_mut};
     try {
         do {
             assert(m_stream);
@@ -44,7 +45,9 @@ const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
         while(true) {
             if(m_h2streams.size() < client_settings.max_concurrent_streams) {
+                m_write_async_mut.maybe_unlock();
                 auto res = co_await m_stream->read_append(buffer, project_options.keep_alive);
+                co_await m_write_async_mut.lock();
                 if(res == stream_result::closed) {
                     co_return;
                 }
@@ -128,6 +131,8 @@ task<stream_result> HTTP2::handle_frame(const h2frame& frame) {
 }
 
 task<stream_result> HTTP2::write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool end) {
+    co_await m_write_async_mut.lock();
+    guard g{&m_write_async_mut};
     h2_headers frame;
     auto fragment = m_hpack.generate_field_block_fragment(headers);
     frame.field_block_fragment = fragment;
@@ -467,6 +472,8 @@ h2_stream::~h2_stream() {
 
 // writes as much as window allows then return
 task<stream_result> HTTP2::write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end) {
+    co_await m_write_async_mut.lock();
+    guard g{&m_write_async_mut};
     auto num_bytes = co_await h2writewindowable{ m_h2streams[stream_id], (uint32_t)bytes.size() };
     if(notify_close_sent) {
         co_return stream_result::closed;

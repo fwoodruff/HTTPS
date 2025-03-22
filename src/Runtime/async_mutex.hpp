@@ -28,7 +28,7 @@ public:
         async_mutex* m_ctx;
     };
     lockable lock();
-    void unlock();
+    void maybe_unlock(); // multiple calls to maybe_unlock() acceptable
 private:
     bool locked = false;
     std::mutex m_mut;

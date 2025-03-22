@@ -97,7 +97,7 @@ task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseco
         
         for(;;) {
             auto timeout = (m_expected_record == HandshakeStage::application_data) ? app_timeout : project_options.handshake_timeout;
-            m_write_async_mut.unlock(); // unlock for read operation
+            m_write_async_mut.maybe_unlock(); // unlock for read operation
             auto [record, result] = co_await try_read_record(timeout);
             co_await m_write_async_mut.lock();
             if(result != stream_result::ok) {

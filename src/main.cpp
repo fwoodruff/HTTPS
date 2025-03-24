@@ -44,9 +44,17 @@
 // offload state to TLS HRR cookie
 // project point at infinity into Montgomery space, add with other points (including Pt@Inf), project back - check value still good
 // go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
-// Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
+// emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
-// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket nonce, with eviction
+
+// In full-duplex TLS, the reader can emit encrypted alerts.
+// There's a data race around encrypt then emit
+// Separate writing into two stages:
+// 1.   sync_locked{encrypt and buffer serial records for write} - note this includes buffered packaging of records
+// 2.   sync_spawn a task that locks an async_mutex then writes to the buffer
+// On the uncontended path, the reader thread immediately enters write_task, immediately locks async_mutex, immediately writes to buffer
+// then immediately exits - no memory barriers needed
+// For key updates, separate reader and writer updates
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

@@ -34,6 +34,14 @@ namespace fbw {
 class TLS : public stream {
 public:
 
+    // Safety:
+    // perform_hello must be called before any other method
+    // read_append, read_append_early, await_handshake_finished are 'read' operations
+    // write, close_notify, flush are 'write' operations
+    // Calling one read and one write operation concurrently is thread safe.
+    // Calling multiple read or write operations concurrently requires additional synchronisation
+
+
     TLS(std::unique_ptr<stream> output_stream);
     ~TLS() = default;
     
@@ -48,7 +56,6 @@ public:
     [[nodiscard]] task<std::string> perform_hello();
     [[nodiscard]] task<stream_result> flush() override;
 private:
-    [[nodiscard]] task<stream_result> flush_internal();
 
     std::unique_ptr<stream> m_client;
     std::unique_ptr<cipher_base> cipher_context = nullptr;
@@ -69,9 +76,14 @@ private:
 
     handshake_ctx handshake;
 
-    uint32_t early_data_received = 0;
+    // key schedule plus cipher context comprise the shared mutable state
+    // we should specify functions which update these and enqueue record
 
-    std::deque<tls_record> encrypt_send;
+    uint32_t early_data_received = 0;
+    
+    std::mutex m_write_mut; // todo: enumerate which values need locking, potentially pull them into a class with an interface
+    ustring m_application_write_buffer; // todo: this needs to be part of the deque so that other types of record aren't interleaved
+    std::deque<tls_record> records_for_wire;
 
     async_mutex m_write_async_mut;
     bool m_closing = false;
@@ -85,7 +97,7 @@ private:
     [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_message(const ustring& handshake_message);
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
-    [[nodiscard]] task<stream_result> client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout);
+    [[nodiscard]] stream_result stage_client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout);
     
     void client_hello(const ustring& handshake_message);
     void client_key_exchange(ustring key_exchange);
@@ -104,12 +116,16 @@ private:
     [[nodiscard]] task<stream_result> server_handshake_finished12();
     [[nodiscard]] task<stream_result> server_handshake_finished13();
     [[nodiscard]] task<stream_result> server_session_ticket();
-    [[nodiscard]] task<stream_result> server_key_update();
+    [[nodiscard]] stream_result stage_server_key_update();
     [[nodiscard]] task<stream_result> server_encrypted_extensions();
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     [[nodiscard]] task<stream_result> server_change_cipher_spec();
     void client_change_cipher_spec(tls_record);
     
+
+    static std::pair<std::deque<tls_record>, ustring> package_records(const ustring& data, ustring buffer);
+
+    task<stream_result> write_to_wire(std::optional<milliseconds> timeout);
 
     static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
 

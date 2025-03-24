@@ -70,8 +70,8 @@ task<stream_result> TLS::await_handshake_finished() {
 task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseconds> app_timeout, bool return_early_data, bool return_client_finished) {
     assert(!(return_early_data && return_client_finished));
     std::optional<ssl_error> error_ssl {};
-    co_await m_write_async_mut.lock(); // read-write concurrency can lead to write-write races particularly around alerts
-    guard g{&m_write_async_mut};
+    //co_await m_write_async_mut.lock(); // read-write concurrency can lead to write-write races particularly around alerts
+    //guard g{&m_write_async_mut};
     try {
         if(return_client_finished and m_expected_record == HandshakeStage::application_data) {
             co_return stream_result::ok;
@@ -82,24 +82,18 @@ task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseco
         }
 
         if(m_expected_record == HandshakeStage::application_data or m_expected_record == HandshakeStage::client_early_data) {
-            auto res = co_await flush_internal();
+            if(auto result = stage_server_key_update(); result != stream_result::ok) {
+                co_return result;
+            }
+            auto res = co_await flush();
             if(res != stream_result::ok) {
                 co_return res;
-            }
-            if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
-                if(ctx->do_key_reset()) {
-                    if(auto result = co_await server_key_update(); result != stream_result::ok) {
-                        co_return result;
-                    }
-                }
             }
         }
         
         for(;;) {
             auto timeout = (m_expected_record == HandshakeStage::application_data) ? app_timeout : project_options.handshake_timeout;
-            m_write_async_mut.maybe_unlock(); // unlock for read operation
             auto [record, result] = co_await try_read_record(timeout);
-            co_await m_write_async_mut.lock();
             if(result != stream_result::ok) {
                 co_return result;
             }
@@ -107,8 +101,11 @@ task<stream_result> TLS::read_append_impl(ustring& data, std::optional<milliseco
             switch (static_cast<ContentType>(record.get_type()) ) {
                 case Handshake:
                     if(m_expected_record == HandshakeStage::application_data) {
-                        if(auto result = co_await client_post_handshake(std::move(record.m_contents), project_options.session_timeout); result != stream_result::ok) {
+                        if(auto result = stage_client_post_handshake(std::move(record.m_contents), project_options.session_timeout); result != stream_result::ok) {
                             co_return result;
+                        }
+                        if(auto res = co_await flush(); res != stream_result::ok) {
+                            co_return res;
                         }
                         break;
                     } else {
@@ -242,76 +239,83 @@ bool squeeze_last_chunk(ssize_t additional_data_len) {
             size_t(additional_data_len) * 3 < WRITE_RECORD_SIZE * 2;
 }
 
-// application code calls this to send data to the client
-task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
-    co_await m_write_async_mut.lock(); // one writer-at a time
-    guard g{&m_write_async_mut};
-    assert(m_expected_record == HandshakeStage::application_data or m_expected_record == HandshakeStage::client_early_data);
-    std::optional<ssl_error> error_ssl{};
-    try {
-        size_t idx = 0;
-        while(idx < data.size()) {
-            if(encrypt_send.empty()) {
-                encrypt_send.emplace_back(Application);
-            }
-            auto& active_record = encrypt_send.back();
-            size_t write_size = std::min(WRITE_RECORD_SIZE - active_record.m_contents.size(), data.size() - idx);
-            encrypt_send.back().m_contents.append( data.begin() + idx,  data.begin() + idx + write_size);
-            idx += write_size;
-            if (active_record.m_contents.size() == WRITE_RECORD_SIZE) {
-                encrypt_send.emplace_back(Application);
-                if(encrypt_send.size() > 2) {
-                    auto res = co_await write_record(std::move(encrypt_send.front()), timeout);
-                    encrypt_send.pop_front();
-                    if (res != stream_result::ok) {
-                        co_return res;
-                    }
-                }
-            }
-        }
-        co_return stream_result::ok;
-    } catch(const ssl_error& e) {
-        error_ssl = e;
-        goto END; // cannot co_await inside a catch block
-    } catch(const std::exception& e) {
-        goto END2;
+std::pair<std::deque<tls_record>, ustring> TLS::package_records(const ustring& data, ustring buffer) {
+    std::deque<tls_record> buffered_write_records;
+
+    // if insufficient data, just add to buffer.
+    if(buffer.size() + data.size() < WRITE_RECORD_SIZE) {
+        buffer.append(data);
+        return {{}, buffer};
     }
-END:
-    co_await server_alert(error_ssl->m_l, error_ssl->m_d);
-    co_return stream_result::closed;
-END2:
-    co_await server_alert(AlertLevel::fatal, AlertDescription::decode_error);
-    co_return stream_result::closed;
+
+    // build record from m_write_buffer
+    tls_record record {Application};
+    record.m_contents = std::move(buffer);
+    buffer.clear();
+    auto data_write_size = WRITE_RECORD_SIZE - record.m_contents.size();
+    record.m_contents.append(data.begin(), data.begin() + data_write_size);
+    buffered_write_records.push_back(std::move(record));
+    size_t idx = data_write_size;
+
+    // create remaining records
+    while( idx + WRITE_RECORD_SIZE <= data.size()) {
+        tls_record record (Application);
+        record.m_contents.assign(data.begin() + idx, data.begin() + idx + WRITE_RECORD_SIZE);
+        buffered_write_records.push_back(std::move(record));
+        idx += WRITE_RECORD_SIZE;
+    }
+    
+    // add remaining data to buffer
+    buffer.assign(data.begin() + idx, data.end());
+    return {buffered_write_records, buffer};
 }
 
-// application data is sent on a buffered stream so the pattern of record sizes reveals much less
-task<stream_result> TLS::flush_internal() {
-    if(encrypt_send.size() >= 2) {
-        if(squeeze_last_chunk(encrypt_send.back().m_contents.size())) {
-            auto back = std::move(encrypt_send.back());
-            encrypt_send.pop_back();
-            encrypt_send.back().m_contents.append(back.m_contents);
-        }
-    }
-    while(!encrypt_send.empty()) {
-        auto& record = encrypt_send.front();
-        if(record.m_contents.empty()) {
-            encrypt_send.pop_front();
-            continue;
-        }
-        auto res = co_await write_record(std::move(record), project_options.session_timeout);
-        encrypt_send.pop_front();
+task<stream_result> TLS::write_to_wire(std::optional<milliseconds> timeout) {
+    // maybe use the record type to infer timeout?
+    co_await m_write_async_mut.lock();
+    guard g{&m_write_async_mut};
+    for(auto& record : records_for_wire) {
+        auto res = co_await m_client->write(record.serialise(), timeout);
         if (res != stream_result::ok) {
             co_return res;
         }
     }
+    records_for_wire.clear();
     co_return stream_result::ok;
 }
 
+// application code calls this to send data to the client
+task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
+    {
+        std::scoped_lock lk {m_write_mut};
+        auto [records, buffer] = package_records(std::move(data), std::move(m_application_write_buffer));
+        m_application_write_buffer = std::move(buffer);
+        if(m_closing) {
+            co_return stream_result::closed;
+        }
+        for(auto& record : records) {
+            records_for_wire.push_back(cipher_context->encrypt(std::move(record)));
+        }
+    }
+    co_return co_await write_to_wire(timeout);
+}
+
+// application data is sent on a buffered stream so the pattern of record sizes reveals much less
 task<stream_result> TLS::flush() {
-    co_await m_write_async_mut.lock();
-    guard g{&m_write_async_mut};
-    co_return co_await flush_internal();
+    {
+        std::scoped_lock lk {m_write_mut};
+        if(m_closing) {
+            co_return stream_result::closed;
+        }
+        if(!m_application_write_buffer.empty()) {
+            tls_record record {Application};
+            record.m_contents = std::move(m_application_write_buffer);
+            m_application_write_buffer.clear();
+            record = cipher_context->encrypt(record);
+            records_for_wire.push_back(std::move(record));
+        }
+    }
+    co_return co_await write_to_wire(project_options.session_timeout);
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired
@@ -319,7 +323,7 @@ task<void> TLS::close_notify() {
     try {
         co_await m_write_async_mut.lock();
         guard g{&m_write_async_mut};
-        co_await flush_internal();
+        co_await flush();
         co_await server_alert(AlertLevel::warning, AlertDescription::close_notify);
         auto [record, result] = co_await try_read_record(project_options.error_timeout);
         if(result != stream_result::ok) {
@@ -399,17 +403,21 @@ task<std::pair<tls_record, stream_result>> TLS::try_read_record(std::optional<mi
 }
 
 task<stream_result> TLS::write_record(tls_record record, std::optional<milliseconds> timeout) {
-    if(m_closing) {
-        co_return stream_result::closed;
+    {
+        std::scoped_lock lk{ m_write_mut };
+        if(m_closing) {
+            co_return stream_result::closed;
+        }
+        if(record.get_type() != ChangeCipherSpec) {
+            assert(cipher_context);
+            record = cipher_context->encrypt(record);
+        }
+        if(record.get_type() == Alert) {
+            m_closing = true;
+        }
+        records_for_wire.push_back(std::move(record));
     }
-    if(server_cipher_spec && record.get_type() != ChangeCipherSpec) {
-        assert(cipher_context);
-        record = cipher_context->encrypt(record);
-    }
-    if(record.get_type() == Alert) {
-        m_closing = true;
-    }
-    co_return co_await m_client->write(record.serialise(), timeout);
+    co_return co_await write_to_wire(timeout);
 }
 
 std::vector<ustring> extract_handshake_messages(tls_record handshake_record, ustring& fragment) {
@@ -618,32 +626,34 @@ task<stream_result> TLS::server_session_ticket() {
     ustring nonce_bytes(8, 0);
     checked_bigend_write(nonce, nonce_bytes, 0, 8);
     assert(handshake.hash_ctor != nullptr);
-    const auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", nonce_bytes, handshake.hash_ctor->get_hash_size());
 
-    session_ticket_nonces[nonce % SESSION_HASHSET_SIZE].store(nonce, std::memory_order::relaxed);
-
-    const bool offer_0rtt = handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data);
-
-    TLS13SessionTicket ticket;
-    ticket.version = 1;
-    ticket.ticket_lifetime = 7200; // seconds
-    ticket.issued_at = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-    ticket.ticket_age_add = randomgen.randgen64();
-    ticket.cipher_suite = handshake.cipher;
-    ticket.early_data_allowed = offer_0rtt;
-
-    ticket.nonce = nonce;
-    ticket.resumption_secret = resumption_ticket_psk;
-
-    const auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, nonce);
-
-    if(record) {
-        const auto res = co_await write_record(*record, project_options.handshake_timeout);
-        co_return res;
+    {
+        std::scoped_lock lk { m_write_mut }; // must be tied to the right resumption master secret
+        if(m_closing) {
+            co_return stream_result::closed;
+        }
+        const auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", nonce_bytes, handshake.hash_ctor->get_hash_size());
+        session_ticket_nonces[nonce % SESSION_HASHSET_SIZE].store(nonce, std::memory_order::relaxed);
+        const bool offer_0rtt = handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data);
+        TLS13SessionTicket ticket;
+        ticket.version = 1;
+        ticket.ticket_lifetime = 7200; // seconds
+        ticket.issued_at = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        ticket.ticket_age_add = randomgen.randgen64();
+        ticket.cipher_suite = handshake.cipher;
+        ticket.early_data_allowed = offer_0rtt;
+        ticket.nonce = nonce;
+        ticket.resumption_secret = resumption_ticket_psk;
+        auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, nonce);
+        if(record) {
+            auto a_record = cipher_context->encrypt(std::move(*record));
+            records_for_wire.push_back(std::move(a_record));
+        }
+        // also push the buffered record
     }
-    co_return stream_result::ok;
+    co_return co_await write_to_wire(project_options.handshake_timeout);
 }
 
 task<stream_result> TLS::server_key_exchange() {
@@ -807,32 +817,44 @@ tls_record server_key_update_record(KeyUpdateRequest req) {
     keyupdate.end_size_header();
     return keyupdate;
 }
-
-task<stream_result> TLS::server_key_update() {
+//co_return co_await write_to_wire(project_options.session_timeout);
+stream_result TLS::stage_server_key_update() {
     assert(m_expected_record == HandshakeStage::application_data);
     assert(tls_protocol_version == TLS13);
-    auto keyupdate = server_key_update_record(KeyUpdateRequest::update_requested);
-    auto res = co_await write_record(std::move(keyupdate), project_options.session_timeout);
-    if(res != stream_result::ok) {
-        co_return res;
+    {
+        std::scoped_lock lk{ m_write_mut };
+        if(m_closing) {
+            return stream_result::closed;
+        }
+        if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
+            if(!ctx or !ctx->do_key_reset()) {
+                return stream_result::ok;
+            }
+        }
+        auto record = server_key_update_record(KeyUpdateRequest::update_requested);
+        assert(cipher_context);
+        record = cipher_context->encrypt(record);
+        if(record.get_type() == Alert) {
+            m_closing = true;
+        }
+        auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
+        srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+        auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
+        assert(tls13_context != nullptr);
+        tls13_context->set_server_traffic_key(srv_key);
+        records_for_wire.push_back(std::move(record));
+        return stream_result::ok;
     }
-    auto& srv_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
-    auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
-    assert(tls13_context != nullptr);
-    tls13_context->set_server_traffic_key(srv_key);
-    co_return stream_result::ok;
 }
 
-task<stream_result> TLS::client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout) {
+stream_result TLS::stage_client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout) {
+    std::scoped_lock lk {m_write_mut};
     assert(m_expected_record == HandshakeStage::application_data);
     if(tls_protocol_version != TLS13) {
-        co_await server_alert(AlertLevel::fatal, AlertDescription::unexpected_message);
-        co_return stream_result::closed;
+        throw ssl_error("wrong protocol", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     if(message.size() < 5) {
-        co_await server_alert(AlertLevel::fatal, AlertDescription::decode_error);
-        co_return stream_result::closed;
+        throw ssl_error("incomplete message", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     switch(static_cast<HandshakeType>(message[0])) {
         case HandshakeType::key_update:
@@ -853,19 +875,20 @@ task<stream_result> TLS::client_post_handshake(const ustring& message,  std::opt
                 }
                 case KeyUpdateRequest::update_requested:
                 {
+                    
                     tls_record keyupdate = server_key_update_record(KeyUpdateRequest::update_not_requested);
-                    auto res = co_await write_record(std::move(keyupdate), timeout);
-                    if(res != stream_result::ok) {
-                        co_return res;
-                    }
-                    auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-                    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
-                    auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
-                    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    keyupdate = cipher_context->encrypt(std::move(keyupdate));
+                    records_for_wire.push_back(std::move(keyupdate));
+                    
                     auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
                     assert(tls13_context != nullptr);
-                    tls13_context->set_server_traffic_key(srv_key);
+
+                    auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
+                    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
                     tls13_context->set_client_traffic_key(cli_key);
+                    auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
+                    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+                    tls13_context->set_server_traffic_key(srv_key);
                     break;
                 }
                 default:
@@ -876,7 +899,7 @@ task<stream_result> TLS::client_post_handshake(const ustring& message,  std::opt
         default:
             break;
     }
-    co_return stream_result::ok;
+    return stream_result::ok;
 }
 
 }// namespace fbw

@@ -87,7 +87,7 @@ bool writeable::await_ready() const noexcept {
 
 bool writeable::await_suspend(std::coroutine_handle<> continuation) {
     // process a few records before moving onto the next client
-    static std::atomic<size_t> fail_sometimes = 1;
+    static std::atomic<size_t> fail_sometimes = 1; // todo: thread local not atomic
     size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
     local_value %= 10;
     if(local_value == 0) {
@@ -120,7 +120,7 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
         m_bytes_written = m_buffer->subspan(0, succ);
         *m_buffer = m_buffer->subspan(succ);
         m_res = stream_result::ok;
-        return false;
+        return false; // happy path
     }
     assert(false);
 }

@@ -49,7 +49,7 @@ public:
 private:
     std::unique_ptr<stream> m_client;
     std::unique_ptr<cipher_base> cipher_context = nullptr;
-    HandshakeStage m_expected_record = HandshakeStage::client_hello;
+    HandshakeStage m_expected_record = HandshakeStage::client_hello; // todo: split this server vs client expected
     ustring m_buffer;
     bool can_heartbeat = false;
     uint16_t tls_protocol_version = 0;
@@ -76,16 +76,21 @@ private:
     [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
     
     [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_record(tls_record);
-    [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_message(const ustring& handshake_message);
+    
     [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
     [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
-    [[nodiscard]] task<stream_result> client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout);
+
+    [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_message(const ustring& handshake_message);
     
     void client_hello(const ustring& handshake_message);
     void client_key_exchange(ustring key_exchange);
     void client_handshake_finished12(const ustring& finish); 
     void client_handshake_finished13(const ustring& finish);
     void client_end_of_early_data(ustring handshake_message);
+
+    KeyUpdateRequest client_key_update_received(const ustring& handshake_message);
+    [[nodiscard]] task<stream_result> server_key_update_respond();
+
     
     [[nodiscard]] task<stream_result> server_hello_request();
     
@@ -100,6 +105,10 @@ private:
     [[nodiscard]] task<stream_result> server_session_ticket();
     [[nodiscard]] task<stream_result> server_key_update();
     [[nodiscard]] task<stream_result> server_encrypted_extensions();
+
+    [[nodiscard]] task<stream_result> server_response_to_hello();
+    [[nodiscard]] task<stream_result> flush_update();
+
     [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
     [[nodiscard]] task<stream_result> server_change_cipher_spec();
     void client_change_cipher_spec(tls_record);
@@ -108,6 +117,8 @@ private:
     static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
 
 };
+
+tls_record server_key_update_record(KeyUpdateRequest req);
 
 } // namespace
 

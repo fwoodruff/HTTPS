@@ -47,6 +47,16 @@
 // Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
 // Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket nonce, with eviction
+// refactor TLS::encrypt_send usage - also this might handle empty records strangely
+
+// factor out the following API from TLS layer. For TLS 'packets' are sequential rather than framed, QUIC later
+// submit_from_io(std::span packet) -> { packet_for_io, data_for_app }
+// submit_from_app(std::span packet) -> { packet_for_io }
+// repurpose 'handshake_ctx' for this
+
+// create a user-friendly TLS API:
+// task read_append() which awaits IO read, looping until it can return data, scheduling output data_for_io writes async
+// task write() which awaits sending data_for_io awaiting
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

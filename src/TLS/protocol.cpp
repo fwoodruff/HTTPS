@@ -22,6 +22,7 @@
 #include "Cryptography/key_derivation.hpp"
 #include "TLS_utils.hpp"
 #include "session_ticket.hpp"
+#include "../Runtime/executor.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -64,21 +65,6 @@ task<stream_result> TLS::await_handshake_finished() {
     ustring dummy;
     co_return co_await read_append_impl(dummy, project_options.handshake_timeout, false, true);
     assert(dummy.empty());
-}
-
-task<stream_result> TLS::flush_update() {
-    auto res = co_await flush();
-    if(res != stream_result::ok) {
-        co_return res;
-    }
-    if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
-        if(ctx->do_key_reset()) {
-            if(auto result = co_await server_key_update(); result != stream_result::ok) {
-                co_return result;
-            }
-        }
-    }
-    co_return stream_result::ok;
 }
 
 // application code calls this to decrypt and read data
@@ -230,6 +216,21 @@ END:
 END2:
     co_await server_alert(AlertLevel::fatal, AlertDescription::decode_error);
     co_return "";
+}
+
+task<stream_result> TLS::flush_update() {
+    auto res = co_await flush();
+    if(res != stream_result::ok) {
+        co_return res;
+    }
+    if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
+        if(ctx->do_key_reset()) {
+            if(auto result = co_await server_key_update(); result != stream_result::ok) {
+                co_return result;
+            }
+        }
+    }
+    co_return stream_result::ok;
 }
 
 // if the last record is going to be really small, just add that data to the penultimate record
@@ -478,6 +479,36 @@ task<std::pair<stream_result, bool>> TLS::client_handshake_message(const ustring
             throw ssl_error("unsupported handshake record type", AlertLevel::fatal, AlertDescription::decode_error);
     }
     co_return {stream_result::ok, false};
+}
+
+task<void> make_write_task(task<stream_result> write_task, std::shared_ptr<TLS> this_ptr) {
+    std::optional<ssl_error> error_ssl;
+    co_await this_ptr->m_async_mut.lock();
+    guard {&this_ptr->m_async_mut};
+    try {
+        if(this_ptr->connection_done) {
+            co_return;
+        }
+        co_await write_task;
+        co_return;
+    } catch(const ssl_error& e) {
+        error_ssl = e;
+        goto END; // cannot co_await inside a catch block
+    } catch(const std::exception& e) {
+        goto END2;
+    }
+    END:
+    co_await this_ptr->server_alert(error_ssl->m_l, error_ssl->m_d);
+    this_ptr->connection_done = true;
+    co_return;
+    END2:
+    co_await this_ptr->server_alert(AlertLevel::fatal, AlertDescription::decode_error);
+    this_ptr->connection_done = true;
+    co_return;
+}
+
+void TLS::schedule(task<stream_result> write_task) {
+    sync_spawn(make_write_task(std::move(write_task), shared_from_this()));
 }
 
 void TLS::client_hello(const ustring& handshake_message) {

@@ -19,6 +19,7 @@
 #include "../Runtime/task.hpp"
 #include "../TCP/stream_base.hpp"
 #include "handshake.hpp"
+#include "../Runtime/async_mutex.hpp"
 
 #include <array>
 #include <string>
@@ -30,7 +31,7 @@
 namespace fbw {
 
 
-class TLS : public stream {
+class TLS : public stream, public std::enable_shared_from_this<TLS>{
 public:
 
     TLS(std::unique_ptr<stream> output_stream);
@@ -47,6 +48,7 @@ public:
     [[nodiscard]] task<std::string> perform_hello();
     [[nodiscard]] task<stream_result> flush() override;
 private:
+
     std::unique_ptr<stream> m_client;
     std::unique_ptr<cipher_base> cipher_context = nullptr;
     HandshakeStage m_expected_record = HandshakeStage::client_hello; // todo: split this server vs client expected
@@ -57,18 +59,21 @@ private:
 
     [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, bool early, bool client_finished);
 
-    ustring early_buffer;
+    std::pair<ustring, ustring> read_append_impl_data(const ustring& bio);
 
+    ustring early_buffer;
     bool server_cipher_spec = false;
     bool client_cipher_spec = false;
-
     ustring m_handshake_fragment {};
-
     handshake_ctx handshake;
-
     uint32_t early_data_received = 0;
-
     std::deque<tls_record> encrypt_send;
+    
+    bool connection_done = false;
+
+    async_mutex m_async_mut;
+
+    void schedule(task<stream_result> write_task);
 
     [[nodiscard]] tls_record decrypt_record(tls_record);
     
@@ -113,6 +118,7 @@ private:
     [[nodiscard]] task<stream_result> server_change_cipher_spec();
     void client_change_cipher_spec(tls_record);
     
+    friend task<void> make_write_task(task<stream_result> write_task, std::shared_ptr<TLS> this_ptr);
 
     static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
 

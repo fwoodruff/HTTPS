@@ -316,7 +316,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
     auto status_code = (file_size != 0)? "200 OK": "206 No Content";
     ustring header_str = make_header(status_code, headers);
     assert(m_stream);
-
+    
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;

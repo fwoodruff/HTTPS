@@ -27,39 +27,28 @@
 namespace fbw {
 
 
-class TLS : public stream, public std::enable_shared_from_this<TLS>{
+class TLS : public stream {
 public:
 
     TLS(std::unique_ptr<stream> output_stream);
     ~TLS() = default;
     
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-
-    [[nodiscard]] task<stream_result> read_append_early(ustring&, std::optional<milliseconds> timeout);
-    [[nodiscard]] task<stream_result> await_handshake_finished();
-
+    [[nodiscard]] task<stream_result> read_append_early_data(ustring&, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
-    
     [[nodiscard]] task<void> close_notify() override;
-
     [[nodiscard]] task<std::string> perform_hello();
-    
     [[nodiscard]] task<stream_result> flush() override;
 
 private:
     tls_engine m_engine;
     std::unique_ptr<stream> m_client;
-    async_mutex m_async_mut;
+    async_mutex m_async_write_mut;
+    async_mutex m_async_read_mut;
 
     [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, bool early, bool client_finished);
-
-    
-
-    task<stream_result> bio_write_all(const std::vector<packet_timed>& packets) const;
-
-    void schedule(task<stream_result> write_task);
-    friend task<void> make_write_task(task<stream_result> write_task, std::shared_ptr<TLS> this_ptr);
-
+    task<stream_result> bio_write_all(std::queue<packet_timed>& packets);
 };
 
 tls_record server_key_update_record(KeyUpdateRequest req);

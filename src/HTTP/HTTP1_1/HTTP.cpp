@@ -112,7 +112,7 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         auto m_tls_stream = dynamic_cast<TLS*>(m_stream.get());
         stream_result connection_alive;
         if(m_tls_stream) {
-            connection_alive = co_await m_tls_stream->read_append_early(m_buffer, timeout);
+            connection_alive = co_await m_tls_stream->read_append_early_data(m_buffer, timeout);
         } else {
             connection_alive = co_await m_stream->read_append(m_buffer, timeout);
         }

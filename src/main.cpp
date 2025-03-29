@@ -45,7 +45,7 @@
 // go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
 // Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
-// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket nonce, with eviction
+// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket number once, with eviction
 // refactor TLS::write_buffer usage - also this might handle empty records strangely
 // to test key update mechanism again after changes
 // todo: add RFC references as comments

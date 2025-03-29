@@ -25,7 +25,7 @@
 
 namespace fbw {
 
-std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_nonces {};
+std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_numbers_once {};
 
 // once client sends over their supported ciphers
 // if client supports ChaCha20 we enforce that, ideally with TLS 1.3
@@ -225,6 +225,7 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
     if(!key) {
         return {null_psk, std::nullopt};
     }
+    std::cout << "received keys" << std::endl;
     for(size_t i = 0; i < key->m_keys.size(); i++) { 
         auto key_entry = key->m_keys[i];
         auto ticket = TLS13SessionTicket::decrypt_ticket(key_entry.m_key, session_ticket_master_secret);
@@ -274,10 +275,11 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
         if(received_binder != computed_binder ) {
             continue;
         }
-        auto set_nonce = session_ticket_nonces[ticket->nonce % SESSION_HASHSET_SIZE].exchange(0, std::memory_order_relaxed);
-        if(set_nonce != ticket->nonce) {
+        auto set_number_once = session_ticket_numbers_once[ticket->number_once % SESSION_HASHSET_SIZE].exchange(0, std::memory_order_relaxed);
+        if(set_number_once != ticket->number_once) {
             continue;
         }
+        std::cout << "key is good!" << std::endl;
         return {ticket->resumption_secret, i};
     }
     return {null_psk, std::nullopt};

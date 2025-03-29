@@ -75,7 +75,7 @@ std::array<uint8_t, 64> chacha20_inner(const std::array<uint32_t, 16>& state_ori
     return out;
 }
 
-std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& nonce) {
+std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once) {
     std::array<uint32_t, 16> state {0};
     state[0] = 0x61707865;
     state[1] = 0x3320646e;
@@ -87,25 +87,25 @@ std::array<uint32_t, 16> chacha20_state(const std::array<uint8_t, KEY_SIZE>& key
     }
     
     for(int i = 0; i < 3; i++) {
-        state[i+13] = asval_bigend(&nonce[i*4]);
+        state[i+13] = asval_bigend(&number_once[i*4]);
     }
     return state;
 }
 
-std::array<uint8_t, 64> chacha20(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& nonce, uint32_t block_count) {
-    auto state = chacha20_state(key, nonce);
+std::array<uint8_t, 64> chacha20(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once, uint32_t block_count) {
+    auto state = chacha20_state(key, number_once);
     return chacha20_inner(state, block_count);
 }
 
 ustring chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             uint32_t blockid,
-                            const std::array<uint8_t, IV_SIZE>& nonce,
+                            const std::array<uint8_t, IV_SIZE>& number_once,
                             const ustring& message) {
     
     ustring out;
     out.resize(message.size());
 
-    auto state = chacha20_state(key, nonce);
+    auto state = chacha20_state(key, number_once);
     
     size_t k = 0;
     // massive parallelism here?
@@ -225,8 +225,8 @@ std::array<uint8_t, TAG_SIZE> poly1305_mac(const ustring& message, const std::ar
     return out_str;
 }
 
-std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& nonce) {
-    std::array<uint8_t, 64> bl = chacha20(key, nonce, 0);
+std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once) {
+    std::array<uint8_t, 64> bl = chacha20(key, number_once, 0);
     std::array<uint8_t, KEY_SIZE> out;
     std::copy_n(bl.begin(), KEY_SIZE, out.begin());
     return out;
@@ -236,10 +236,10 @@ std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZ
 
 // encrypt or decrypt
 std::pair<ustring, std::array<uint8_t, TAG_SIZE>>
-chacha20_aead_crypt(ustring aad, std::array<uint8_t, KEY_SIZE> key, std::array<uint8_t, IV_SIZE> nonce, ustring text, bool do_encrypt) {
+chacha20_aead_crypt(ustring aad, std::array<uint8_t, KEY_SIZE> key, std::array<uint8_t, IV_SIZE> number_once, ustring text, bool do_encrypt) {
     
-    auto otk = poly1305_key_gen(key, nonce);
-    auto xortext = chacha20_xorcrypt(key, 1, nonce, text);
+    auto otk = poly1305_key_gen(key, number_once);
+    auto xortext = chacha20_xorcrypt(key, 1, number_once, text);
 
     std::array<uint8_t, 8> aad_size {};
     std::array<uint8_t, 8> cip_size {};
@@ -306,7 +306,7 @@ ustring make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_
     return additional_data;
 }
 
-std::array<uint8_t, IV_SIZE> number_once(std::array<uint8_t, IV_SIZE> IV, uint64_t seq) {
+std::array<uint8_t, IV_SIZE> make_number_once(std::array<uint8_t, IV_SIZE> IV, uint64_t seq) {
     std::array<uint8_t,sizeof(uint64_t)> sequence_no;
     checked_bigend_write(seq, sequence_no, 0, sizeof(uint64_t));
     for(size_t i = 0; i < sizeof(uint64_t); i ++) {
@@ -316,9 +316,9 @@ std::array<uint8_t, IV_SIZE> number_once(std::array<uint8_t, IV_SIZE> IV, uint64
 }
 
 ustring ChaCha20_Poly1305_ctx::encrypt(ustring plaintext, ustring additional_data) {
-    auto nonce = number_once(server_implicit_write_IV, seqno_server);
+    auto number_once = make_number_once(server_implicit_write_IV, seqno_server);
     seqno_server++;
-    auto [ciphertext, tag] = chacha20_aead_crypt(additional_data, server_write_key, nonce, std::move(plaintext), true);
+    auto [ciphertext, tag] = chacha20_aead_crypt(additional_data, server_write_key, number_once, std::move(plaintext), true);
     ciphertext.append(tag.begin(), tag.end());
     return ciphertext;
 }
@@ -328,9 +328,9 @@ ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, ustring additional_da
     std::array<uint8_t, TAG_SIZE> tag;
     std::copy(ciphertext.end() - TAG_SIZE, ciphertext.end(), tag.begin());
     ciphertext.resize(ciphertext.size() - TAG_SIZE);
-    auto nonce = number_once(client_implicit_write_IV, seqno_client);
+    auto number_once = make_number_once(client_implicit_write_IV, seqno_client);
     seqno_client++;
-    auto [plaintext, tag_recalc] = chacha20_aead_crypt(additional_data, client_write_key, nonce, ciphertext, false);
+    auto [plaintext, tag_recalc] = chacha20_aead_crypt(additional_data, client_write_key, number_once, ciphertext, false);
     if(tag != tag_recalc) [[unlikely]] {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }

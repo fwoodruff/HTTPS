@@ -457,16 +457,16 @@ void tls_engine::client_handshake_finished13(const ustring& handshake_message) {
     m_expected_read_record = HandshakeStage::application_data;
 }
 
-static std::atomic<uint64_t> global_nonce = 1;
+static std::atomic<uint64_t> global_number_once = 1;
 
 void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
-    const auto nonce = global_nonce.fetch_add(1, std::memory_order_relaxed);
-    ustring nonce_bytes(8, 0);
-    checked_bigend_write(nonce, nonce_bytes, 0, 8);
+    const auto number_once = global_number_once.fetch_add(1, std::memory_order_relaxed);
+    ustring number_once_bytes(8, 0);
+    checked_bigend_write(number_once, number_once_bytes, 0, 8);
     assert(handshake.hash_ctor != nullptr);
-    const auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", nonce_bytes, handshake.hash_ctor->get_hash_size());
+    const auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", number_once_bytes, handshake.hash_ctor->get_hash_size());
 
-    session_ticket_nonces[nonce % SESSION_HASHSET_SIZE].store(nonce, std::memory_order::relaxed);
+    session_ticket_numbers_once[number_once % SESSION_HASHSET_SIZE].store(number_once, std::memory_order::relaxed);
 
     const bool offer_0rtt = handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data);
 
@@ -480,10 +480,10 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
     ticket.cipher_suite = handshake.cipher;
     ticket.early_data_allowed = offer_0rtt;
 
-    ticket.nonce = nonce;
+    ticket.number_once = number_once;
     ticket.resumption_secret = resumption_ticket_psk;
 
-    const auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, nonce);
+    const auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, number_once);
 
     if(record) {
         write_record_sync(output, *record, project_options.handshake_timeout);
@@ -640,6 +640,7 @@ tls_record server_key_update_record(KeyUpdateRequest req) {
 }
 
 void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
+    // todo: check this still works
     assert(tls_protocol_version == TLS13);
     auto keyupdate = server_key_update_record(KeyUpdateRequest::update_requested);
     auto& srv_key = handshake.tls13_key_schedule.client_application_traffic_secret;

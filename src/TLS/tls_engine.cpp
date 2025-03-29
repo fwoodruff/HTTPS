@@ -80,13 +80,13 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                         application_data.append(std::move(record.m_contents));
                         return m_expected_read_record;
                     }
-                    if(m_expected_read_record == HandshakeStage::client_early_data) {
-                        if(!handshake.zero_rtt) {
-                            break;
-                        }
+                    if(m_expected_read_record == HandshakeStage::client_early_data or m_expected_read_record == HandshakeStage::client_handshake_finished) {
                         early_data_received += record.m_contents.size();
                         if(early_data_received > MAX_EARLY_DATA) {
                             throw ssl_error("too much early data", AlertLevel::fatal, AlertDescription::unexpected_message);
+                        }
+                        if(!handshake.zero_rtt) {
+                            break;
                         }
                         application_data.append(std::move(record.m_contents));
                         break;
@@ -228,18 +228,24 @@ tls_record tls_engine::decrypt_record(tls_record record) {
     }
     if(client_cipher_spec) {
         assert(cipher_context);
-        record = cipher_context->decrypt(std::move(record));
-        // try {
-        //    record = cipher_context->decrypt(std::move(record));
-        // } catch(ssl_error& e) {
-        //    if(record.get_type() == Application and 
-        //        m_expected_read_record == HandshakeStage::client_early_data and 
-        //        handshake.server_hello_type == ServerHelloType::diffie_hellman) {
-        //            // client preemptively sent early data we don't have the key to decrypt
-        //            return tls_record(Application);
-        // }
-        //    throw;
-        // }
+        auto encrypted_size = record.m_contents.size();
+        try {
+            record = cipher_context->deprotect(std::move(record));
+        } catch(ssl_error& e) {
+            if(record.get_type() == Application and 
+                m_expected_read_record == HandshakeStage::client_handshake_finished and 
+                handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data) and
+                !handshake.zero_rtt) {
+                    // RFC 8446 4.2.10
+                    //     The server then skips past early data by attempting to deprotect
+                    //     received records using the handshake traffic key, discarding records
+                    //     which fail deprotection up to the configured max_early_data_size
+                    auto blank_record = tls_record(Application);
+                    blank_record.m_contents.resize(encrypted_size);
+                    return blank_record;
+            }
+            throw;
+        }
     }
     return record;
 }
@@ -264,7 +270,7 @@ void tls_engine::write_record_sync(std::queue<packet_timed>& output, tls_record 
     }
     if(server_cipher_spec and record.get_type() != ChangeCipherSpec) {
         assert(cipher_context);
-        record = cipher_context->encrypt(record);
+        record = cipher_context->protect(record);
     }
     output.push({record.serialise(), timeout});
 }
@@ -343,7 +349,7 @@ void tls_engine::client_hello(const ustring& handshake_message) {
     }
     handshake.client_hello_record(handshake_message);
     if(tls_protocol_version == TLS13) {
-        if (handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+        if (handshake.zero_rtt) {
             m_expected_read_record = HandshakeStage::client_early_data;
         } else if(handshake.server_hello_type == ServerHelloType::hello_retry) {
             m_expected_read_record = HandshakeStage::client_hello;

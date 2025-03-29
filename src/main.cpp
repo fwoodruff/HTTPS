@@ -49,7 +49,7 @@
 // refactor TLS::write_buffer usage - also this might handle empty records strangely
 // to test key update mechanism again after changes
 // todo: add RFC references as comments
-// once HTTP/2 and HTTP/1.1 share the same interface, combine perform_hello_sync and read_append_impl_sync
+// once HTTP/2 ready, make session tickets check ALPN
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

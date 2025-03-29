@@ -137,7 +137,7 @@ bool squeeze_last_chunk(ssize_t additional_data_len) {
             size_t(additional_data_len) * 3 < WRITE_RECORD_SIZE * 2;
 }
 
-stream_result tls_engine::write_sync(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout) {
+stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     std::scoped_lock lk { m_write_queue_mut }; // todo: finer-grained locking
     assert(server_cipher_spec);
@@ -171,7 +171,7 @@ stream_result tls_engine::write_sync(std::queue<packet_timed>& output, ustring d
     return stream_result::ok;
 }
 
-stream_result tls_engine::flush_sync(std::queue<packet_timed>& output) {
+stream_result tls_engine::process_net_flush(std::queue<packet_timed>& output) {
     std::scoped_lock lk { m_write_queue_mut };
     if(write_connection_done) {
         return stream_result::closed;
@@ -229,6 +229,17 @@ tls_record tls_engine::decrypt_record(tls_record record) {
     if(client_cipher_spec) {
         assert(cipher_context);
         record = cipher_context->decrypt(std::move(record));
+        // try {
+        //    record = cipher_context->decrypt(std::move(record));
+        // } catch(ssl_error& e) {
+        //    if(record.get_type() == Application and 
+        //        m_expected_read_record == HandshakeStage::client_early_data and 
+        //        handshake.server_hello_type == ServerHelloType::diffie_hellman) {
+        //            // client preemptively sent early data we don't have the key to decrypt
+        //            return tls_record(Application);
+        // }
+        //    throw;
+        // }
     }
     return record;
 }
@@ -468,7 +479,9 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
 
     session_ticket_numbers_once[number_once % SESSION_HASHSET_SIZE].store(number_once, std::memory_order::relaxed);
 
-    const bool offer_0rtt = handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data);
+    // RFC 8446 4.2
+    //      The server MAY also send unsolicited extensions in the NewSessionTicket
+    const bool offer_0rtt = true;
 
     TLS13SessionTicket ticket;
     ticket.version = 1;
@@ -482,6 +495,7 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
 
     ticket.number_once = number_once;
     ticket.resumption_secret = resumption_ticket_psk;
+    //ticket.alpn = alpn();
 
     const auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, number_once);
 
@@ -652,13 +666,13 @@ void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired
-void tls_engine::close_notify_sync_write(std::queue<packet_timed>& output) {
+void tls_engine::process_close_notify(std::queue<packet_timed>& output) {
     std::scoped_lock lk { m_write_queue_mut };
     flush_sync_internal(output);
     server_alert_sync(output, AlertLevel::warning, AlertDescription::close_notify);
 }
 
-stream_result tls_engine::close_notify_sync_finish(const ustring& bio_input) {
+stream_result tls_engine::close_notify_finish(const ustring& bio_input) {
     m_buffer.append(bio_input);
     auto opt_record = pop_record_from_buffer();
     if(!opt_record) {

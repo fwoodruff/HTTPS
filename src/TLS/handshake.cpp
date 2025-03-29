@@ -218,14 +218,13 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& cli
     return record;
 }
 
-std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(const ustring& prefix_hash) const {
+std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_psk(const ustring& prefix_hash) const {
     auto key = client_hello.pre_shared_key;
     assert(hash_ctor != nullptr);
     auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
     if(!key) {
-        return {null_psk, std::nullopt};
+        return {null_psk, std::nullopt, false};
     }
-    std::cout << "received keys" << std::endl;
     for(size_t i = 0; i < key->m_keys.size(); i++) { 
         auto key_entry = key->m_keys[i];
         auto ticket = TLS13SessionTicket::decrypt_ticket(key_entry.m_key, session_ticket_master_secret);
@@ -240,9 +239,6 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
             continue;
         }
         if(ticket->sni != "" && ticket->sni != m_SNI) {
-            continue;
-        }
-        if(!ticket->early_data_allowed && client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
             continue;
         }
         uint64_t computed_age_millis = uint32_t(key_entry.m_obfuscated_age - ticket->ticket_age_add);
@@ -279,10 +275,12 @@ std::pair<ustring, std::optional<size_t>> handshake_ctx::get_resumption_psk(cons
         if(set_number_once != ticket->number_once) {
             continue;
         }
-        std::cout << "key is good!" << std::endl;
-        return {ticket->resumption_secret, i};
+        //if(ticket->alpn != alpn) {
+            //continue;
+        //}
+        return {ticket->resumption_secret, i, (ticket->early_data_allowed and i == 0) };
     }
-    return {null_psk, std::nullopt};
+    return {null_psk, std::nullopt, false};
 }
 
 void handshake_ctx::client_hello_record(const ustring& handshake_message) {
@@ -329,6 +327,7 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
             throw ssl_error("offered PSK DHE without offering a key", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
 
+        bool can_handle_0rtt = false;
         if(has_preshared_key) {
             assert(client_hello.pre_shared_key);
             size_t idx_bind = client_hello.pre_shared_key->idxbinders;
@@ -336,9 +335,10 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
             auto handshake_prefix_hasher = handshake_hasher->clone();
             handshake_prefix_hasher->update(truncated_hello);
             const auto prefix_hash = handshake_prefix_hasher->hash();
-            auto [resumption_psk, selected_identity] = get_resumption_psk(prefix_hash);
+            auto [resumption_psk, selected_identity, early_data_allowed] = get_resumption_psk(prefix_hash);
             psk = resumption_psk;
             selected_preshared_key_id = selected_identity;
+            can_handle_0rtt = client_hello.parsed_extensions.contains(ExtensionType::early_data) and early_data_allowed;
         }
         const bool established_ps_key = selected_preshared_key_id.has_value();
 
@@ -346,8 +346,6 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
             client_public_key = choose_client_public_key(client_hello.shared_keys, client_hello.supported_groups);
         }
         const bool established_dh_key = !client_public_key.key.empty();
-
-        bool can_handle_0rtt = client_hello.parsed_extensions.contains(ExtensionType::early_data) and selected_preshared_key_id == 0;
 
         if(has_psk_dhe_ke and established_ps_key and established_dh_key) {
             server_hello_type = ServerHelloType::preshared_key_dh;

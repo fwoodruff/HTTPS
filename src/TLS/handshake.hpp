@@ -94,7 +94,7 @@ private:
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 
-    std::pair<ustring, std::optional<size_t>> get_resumption_psk(const ustring& hello_message) const;
+    std::tuple<ustring, std::optional<size_t>, bool> get_resumption_psk(const ustring& hello_message) const;
     
 };
 

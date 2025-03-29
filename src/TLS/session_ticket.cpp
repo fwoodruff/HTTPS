@@ -11,6 +11,7 @@ std::array<uint8_t, 16> session_ticket_master_secret {};
 
 ustring TLS13SessionTicket::serialise() {
 
+    //constexpr int header_size = 23;
     constexpr int header_size = 22;
     ustring out;
     out.reserve(header_size + resumption_secret.size() + sni.size() + 2);
@@ -25,6 +26,7 @@ ustring TLS13SessionTicket::serialise() {
     assert(sni.size() < 256);
     checked_bigend_write(resumption_secret.size(), out, 20, 1);
     checked_bigend_write(sni.size(), out, 21, 1);
+    // checked_bigend_write(alpn.size(), out, 22, 1);
 
     out.append(resumption_secret.begin(), resumption_secret.end());
     out.append(sni.begin(), sni.end());
@@ -32,6 +34,7 @@ ustring TLS13SessionTicket::serialise() {
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket) {
+    // constexpr size_t header_size = 23;
     constexpr size_t header_size = 22;
 
     if(ticket.size() < header_size) {
@@ -47,6 +50,7 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket
     out.number_once = 0;
     const size_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
     const size_t sni_len = try_bigend_read(ticket, 21, 1);
+    // const size_t alpn_len = try_bigend_read(ticket, 22, 1);
     if(ticket.size() != header_size + resumption_secret_len + sni_len) {
         return std::nullopt;
     }
@@ -54,6 +58,8 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket
     out.resumption_secret.assign(it, it + resumption_secret_len);
     it += resumption_secret_len;
     out.sni.assign(it, it + sni_len);
+    // it += sni_len;
+    // out.alpn.assign(it, it + alpn_len);
     return out;
 }
 
@@ -126,7 +132,6 @@ ustring TLS13SessionTicket::encrypt_ticket(const std::array<uint8_t, 16>& encryp
 std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt_ticket(ustring ticket, const std::array<uint8_t, 16>& encryption_key) {
     auto opt_ticket_bytes_number_once = decrypt_message(ticket, encryption_key);
     if(!opt_ticket_bytes_number_once) {
-        std::cout << "decryption failure" << std::endl;
         return std::nullopt;
     }
     auto opt_ticket = deserialise(std::move(opt_ticket_bytes_number_once->first));
@@ -135,7 +140,6 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt_ticket(ustring tic
     }
     opt_ticket->number_once = opt_ticket_bytes_number_once->second;
     assert(opt_ticket->number_once != 0);
-    std::cout << "decoded ticket: " << opt_ticket->number_once << std::endl;
     return opt_ticket;
 }
 
@@ -180,14 +184,13 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
 
     record.start_size_header(2);
 
-    // RFC 8446 4.2
-    //      The server MAY also send unsolicited extensions in the NewSessionTicket
-    write_early_data_ticket_ext(record);
+    if(ticket.early_data_allowed) {
+        write_early_data_ticket_ext(record);
+    }
     
     record.end_size_header();
 
     record.end_size_header();
-    std::cout << "sent session ticket with number once: " << number_once << std::endl;
     return record;
 }
 

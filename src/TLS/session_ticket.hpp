@@ -34,7 +34,7 @@ struct TLS13SessionTicket {
     uint64_t number_once;
     ustring resumption_secret;
     std::string sni;
-    
+    //std::string alpn;
     
     static std::optional<TLS13SessionTicket> decrypt_ticket(ustring ticket, const std::array<uint8_t, 16>& encryption_key);
     static std::optional<tls_record> server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, uint64_t number_once);

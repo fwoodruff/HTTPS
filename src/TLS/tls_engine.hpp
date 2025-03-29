@@ -37,11 +37,11 @@ public:
 
     HandshakeStage process_net_read(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout);
     
-    stream_result write_sync(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout);
-    stream_result flush_sync(std::queue<packet_timed>& output);
+    stream_result process_net_write(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout);
+    stream_result process_net_flush(std::queue<packet_timed>& output);
 
-    void close_notify_sync_write(std::queue<packet_timed>& output);
-    stream_result close_notify_sync_finish(const ustring& bio_input);
+    void process_close_notify(std::queue<packet_timed>& output);
+    stream_result close_notify_finish(const ustring& bio_input);
 
     std::string alpn();
     
@@ -64,7 +64,6 @@ private:
     bool write_connection_done = false;
 
     [[nodiscard]] tls_record decrypt_record(tls_record);
-    [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
 
     void client_handshake_record_sync(std::queue<packet_timed>& output, tls_record record);
     void client_handshake_message_sync(std::queue<packet_timed>& output, const ustring& handshake_message);

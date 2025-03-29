@@ -53,7 +53,15 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
             co_return stream_result::closed;
         }
         ustring input_data;
-        auto read_res = co_await m_client->read_append(input_data, project_options.handshake_timeout);
+
+        auto read_timeout = std::optional(project_options.handshake_timeout);
+        if(m_engine.m_expected_read_record == HandshakeStage::application_data) {
+            read_timeout = timeout;
+        }
+        if(m_engine.m_expected_read_record > HandshakeStage::client_early_data and return_early) {
+            read_timeout = timeout;
+        }
+        auto read_res = co_await m_client->read_append(input_data, read_timeout);
         if(read_res != stream_result::ok) {
             co_return read_res;
         }
@@ -110,7 +118,7 @@ std::string TLS::alpn() {
 
 // application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
-    m_engine.write_sync(output, data, timeout);
+    m_engine.process_net_write(output, data, timeout);
     return net_write_all(output);
 }
 
@@ -145,13 +153,13 @@ task<stream_result> TLS::net_write_all(std::queue<packet_timed>& packets) {
 
 // application data is sent on a buffered stream so the pattern of record sizes reveals much less
 task<stream_result> TLS::flush() {
-    m_engine.flush_sync(output);
+    m_engine.process_net_flush(output);
     return net_write_all(output);
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired
 task<void> TLS::close_notify() {
-    m_engine.close_notify_sync_write(output);
+    m_engine.process_close_notify(output);
     auto res = co_await net_write_all(output);
     if(res != stream_result::ok) {
         co_return;
@@ -168,7 +176,7 @@ task<void> TLS::close_notify() {
             co_return;
         }
         std::queue<packet_timed> output_end;
-        auto res2 = m_engine.close_notify_sync_finish(input_data);
+        auto res2 = m_engine.close_notify_finish(input_data);
         if(res2 == stream_result::awaiting) {
             continue;
         }

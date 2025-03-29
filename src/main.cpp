@@ -66,7 +66,6 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
     }
 }
 
-// todo: refactor this so that the http client just reads and writes to the stream, where handshakes are an implementation detail
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
     auto res = co_await client_stream->await_hello();

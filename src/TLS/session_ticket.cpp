@@ -10,11 +10,9 @@ namespace fbw {
 std::array<uint8_t, 16> session_ticket_master_secret {};
 
 ustring TLS13SessionTicket::serialise() {
-
-    //constexpr int header_size = 23;
-    constexpr int header_size = 22;
+    constexpr int header_size = 23;
     ustring out;
-    out.reserve(header_size + resumption_secret.size() + sni.size() + 2);
+    out.reserve(header_size + resumption_secret.size() + sni.size() + alpn.size() + 2);
     out.resize(header_size);
     checked_bigend_write(version, out, 0, 2);
     checked_bigend_write(ticket_lifetime, out, 2, 3);
@@ -24,18 +22,19 @@ ustring TLS13SessionTicket::serialise() {
     checked_bigend_write(uint8_t(early_data_allowed), out, 19, 1);
     assert(resumption_secret.size() < 256);
     assert(sni.size() < 256);
+    assert(alpn.size() < 256);
     checked_bigend_write(resumption_secret.size(), out, 20, 1);
     checked_bigend_write(sni.size(), out, 21, 1);
-    // checked_bigend_write(alpn.size(), out, 22, 1);
+    checked_bigend_write(alpn.size(), out, 22, 1);
 
     out.append(resumption_secret.begin(), resumption_secret.end());
     out.append(sni.begin(), sni.end());
+    out.append(alpn.begin(), alpn.end());
     return out;
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket) {
-    // constexpr size_t header_size = 23;
-    constexpr size_t header_size = 22;
+    constexpr size_t header_size = 23;
 
     if(ticket.size() < header_size) {
         return std::nullopt;
@@ -50,16 +49,16 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket
     out.number_once = 0;
     const size_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
     const size_t sni_len = try_bigend_read(ticket, 21, 1);
-    // const size_t alpn_len = try_bigend_read(ticket, 22, 1);
-    if(ticket.size() != header_size + resumption_secret_len + sni_len) {
+    const size_t alpn_len = try_bigend_read(ticket, 22, 1);
+    if(ticket.size() != header_size + resumption_secret_len + sni_len + alpn_len) {
         return std::nullopt;
     }
     auto it = ticket.begin() + header_size;
     out.resumption_secret.assign(it, it + resumption_secret_len);
     it += resumption_secret_len;
     out.sni.assign(it, it + sni_len);
-    // it += sni_len;
-    // out.alpn.assign(it, it + alpn_len);
+    it += sni_len;
+    out.alpn.assign(it, it + alpn_len);
     return out;
 }
 

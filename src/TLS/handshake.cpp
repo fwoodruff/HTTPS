@@ -275,9 +275,6 @@ std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_p
         if(set_number_once != ticket->number_once) {
             continue;
         }
-        //if(ticket->alpn != alpn) {
-            //continue;
-        //}
         return {ticket->resumption_secret, i, (ticket->early_data_allowed and i == 0) };
     }
     return {null_psk, std::nullopt, false};
@@ -292,6 +289,8 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     assert(handshake_hasher != nullptr);
     assert(hash_ctor != nullptr);
     assert(p_tls_version != nullptr);
+
+    alpn = choose_alpn(client_hello.application_layer_protocols);
     
     ustring psk = ustring(hash_ctor->get_hash_size(), 0);
     if(*p_tls_version == TLS13) {
@@ -371,7 +370,7 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
     }
     
     CRIME_compression(client_hello);
-    alpn = choose_alpn(client_hello.application_layer_protocols);
+    
     m_SNI = choose_server_name(client_hello.server_names);
 
     handshake_hasher->update(handshake_message);

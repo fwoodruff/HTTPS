@@ -495,7 +495,7 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
 
     ticket.number_once = number_once;
     ticket.resumption_secret = resumption_ticket_psk;
-    //ticket.alpn = alpn();
+    ticket.alpn = alpn();
 
     const auto record = TLS13SessionTicket::server_session_ticket_record(ticket, session_ticket_master_secret, number_once);
 

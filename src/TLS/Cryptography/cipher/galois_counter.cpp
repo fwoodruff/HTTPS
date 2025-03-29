@@ -343,7 +343,7 @@ ustring make_additional_12(const tls_record& record, uint64_t sequence_no, size_
     return additional_data;
 }
 
-tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
+tls_record AES_128_GCM_SHA256::protect(tls_record record) noexcept {
     ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
     ustring sequence_no;
     sequence_no.resize(8);
@@ -358,7 +358,7 @@ tls_record AES_128_GCM_SHA256::encrypt(tls_record record) noexcept {
     return record;
 }
 
-tls_record AES_128_GCM_SHA256_tls13::encrypt(tls_record record) noexcept {
+tls_record AES_128_GCM_SHA256_tls13::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
     ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     ustring sequence_no;
@@ -376,7 +376,7 @@ tls_record AES_128_GCM_SHA256_tls13::encrypt(tls_record record) noexcept {
     return record;
 }
 
-tls_record AES_256_GCM_SHA384::encrypt(tls_record record) noexcept {
+tls_record AES_256_GCM_SHA384::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
     ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     ustring sequence_no;
@@ -394,7 +394,7 @@ tls_record AES_256_GCM_SHA384::encrypt(tls_record record) noexcept {
     return record;
 }
 
-tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
+tls_record AES_128_GCM_SHA256::deprotect(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE + sizeof(uint64_t)) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
@@ -414,7 +414,7 @@ tls_record AES_128_GCM_SHA256::decrypt(tls_record record) {
     return record;
 }
 
-tls_record AES_128_GCM_SHA256_tls13::decrypt(tls_record record) {
+tls_record AES_128_GCM_SHA256_tls13::deprotect(tls_record record) {
     if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
@@ -437,7 +437,7 @@ tls_record AES_128_GCM_SHA256_tls13::decrypt(tls_record record) {
     return record;
 }
 
-tls_record AES_256_GCM_SHA384::decrypt(tls_record record) {
+tls_record AES_256_GCM_SHA384::deprotect(tls_record record) {
     if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
         throw ssl_error("record too short for tag and wrap", AlertLevel::fatal, AlertDescription::decrypt_error);
     }

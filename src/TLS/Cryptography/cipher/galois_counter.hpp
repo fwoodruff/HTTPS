@@ -38,8 +38,8 @@ class AES_128_GCM_SHA256 : public cipher_base_tls12 {
 public:
     AES_128_GCM_SHA256() = default;
     void set_key_material_12(ustring material) override;
-    tls_record encrypt(tls_record record) noexcept override;
-    tls_record decrypt(tls_record record) override;
+    tls_record protect(tls_record record) noexcept override;
+    tls_record deprotect(tls_record record) override;
 };
 
 class AES_128_GCM_SHA256_tls13 : public cipher_base_tls13 {
@@ -52,8 +52,8 @@ public:
     void set_server_traffic_key(const ustring& key) override;
     void set_client_traffic_key(const ustring& key) override;
     bool do_key_reset() override;
-    tls_record encrypt(tls_record record) noexcept override;
-    tls_record decrypt(tls_record record) override;
+    tls_record protect(tls_record record) noexcept override;
+    tls_record deprotect(tls_record record) override;
 };
 
 class AES_256_GCM_SHA384 : public cipher_base_tls13 {
@@ -66,8 +66,8 @@ public:
     void set_server_traffic_key(const ustring& key) override;
     void set_client_traffic_key(const ustring& key) override;
     bool do_key_reset() override;
-    tls_record encrypt(tls_record record) noexcept override;
-    tls_record decrypt(tls_record record) override;
+    tls_record protect(tls_record record) noexcept override;
+    tls_record deprotect(tls_record record) override;
 };
 
 

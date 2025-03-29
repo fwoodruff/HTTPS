@@ -73,7 +73,7 @@ ustring pad_message(ustring message) {
 }
 
 
-tls_record AES_CBC_SHA::encrypt(tls_record record) noexcept {
+tls_record AES_CBC_SHA::protect(tls_record record) noexcept {
     auto ctx = hmac(sha1(), server_MAC_key );
     std::array<uint8_t,13> sequence {};
     checked_bigend_write(seqno_server, sequence, 0, 8);
@@ -102,7 +102,7 @@ tls_record AES_CBC_SHA::encrypt(tls_record record) noexcept {
     return record;
 }
 
-tls_record AES_CBC_SHA::decrypt(tls_record record) {
+tls_record AES_CBC_SHA::deprotect(tls_record record) {
 
     if(record.m_contents.size() % 16 != 0 or record.m_contents.size() < 32) {
         throw ssl_error("bad encrypted record length", AlertLevel::fatal, AlertDescription::decrypt_error);

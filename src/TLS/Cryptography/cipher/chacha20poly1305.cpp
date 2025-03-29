@@ -340,20 +340,20 @@ ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, ustring additional_da
     return plaintext;
 }
 
-tls_record ChaCha20_Poly1305_tls13::encrypt(tls_record record) noexcept {
+tls_record ChaCha20_Poly1305_tls13::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
     ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
     return record;
 }
 
-tls_record ChaCha20_Poly1305_tls12::encrypt(tls_record record) noexcept {
+tls_record ChaCha20_Poly1305_tls12::protect(tls_record record) noexcept {
     ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
     record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
     return record;
 }
 
-tls_record ChaCha20_Poly1305_tls13::decrypt(tls_record record) {
+tls_record ChaCha20_Poly1305_tls13::deprotect(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
@@ -363,7 +363,7 @@ tls_record ChaCha20_Poly1305_tls13::decrypt(tls_record record) {
     return record;
 }
 
-tls_record ChaCha20_Poly1305_tls12::decrypt(tls_record record) {
+tls_record ChaCha20_Poly1305_tls12::deprotect(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }

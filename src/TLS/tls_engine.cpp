@@ -230,7 +230,7 @@ tls_record tls_engine::decrypt_record(tls_record record) {
         assert(cipher_context);
         auto encrypted_size = record.m_contents.size();
         try {
-            record = cipher_context->decrypt(std::move(record));
+            record = cipher_context->deprotect(std::move(record));
         } catch(ssl_error& e) {
             if(record.get_type() == Application and 
                 m_expected_read_record == HandshakeStage::client_handshake_finished and 
@@ -270,7 +270,7 @@ void tls_engine::write_record_sync(std::queue<packet_timed>& output, tls_record 
     }
     if(server_cipher_spec and record.get_type() != ChangeCipherSpec) {
         assert(cipher_context);
-        record = cipher_context->encrypt(record);
+        record = cipher_context->protect(record);
     }
     output.push({record.serialise(), timeout});
 }

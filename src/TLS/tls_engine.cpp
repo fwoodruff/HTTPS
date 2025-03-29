@@ -49,7 +49,7 @@ std::string tls_engine::alpn() {
     return handshake.alpn;
 }
 
-HandshakeStage tls_engine::read_append_impl_sync(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout) {
+HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout) {
     std::optional<ssl_error> error_ssl {};
     try {
         if(m_expected_read_record == HandshakeStage::application_data or m_expected_read_record == HandshakeStage::client_early_data) {

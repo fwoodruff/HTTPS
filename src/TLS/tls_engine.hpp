@@ -35,7 +35,7 @@ class tls_engine {
 public:
     tls_engine();
 
-    HandshakeStage read_append_impl_sync(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout);
+    HandshakeStage process_net_read(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout);
     
     stream_result write_sync(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout);
     stream_result flush_sync(std::queue<packet_timed>& output);

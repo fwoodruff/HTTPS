@@ -67,11 +67,13 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 }
 
 // todo: refactor this so that the http client just reads and writes to the stream, where handshakes are an implementation detail
-// add a method for the http client to 'peak and review' early data if any.
-// then consider replacing the existing stateful mechanism for preventing ticket replay attacks with a stateless one
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
-    std::string alpn = co_await client_stream->perform_hello();
+    auto res = co_await client_stream->await_hello();
+    if(res != fbw::stream_result::ok) {
+        co_return;
+    }
+    std::string alpn = client_stream->alpn();
     if(alpn.empty()) {
         co_return;
     }

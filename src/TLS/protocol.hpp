@@ -39,8 +39,10 @@ public:
     [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
-    [[nodiscard]] task<std::string> perform_hello();
+    [[nodiscard]] task<stream_result> await_hello();
     [[nodiscard]] task<stream_result> flush() override;
+
+    std::string alpn();
 
 private:
     tls_engine m_engine;
@@ -51,8 +53,10 @@ private:
     std::queue<packet_timed> output;
     ustring early_data_buffer;
 
-    [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, HandshakeStage stage);
-    task<stream_result> bio_write_all(std::queue<packet_timed>& packets);
+    
+    task<stream_result> read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early);
+    task<stream_result> net_write_all(std::queue<packet_timed>& packets);
+    task<stream_result> await_message(HandshakeStage stage);
 };
 
 tls_record server_key_update_record(KeyUpdateRequest req);

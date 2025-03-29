@@ -112,7 +112,7 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
         auto m_tls_stream = dynamic_cast<TLS*>(m_stream.get());
         stream_result connection_alive;
         if(m_tls_stream) {
-            connection_alive = co_await m_tls_stream->read_append_early(m_buffer, timeout);
+            connection_alive = co_await m_tls_stream->read_append_early_data(m_buffer, timeout);
         } else {
             connection_alive = co_await m_stream->read_append(m_buffer, timeout);
         }
@@ -316,7 +316,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
     auto status_code = (file_size != 0)? "200 OK": "206 No Content";
     ustring header_str = make_header(status_code, headers);
     assert(m_stream);
-
+    
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
         co_return res;

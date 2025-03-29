@@ -31,7 +31,8 @@ enum class HandshakeStage {
     client_handshake_finished,
     server_change_cipher_spec,
     server_handshake_finished,
-    application_data
+    application_data,
+    application_closed,
 };
 
 namespace fbw {

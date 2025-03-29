@@ -34,6 +34,7 @@ enum class stream_result {
     ok,
     write_timeout,
     read_timeout,
+    read_closed,
     closed,
     awaiting
 };

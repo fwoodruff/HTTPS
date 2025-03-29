@@ -31,7 +31,6 @@
 // Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
 // review unnecessary buffer copies, more subspan, less substr
 // ustring is UB!! Use vector<std::byte>
-// ustring is UB!! Use vector<std::byte>
 // HTTP codes should be a map code -> { title, blurb }
 // HTTP/2
 // more functions should take const& and return a value
@@ -46,7 +45,11 @@
 // go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
 // Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
-// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket nonce, with eviction
+// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket number once, with eviction
+// refactor TLS::write_buffer usage - also this might handle empty records strangely
+// to test key update mechanism again after changes
+// todo: add RFC references as comments
+// once HTTP/2 and HTTP/1.1 share the same interface, combine perform_hello_sync and read_append_impl_sync
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -63,13 +66,13 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
     }
 }
 
-// todo: refactor this so that the http client just reads and writes to the stream, where handshakes are an implementation detail
-// add a method for the http client to 'peak and review' early data if any.
-// then consider replacing the existing stateful mechanism for preventing ticket replay attacks with a stateless one
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
-    assert(client_stream != nullptr);
-    std::string alpn = co_await client_stream->perform_hello();
+    auto res = co_await client_stream->await_hello();
+    if(res != fbw::stream_result::ok) {
+        co_return;
+    }
+    std::string alpn = client_stream->alpn();
     if(alpn.empty()) {
         co_return;
     }

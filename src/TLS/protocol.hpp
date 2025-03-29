@@ -8,17 +8,14 @@
 #ifndef tls_hpp
 #define tls_hpp
 
-
-
-#include "Cryptography/cipher/block_chain.hpp"
 #include "../global.hpp"
-#include "Cryptography/one_way/sha2.hpp"
 
 #include "TLS_enums.hpp"
 #include "../TCP/tcp_stream.hpp"
 #include "../Runtime/task.hpp"
 #include "../TCP/stream_base.hpp"
-#include "handshake.hpp"
+#include "../Runtime/async_mutex.hpp"
+#include "tls_engine.hpp"
 
 #include <array>
 #include <string>
@@ -33,81 +30,36 @@ namespace fbw {
 class TLS : public stream {
 public:
 
+
     TLS(std::unique_ptr<stream> output_stream);
     ~TLS() = default;
     
     [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-
-    [[nodiscard]] task<stream_result> read_append_early(ustring&, std::optional<milliseconds> timeout);
-    [[nodiscard]] task<stream_result> await_handshake_finished();
-
+    [[nodiscard]] task<stream_result> read_append_early_data(ustring&, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
-
-    [[nodiscard]] task<std::string> perform_hello();
+    [[nodiscard]] task<stream_result> await_hello();
     [[nodiscard]] task<stream_result> flush() override;
+
+    std::string alpn();
+
 private:
+    tls_engine m_engine;
     std::unique_ptr<stream> m_client;
-    std::unique_ptr<cipher_base> cipher_context = nullptr;
-    HandshakeStage m_expected_record = HandshakeStage::client_hello;
-    ustring m_buffer;
-    bool can_heartbeat = false;
-    uint16_t tls_protocol_version = 0;
-    std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
+    async_mutex m_async_write_mut;
+    async_mutex m_async_read_mut;
 
-    [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, bool early, bool client_finished);
+    std::queue<packet_timed> output;
+    ustring early_data_buffer;
 
-    ustring early_buffer;
-
-    bool server_cipher_spec = false;
-    bool client_cipher_spec = false;
-
-    ustring m_handshake_fragment {};
-
-    handshake_ctx handshake;
-
-    uint32_t early_data_received = 0;
-
-    std::deque<tls_record> encrypt_send;
-
-    [[nodiscard]] tls_record decrypt_record(tls_record);
     
-    [[nodiscard]] task<std::pair<tls_record, stream_result>> try_read_record(std::optional<milliseconds> timeout);
-    [[nodiscard]] task<stream_result> write_record(tls_record record, std::optional<milliseconds> timeout);
-    
-    [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_record(tls_record);
-    [[nodiscard]] task<std::pair<stream_result, bool>> client_handshake_message(const ustring& handshake_message);
-    [[nodiscard]] task<void> client_alert(tls_record, std::optional<milliseconds> timeout); // handshake and application data both perform handshakes.
-    [[nodiscard]] task<stream_result> client_heartbeat(tls_record, std::optional<milliseconds> timeout);
-    [[nodiscard]] task<stream_result> client_post_handshake(const ustring& message,  std::optional<milliseconds> timeout);
-    
-    void client_hello(const ustring& handshake_message);
-    void client_key_exchange(ustring key_exchange);
-    void client_handshake_finished12(const ustring& finish); 
-    void client_handshake_finished13(const ustring& finish);
-    void client_end_of_early_data(ustring handshake_message);
-    
-    [[nodiscard]] task<stream_result> server_hello_request();
-    
-    [[nodiscard]] task<stream_result> server_hello();
-    [[nodiscard]] task<stream_result> server_certificate();
-    [[nodiscard]] task<stream_result> server_certificate_verify();
-
-    [[nodiscard]] task<stream_result> server_key_exchange();
-    [[nodiscard]] task<stream_result> server_hello_done();
-    [[nodiscard]] task<stream_result> server_handshake_finished12();
-    [[nodiscard]] task<stream_result> server_handshake_finished13();
-    [[nodiscard]] task<stream_result> server_session_ticket();
-    [[nodiscard]] task<stream_result> server_key_update();
-    [[nodiscard]] task<stream_result> server_encrypted_extensions();
-    [[nodiscard]] task<void> server_alert(AlertLevel level, AlertDescription description);
-    [[nodiscard]] task<stream_result> server_change_cipher_spec();
-    void client_change_cipher_spec(tls_record);
-    
-
-    static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
-
+    task<stream_result> read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early);
+    task<stream_result> net_write_all(std::queue<packet_timed>& packets);
+    task<stream_result> await_message(HandshakeStage stage);
 };
+
+tls_record server_key_update_record(KeyUpdateRequest req);
 
 } // namespace
 

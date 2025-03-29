@@ -43,7 +43,6 @@ struct std::hash<fbw::entry_t> {
 
 namespace fbw {
 
-// todo: for full-duplex, we need an awaitable that signals if either reading or writing possible, consider both HTTP/1.1 and HTTP/2 here
 class http_ctx {
 public:
 

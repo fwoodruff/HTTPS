@@ -10,10 +10,9 @@ namespace fbw {
 std::array<uint8_t, 16> session_ticket_master_secret {};
 
 ustring TLS13SessionTicket::serialise() {
-
-    constexpr int header_size = 22;
+    constexpr int header_size = 23;
     ustring out;
-    out.reserve(header_size + resumption_secret.size() + sni.size() + 2);
+    out.reserve(header_size + resumption_secret.size() + sni.size() + alpn.size() + 2);
     out.resize(header_size);
     checked_bigend_write(version, out, 0, 2);
     checked_bigend_write(ticket_lifetime, out, 2, 3);
@@ -23,16 +22,19 @@ ustring TLS13SessionTicket::serialise() {
     checked_bigend_write(uint8_t(early_data_allowed), out, 19, 1);
     assert(resumption_secret.size() < 256);
     assert(sni.size() < 256);
+    assert(alpn.size() < 256);
     checked_bigend_write(resumption_secret.size(), out, 20, 1);
     checked_bigend_write(sni.size(), out, 21, 1);
+    checked_bigend_write(alpn.size(), out, 22, 1);
 
     out.append(resumption_secret.begin(), resumption_secret.end());
     out.append(sni.begin(), sni.end());
+    out.append(alpn.begin(), alpn.end());
     return out;
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket) {
-    constexpr size_t header_size = 22;
+    constexpr size_t header_size = 23;
 
     if(ticket.size() < header_size) {
         return std::nullopt;
@@ -44,36 +46,39 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket
     out.ticket_age_add = try_bigend_read(ticket, 13, 4);
     out.cipher_suite = static_cast<cipher_suites>(try_bigend_read(ticket, 17, 2));
     out.early_data_allowed = try_bigend_read(ticket, 19, 1) != 0ull;
-    out.nonce = 0;
+    out.number_once = 0;
     const size_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
     const size_t sni_len = try_bigend_read(ticket, 21, 1);
-    if(ticket.size() != header_size + resumption_secret_len + sni_len) {
+    const size_t alpn_len = try_bigend_read(ticket, 22, 1);
+    if(ticket.size() != header_size + resumption_secret_len + sni_len + alpn_len) {
         return std::nullopt;
     }
     auto it = ticket.begin() + header_size;
     out.resumption_secret.assign(it, it + resumption_secret_len);
     it += resumption_secret_len;
     out.sni.assign(it, it + sni_len);
+    it += sni_len;
+    out.alpn.assign(it, it + alpn_len);
     return out;
 }
 
-ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryption_key, uint64_t nonce) {
-    constexpr size_t nonce_size = 8;
+ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
+    constexpr size_t number_once_size = 8;
     constexpr size_t mac_size = 16;
-    std::array<uint8_t, nonce_size> nonce_bytes;
+    std::array<uint8_t, number_once_size> number_once_bytes;
 
-    checked_bigend_write(nonce, nonce_bytes, 0, 8);
+    checked_bigend_write(number_once, number_once_bytes, 0, 8);
     
     keccak_sponge bytestream;
     bytestream.absorb(encryption_key.data(), encryption_key.size());
-    bytestream.absorb(nonce_bytes.data(), nonce_bytes.size());
+    bytestream.absorb(number_once_bytes.data(), number_once_bytes.size());
 
     for(size_t i = 0; i < plaintext.size(); i++) {
         uint8_t c;
         bytestream.squeeze(&c, 1);
         plaintext[i] ^= c;
     }
-    plaintext.append(nonce_bytes.begin(), nonce_bytes.end());
+    plaintext.append(number_once_bytes.begin(), number_once_bytes.end());
 
     keccak_sponge macgen;
     macgen.absorb(encryption_key.data(), encryption_key.size());
@@ -85,9 +90,9 @@ ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryp
 }
 
 std::optional<std::pair<ustring, uint64_t>> decrypt_message(ustring ciphertext, const std::array<uint8_t, 16>& encryption_key) {
-    constexpr size_t nonce_size = 8;
+    constexpr size_t number_once_size = 8;
     constexpr size_t mac_size = 16;
-    if(ciphertext.size() < (nonce_size + mac_size)) {
+    if(ciphertext.size() < (number_once_size + mac_size)) {
         return std::nullopt;
     }
     std::array<uint8_t, mac_size> mac;
@@ -104,36 +109,36 @@ std::optional<std::pair<ustring, uint64_t>> decrypt_message(ustring ciphertext, 
 
     keccak_sponge bytestream;
     bytestream.absorb(encryption_key.data(), encryption_key.size());
-    bytestream.absorb(ciphertext.data() + ciphertext.size() - nonce_size, nonce_size);
+    bytestream.absorb(ciphertext.data() + ciphertext.size() - number_once_size, number_once_size);
 
-    uint64_t nonce = try_bigend_read(ciphertext, ciphertext.size() - nonce_size, 8);
+    uint64_t number_once = try_bigend_read(ciphertext, ciphertext.size() - number_once_size, 8);
 
-    ciphertext.resize(ciphertext.size() - nonce_size);
+    ciphertext.resize(ciphertext.size() - number_once_size);
 
     for(size_t i = 0; i < ciphertext.size(); i++) {
         uint8_t c;
         bytestream.squeeze(&c, 1);
         ciphertext[i] ^= c;
     }
-    return {{ std::move(ciphertext), nonce }};
+    return {{ std::move(ciphertext), number_once }};
 }
 
-ustring TLS13SessionTicket::encrypt_ticket(const std::array<uint8_t, 16>& encryption_key, uint64_t nonce) {
+ustring TLS13SessionTicket::encrypt_ticket(const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
     auto plaintext = serialise();
-    return encrypt_message(std::move(plaintext), encryption_key, nonce);
+    return encrypt_message(std::move(plaintext), encryption_key, number_once);
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt_ticket(ustring ticket, const std::array<uint8_t, 16>& encryption_key) {
-    auto opt_ticket_bytes_nonce = decrypt_message(ticket, encryption_key);
-    if(!opt_ticket_bytes_nonce) {
+    auto opt_ticket_bytes_number_once = decrypt_message(ticket, encryption_key);
+    if(!opt_ticket_bytes_number_once) {
         return std::nullopt;
     }
-    auto opt_ticket = deserialise(std::move(opt_ticket_bytes_nonce->first));
+    auto opt_ticket = deserialise(std::move(opt_ticket_bytes_number_once->first));
     if(!opt_ticket) {
         return std::nullopt;
     }
-    opt_ticket->nonce = opt_ticket_bytes_nonce->second;
-    assert(opt_ticket->nonce != 0);
+    opt_ticket->number_once = opt_ticket_bytes_number_once->second;
+    assert(opt_ticket->number_once != 0);
     return opt_ticket;
 }
 
@@ -146,7 +151,7 @@ void write_early_data_ticket_ext(tls_record& record) {
     record.end_size_header();
 }
 
-std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, uint64_t nonce) {
+std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13SessionTicket ticket, std::array<uint8_t, 16> encryption_key, uint64_t number_once) {
 
     constexpr uint32_t MAX_TICKET_LIFETIME = 604800;
     tls_record record(ContentType::Handshake);
@@ -164,15 +169,15 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
     checked_bigend_write(ticket.ticket_age_add, ticket_age_add, 0, 4);
     record.write(ticket_age_add);
 
-    std::array<uint8_t, 8> nonce_bytes;
-    checked_bigend_write(nonce, nonce_bytes, 0, 8);
+    std::array<uint8_t, 8> number_once_bytes;
+    checked_bigend_write(number_once, number_once_bytes, 0, 8);
     
     record.start_size_header(1);
-    record.write(nonce_bytes);
+    record.write(number_once_bytes);
     record.end_size_header();
 
     record.start_size_header(2);
-    ustring session_ticket_bytes = ticket.encrypt_ticket(encryption_key, nonce);
+    ustring session_ticket_bytes = ticket.encrypt_ticket(encryption_key, number_once);
     record.write(session_ticket_bytes);
     record.end_size_header();
 

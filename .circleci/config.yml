@@ -29,6 +29,9 @@ jobs:
             cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
             cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_in session.pem 2>&1 | grep -q "Reused, TLSv1.3"
 
+            # cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
+            # openssl s_client -connect localhost:8443 -tls1_3 -early_data request.txt -sess_in session.pem 2>&1 
+
 workflows:
   run_tests:
     jobs:

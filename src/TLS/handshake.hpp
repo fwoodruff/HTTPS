@@ -37,7 +37,7 @@ enum class ServerHelloType {
 };
 
 constexpr size_t SESSION_HASHSET_SIZE = 256;
-extern std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_nonces;
+extern std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_numbers_once;
 
 class handshake_ctx {  
     
@@ -94,7 +94,7 @@ private:
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 
-    std::pair<ustring, std::optional<size_t>> get_resumption_psk(const ustring& hello_message) const;
+    std::tuple<ustring, std::optional<size_t>, bool> get_resumption_psk(const ustring& hello_message) const;
     
 };
 

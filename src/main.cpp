@@ -31,7 +31,6 @@
 // Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
 // review unnecessary buffer copies, more subspan, less substr
 // ustring is UB!! Use vector<std::byte>
-// ustring is UB!! Use vector<std::byte>
 // HTTP codes should be a map code -> { title, blurb }
 // HTTP/2
 // more functions should take const& and return a value
@@ -47,16 +46,10 @@
 // Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
 // Add explicit to constructors liberally
 // Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket nonce, with eviction
-// refactor TLS::encrypt_send usage - also this might handle empty records strangely
-
-// factor out the following API from TLS layer. For TLS 'packets' are sequential rather than framed, QUIC later
-// submit_from_io(std::span packet) -> { packet_for_io, data_for_app }
-// submit_from_app(std::span packet) -> { packet_for_io }
-// repurpose 'handshake_ctx' for this
-
-// create a user-friendly TLS API:
-// task read_append() which awaits IO read, looping until it can return data, scheduling output data_for_io writes async
-// task write() which awaits sending data_for_io awaiting
+// refactor TLS::write_buffer usage - also this might handle empty records strangely
+// to test key update mechanism again after changes
+// todo: add RFC references as comments
+// once HTTP/2 and HTTP/1.1 share the same interface, combine perform_hello_sync and read_append_impl_sync
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
@@ -77,7 +70,6 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
 // add a method for the http client to 'peak and review' early data if any.
 // then consider replacing the existing stateful mechanism for preventing ticket replay attacks with a stateless one
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
-    assert(client_stream != nullptr);
     assert(client_stream != nullptr);
     std::string alpn = co_await client_stream->perform_hello();
     if(alpn.empty()) {

@@ -30,6 +30,7 @@ namespace fbw {
 class TLS : public stream {
 public:
 
+
     TLS(std::unique_ptr<stream> output_stream);
     ~TLS() = default;
     
@@ -47,7 +48,10 @@ private:
     async_mutex m_async_write_mut;
     async_mutex m_async_read_mut;
 
-    [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, bool early, bool client_finished);
+    std::queue<packet_timed> output;
+    ustring early_data_buffer;
+
+    [[nodiscard]] task<stream_result> read_append_impl(ustring&, std::optional<milliseconds> timeout, HandshakeStage stage);
     task<stream_result> bio_write_all(std::queue<packet_timed>& packets);
 };
 

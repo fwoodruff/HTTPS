@@ -33,15 +33,17 @@ struct packet_timed  {
 
 class tls_engine {
 public:
-    std::optional<std::string> perform_hello_sync(std::queue<packet_timed>& output, const ustring& bio_input);
+    tls_engine();
 
-    stream_result read_append_impl_sync(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout, bool early, bool client_finished);
+    HandshakeStage read_append_impl_sync(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout);
     
     stream_result write_sync(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout);
     stream_result flush_sync(std::queue<packet_timed>& output);
 
     void close_notify_sync_write(std::queue<packet_timed>& output);
     stream_result close_notify_sync_finish(const ustring& bio_input);
+
+    std::string alpn();
     
     HandshakeStage m_expected_read_record = HandshakeStage::client_hello;
     std::mutex m_write_queue_mut;
@@ -51,11 +53,10 @@ private:
 
     bool server_cipher_spec = false;
     bool client_cipher_spec = false;
-    std::unique_ptr<cipher_base> cipher_context = nullptr;
+    std::unique_ptr<cipher_base> cipher_context = nullptr; // todo split into read and write
     bool can_heartbeat = false;
     uint16_t tls_protocol_version = 0;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
-    ustring early_buffer;
     ustring m_handshake_fragment {};
     
     uint32_t early_data_received = 0;

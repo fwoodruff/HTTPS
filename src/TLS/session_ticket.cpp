@@ -179,7 +179,7 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
     record.start_size_header(2);
 
     // RFC 8446 4.2
-    // > The server MAY also send unsolicited extensions in the NewSessionTicket
+    //      The server MAY also send unsolicited extensions in the NewSessionTicket
     write_early_data_ticket_ext(record);
     
     record.end_size_header();

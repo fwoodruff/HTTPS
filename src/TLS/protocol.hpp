@@ -47,7 +47,8 @@ public:
 private:
     tls_engine m_engine;
     std::unique_ptr<stream> m_client;
-    async_mutex m_async_write_mut;
+    std::mutex m_write_region;
+
     async_mutex m_async_read_mut;
 
     std::queue<packet_timed> output;
@@ -55,7 +56,7 @@ private:
 
     
     task<stream_result> read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early);
-    task<stream_result> net_write_all(std::queue<packet_timed>& packets);
+    task<stream_result> net_write_all();
     task<stream_result> await_message(HandshakeStage stage);
 };
 

@@ -9,6 +9,7 @@
 #define chacha20poly1305_hpp
 
 #include <stdio.h>
+#include <span>
 
 #include "cipher_base.hpp"
 #include "../key_derivation.hpp"
@@ -29,8 +30,8 @@ struct ChaCha20_Poly1305_ctx {
     std::array<uint8_t, IV_SIZE> server_implicit_write_IV;
     uint64_t seqno_server = 0;
     uint64_t seqno_client = 0;
-    ustring encrypt(ustring plaintext, ustring additional_data);
-    ustring decrypt(ustring ciphertext, ustring additional_data);
+    ustring encrypt(const std::span<const uint8_t> plaintext, const ustring& additional_data);
+    ustring decrypt(ustring ciphertext, const ustring& additional_data);
 };
 
 class ChaCha20_Poly1305_tls13 : public cipher_base_tls13 {

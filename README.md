@@ -35,7 +35,7 @@ then run with Make
 ```
 make -j8 && ./target/codeymccodeface
 ```
-Note, this requires GCC14 or later.
+Note, this requires GCC 14 or later.
 
 Alternatively use Docker
 ```bash
@@ -54,10 +54,6 @@ sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --ellip
 
 `live_config.txt` is my Raspberry Pi server config.
 
-If using `live_config.txt` with docker:
-```bash
-docker run --init --rm -p 443:8443 -p 80:8080 -v /etc/letsencrypt:/etc/letsencrypt:ro server
-```
 </details>
 
 <details>

@@ -12,7 +12,7 @@ This has thrown up many curiosities and helped me harden the server.
 * C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
 * Buffered and skippable video streaming supported with HTTP range requests
 * The server runs at https://freddiewoodruff.co.uk on a Raspberry Pi 1B.
-* Homemade task event manager
+* Homemade event and task manager
   - lock-free task executor with a fixed-size threadpool
   - `poll()`-based event reactor
   - [Rust port](https://github.com/fwoodruff/async_io) of this component

@@ -7,8 +7,8 @@ This has thrown up many curiosities and helped me harden the server.
 <summary>Highlights</summary>
   
 * Full TLS 1.3 implementation including 0-RTT, with modern ChaCha20-Poly1305 and AES-GCM AEAD ciphers
-* TLS 1.2 fallback with both modern and legacy ciphers
 * Homemade elliptic curve group implementations for TLS key-exchange and signatures
+* TLS 1.2 fallback with both modern and legacy ciphers
 * C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
 * Buffered and skippable video streaming supported with HTTP range requests
 * The server runs at https://freddiewoodruff.co.uk on a Raspberry Pi 1B.

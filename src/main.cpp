@@ -59,6 +59,10 @@
 //      ChaCha should zip pairs of 'state' objects for SIMD
 //      std::generator when emitting records
 
+// Future:
+//      QUIC
+//      TLS Client
+
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
     try {

@@ -6,14 +6,18 @@ This has thrown up many curiosities and helped me harden the server.
 <details>
 <summary>Highlights</summary>
   
-* TLS 1.3 implementation including 0-RTT and an TLS 1.2 fallback
-* Modern ChaCha20-Poly1305 and AES-GCM ciphers, with AES-CBC modes for legacy clients
+* Full TLS 1.3 implementation including 0-RTT
+* Modern ChaCha20-Poly1305 and AES-GCM ciphers
+* Legacy fallbacks including TLS 1.2 fallback and AES-CBC modes
 * Homemade elliptic curve group implementations for TLS key-exchange and signatures
-* C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow specifically bulk file transfer latency and memory usage
-* HTTP/1.1 range request support, enabling video streaming
-* The server runs at freddiewoodruff.co.uk on my Raspberry Pi 1B.
+* C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
+* Buffered and skippable video streaming supported with HTTP range requests
+* The server runs at freddiewoodruff.co.uk on a Raspberry Pi 1B.
 * Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer).
-* HTTP/2 is in the works. HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
+* HTTP/2 is in the works, with HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
+* Homemade task event manager
+  - lock-free task executor with a fixed-size threadpool
+  - `poll()`-based event reactor
 </details>
 
 <details>

@@ -26,30 +26,38 @@
 #include <unordered_map>
 #include <print>
 
-// todo:
-// Make encryption concurrent (depends on TLS 1.3 interface) - could have a 'coroutine thread pool' in async_main
-// Implement an HTTP webroot (with 301 not 404) for HTTP-01 ACME challenges
-// review unnecessary buffer copies, more subspan, less substr
-// ustring is UB!! Use vector<std::byte>
-// HTTP codes should be a map code -> { title, blurb }
-// HTTP/2
-// more functions should take const& and return a value
-// GET request to /readiness should return 206 below brownout threshold, 429 above
-// memory pool of common objects (records) - view calls to malloc
-// improve interface for signature and key exchange
-// docker in CI with curlimages/curl to docker network
-// nail down constant time-ness - look at RFC 7746 for x25519
-// scope of parsed hello should be such that it gets removed sooner
-// offload state to TLS HRR cookie
-// project point at infinity into Montgomery space, add with other points (including Pt@Inf), project back - check value still good
-// go through full H2 section and remove hacks like C-style casts - deserialisation code must have bugs 
-// Implement TLS 1.3 session ticket resumption, and emit ticket contents for fingerprinting clients
-// Add explicit to constructors liberally
-// Use a global fixed size hash-set cache to determine if a session token is being reused (0-RTT if not) - based on ticket number once, with eviction
-// refactor TLS::write_buffer usage - also this might handle empty records strangely
-// to test key update mechanism again after changes
-// todo: add RFC references as comments
-// once HTTP/2 ready, make session tickets check ALPN
+// Wishlist:
+
+// Features:
+//      HTTP/2
+//      HTTP webroot for ACME
+//      HRR cookies
+
+// Correctness:
+//      Check that poly1305 is constant-time
+//      Points at infinity?
+//      ustring is not UB but can be
+//      Check ALPN in session tickets
+
+// Syntax:
+//      Add 'explict' to constructors
+//      Remove C-style casts
+//      More functions should take const& and span
+//      Review interface for signatures and key exchange
+//      Reference RFC 8446 in comments
+
+// Separation of concerns:
+//      0-RTT context should be per-server not global - implement fingerprinting query helpersx
+//      read/write operations should emit 'jobs' not data, separate context for actual encryption
+//      buffering logic should be independent from encryption
+//      HTTP codes should be a map code -> { title, blurb }
+
+// Optimisations:
+//      Revisit big numbers
+//      Allocation-free TLS context
+//      Views rather than clones for client hello extensions
+//      ChaCha should zip pairs of 'state' objects for SIMD
+//      std::generator when emitting records
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

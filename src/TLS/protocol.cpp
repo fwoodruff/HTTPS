@@ -37,6 +37,10 @@ using enum ContentType;
 
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
+task<void> forget(task<stream_result> some_task) {
+    co_await some_task;
+}
+
 task<stream_result> TLS::read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early) {
     guard g { &m_async_read_mut };
     m_async_read_mut.lock();
@@ -66,10 +70,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
             co_return read_res;
         }
         m_engine.process_net_read(output, data, input_data, timeout);
-        auto bio_res = co_await net_write_all();
-        if(bio_res != stream_result::ok) {
-            co_return bio_res;
-        }
+        sync_spawn(forget(net_write_all())); // writes should not block reads
     }
 }
 

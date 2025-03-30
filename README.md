@@ -12,11 +12,12 @@ This has thrown up many curiosities and helped me harden the server.
 * C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
 * Buffered and skippable video streaming supported with HTTP range requests
 * The server runs at https://freddiewoodruff.co.uk on a Raspberry Pi 1B.
-* Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer).
-* HTTP/2 is in the works, with HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
 * Homemade task event manager
   - lock-free task executor with a fixed-size threadpool
   - `poll()`-based event reactor
+* Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for lock-freedom
+* HTTP/2 is in the works, with HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
+
 </details>
 
 <details>

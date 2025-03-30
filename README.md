@@ -15,7 +15,9 @@ This has thrown up many curiosities and helped me harden the server.
 * Homemade task event manager
   - lock-free task executor with a fixed-size threadpool
   - `poll()`-based event reactor
+  - [Rust port](https://github.com/fwoodruff/async_io) of this component
 * Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for lock-freedom
+
 * HTTP/2 is in the works, with HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
 
 </details>

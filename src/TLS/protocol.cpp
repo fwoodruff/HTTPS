@@ -66,7 +66,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
             co_return read_res;
         }
         m_engine.process_net_read(output, data, input_data, timeout);
-        auto bio_res = co_await net_write_all(output);
+        auto bio_res = co_await net_write_all();
         if(bio_res != stream_result::ok) {
             co_return bio_res;
         }
@@ -89,7 +89,7 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
             co_return read_res;
         }
         m_engine.process_net_read(output, early_data_buffer, input_data, project_options.handshake_timeout);
-        auto bio_res = co_await net_write_all(output);
+        auto bio_res = co_await net_write_all();
         if(bio_res != stream_result::ok) {
             co_return bio_res;
         }
@@ -119,30 +119,25 @@ std::string TLS::alpn() {
 // application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     m_engine.process_net_write(output, data, timeout);
-    return net_write_all(output);
+    return net_write_all();
 }
 
-task<stream_result> TLS::net_write_all(std::queue<packet_timed>& packets) {
+task<stream_result> TLS::net_write_all() {
+    std::unique_lock lock(m_write_region, std::try_to_lock);
+    if(!lock.owns_lock()) {
+        co_return stream_result::ok;
+    }
     for(;;) {
         packet_timed packet;
-        co_await m_async_write_mut.lock();
-        guard g { &m_async_write_mut };
         {
             std::scoped_lock lk { m_engine.m_write_queue_mut };
-            if(packets.empty()) {
+            if(output.empty()) {
+                lock.unlock(); // unlock the mutex for this region before the mutex for the queue
                 co_return stream_result::ok;
             }
-            packet = std::move(packets.front());
-            packets.pop();
+            packet = std::move(output.front());
+            output.pop();
         }
-        stream_result res = co_await m_client->write(packet.data, packet.timeout);
-        if(res != stream_result::ok) {
-            co_return res;
-        }
-    }
-    while(!packets.empty()) {
-        auto packet = std::move(packets.front());
-        packets.pop();
         stream_result res = co_await m_client->write(packet.data, packet.timeout);
         if(res != stream_result::ok) {
             co_return res;
@@ -154,13 +149,13 @@ task<stream_result> TLS::net_write_all(std::queue<packet_timed>& packets) {
 // application data is sent on a buffered stream so the pattern of record sizes reveals much less
 task<stream_result> TLS::flush() {
     m_engine.process_net_flush(output);
-    return net_write_all(output);
+    return net_write_all();
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired
 task<void> TLS::close_notify() {
     m_engine.process_close_notify(output);
-    auto res = co_await net_write_all(output);
+    auto res = co_await net_write_all();
     if(res != stream_result::ok) {
         co_return;
     }

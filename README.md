@@ -28,7 +28,8 @@ make -j8 && ./target/codeymccodeface
 ```
 or Docker
 ```bash
-docker build -t server . && docker run --init --rm -p 443:443 -p 80:80 server
+docker build -t server .
+docker run --init --rm -p 8443:8443 -p 8080:8080 server
 ```
 
 Every 60 days, CA certificates are updated with:

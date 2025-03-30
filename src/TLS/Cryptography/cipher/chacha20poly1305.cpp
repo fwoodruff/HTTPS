@@ -100,7 +100,7 @@ std::array<uint8_t, 64> chacha20(const std::array<uint8_t, KEY_SIZE>& key, const
 ustring chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             uint32_t blockid,
                             const std::array<uint8_t, IV_SIZE>& number_once,
-                            const ustring& message) {
+                            const std::span<const uint8_t> message) {
     
     ustring out;
     out.resize(message.size());
@@ -186,7 +186,7 @@ ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
 }
 
 
-std::array<uint8_t, TAG_SIZE> poly1305_mac(const ustring& message, const std::array<uint8_t, KEY_SIZE>& key) {
+std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
     
     std::array<uint8_t, 24> r_bytes {0};
     std::copy_n(&key[0], 16, r_bytes.begin());
@@ -232,11 +232,9 @@ std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZ
     return out;
 }
 
-
-
 // encrypt or decrypt
 std::pair<ustring, std::array<uint8_t, TAG_SIZE>>
-chacha20_aead_crypt(ustring aad, std::array<uint8_t, KEY_SIZE> key, std::array<uint8_t, IV_SIZE> number_once, ustring text, bool do_encrypt) {
+chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once, const std::span<const uint8_t> text, bool do_encrypt) {
     
     auto otk = poly1305_key_gen(key, number_once);
     auto xortext = chacha20_xorcrypt(key, 1, number_once, text);
@@ -249,15 +247,15 @@ chacha20_aead_crypt(ustring aad, std::array<uint8_t, KEY_SIZE> key, std::array<u
         cip_size[i] = (xortext.size() >> (8*i)) & 0xff;
     }
     
-    auto & ciphertext = do_encrypt ? xortext : text;
+    auto & ciphertext = do_encrypt ? std::span<uint8_t>(xortext) : text;
 
     size_t padaad = ((aad.size()+15)/16)*16 - aad.size();
     size_t padcipher = ((ciphertext.size()+15)/16)*16 - xortext.size();
     
     ustring mac_data;
-    mac_data.append(aad);
+    mac_data.append(aad.begin(), aad.end());
     mac_data.append(padaad, 0);
-    mac_data.append(ciphertext);
+    mac_data.append(ciphertext.begin(), ciphertext.end());
     mac_data.append(padcipher, 0);
     mac_data.append(aad_size.begin(), aad_size.end());
     mac_data.append(cip_size.begin(), cip_size.end());
@@ -315,7 +313,7 @@ std::array<uint8_t, IV_SIZE> make_number_once(std::array<uint8_t, IV_SIZE> IV, u
     return IV;
 }
 
-ustring ChaCha20_Poly1305_ctx::encrypt(ustring plaintext, ustring additional_data) {
+ustring ChaCha20_Poly1305_ctx::encrypt(const std::span<const uint8_t> plaintext, const ustring& additional_data) {
     auto number_once = make_number_once(server_implicit_write_IV, seqno_server);
     seqno_server++;
     auto [ciphertext, tag] = chacha20_aead_crypt(additional_data, server_write_key, number_once, std::move(plaintext), true);
@@ -323,7 +321,7 @@ ustring ChaCha20_Poly1305_ctx::encrypt(ustring plaintext, ustring additional_dat
     return ciphertext;
 }
 
-ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, ustring additional_data) {
+ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, const ustring& additional_data) {
     assert(ciphertext.size() >= TAG_SIZE);
     std::array<uint8_t, TAG_SIZE> tag;
     std::copy(ciphertext.end() - TAG_SIZE, ciphertext.end(), tag.begin());

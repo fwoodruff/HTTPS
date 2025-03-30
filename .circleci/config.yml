@@ -32,8 +32,19 @@ jobs:
             # cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
             # openssl s_client -connect localhost:8443 -tls1_3 -early_data request.txt -sess_in session.pem 2>&1 
 
+  docker-test:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build server
+          command: |
+            sudo docker build -t server .
+
 workflows:
   run_tests:
     jobs:
       - test
-
+      - docker-test

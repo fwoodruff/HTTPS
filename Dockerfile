@@ -1,4 +1,4 @@
-FROM gcc:13 as builder
+FROM gcc:14 as builder
 WORKDIR /
 COPY src/ src/
 COPY makefile .

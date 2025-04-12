@@ -155,7 +155,7 @@ std::unique_ptr<h2_rst_stream> deserialise_RST_STREAM(const ustring& frame_bytes
 }
 
 std::unique_ptr<h2_settings> deserialise_SETTINGS(const ustring& frame_bytes) {
-    auto size = try_bigend_read(frame_bytes, 0, 3);
+    auto size = uint32_t(try_bigend_read(frame_bytes, 0, 3));
     auto frame = std::make_unique<h2_settings>();
     set_base_frame_values(*frame, frame_bytes);
     if(frame->flags & h2_flags::ACK and size != 0) {
@@ -164,10 +164,13 @@ std::unique_ptr<h2_settings> deserialise_SETTINGS(const ustring& frame_bytes) {
     if(size % 6 != 0) {
         throw h2_error("malformed SETTINGS frame", h2_code::FRAME_SIZE_ERROR);
     }
-    for(uint64_t i = 0; i < size; i+=6) {
+    for(uint32_t i = 0; i < size; i+=6) {
         h2_setting_value setting;
         setting.identifier = static_cast<h2_settings_code>(try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + i, 2));
         setting.value = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 2 + i, 4);
+        if(setting.value > INT32_MAX) {
+            throw h2_error("value too large", h2_code::PROTOCOL_ERROR);
+        }
         frame->settings.push_back(setting);
     }
     return frame;

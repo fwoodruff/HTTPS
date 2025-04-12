@@ -38,6 +38,7 @@
 //      Points at infinity?
 //      ustring is not UB but can be
 //      Check ALPN in session tickets
+//      g++-14-arm-linux-gnueabihf is only on trixie
 
 // Syntax:
 //      Add 'explict' to constructors

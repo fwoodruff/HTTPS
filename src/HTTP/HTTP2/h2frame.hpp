@@ -49,7 +49,7 @@ enum class h2_settings_code : uint16_t {
     SETTINGS_MAX_HEADER_LIST_SIZE = 0x06,
 };
 
-constexpr size_t MIN_FRAME_SIZE = 16384;
+constexpr size_t MINIMUM_MAX_FRAME_SIZE = 16384;
 constexpr size_t MAX_FRAME_SIZE = 16777215;
 constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
 constexpr size_t INITIAL_MAX_CONCURRENT_STREAMS = 0x7fffffff;

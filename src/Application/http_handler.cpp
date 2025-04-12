@@ -14,13 +14,8 @@ namespace fbw {
 
 // handle stream starts when headers have been received
 task<void> application_handler(std::shared_ptr<http_ctx> connection) {
-    assert(connection);
-
-    std::vector<entry_t> request_headers;
-    auto res_in = co_await connection->read_headers(request_headers);
-    if(res_in != stream_result::ok) {
-        co_return;
-    }
+    assert(connection != nullptr);
+    std::vector<entry_t> request_headers = connection->get_headers();
 
     auto method_it = std::find_if(request_headers.begin(), request_headers.end(), [](const entry_t& entry){ return entry.name == ":method"; });
     if(method_it == request_headers.end()) {
@@ -29,7 +24,7 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) {
     
     if(method_it->value == "POST") {
         ustring some_data;
-        do {    
+        do {
             auto [ res, end ] = co_await connection->append_http_data(some_data);
             if(res != stream_result::ok) {
                 co_return;
@@ -39,18 +34,18 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) {
             }
         } while(false);
     }
-
+    
     std::vector<entry_t> send_headers;
-    const std::string message = "<HTML>HELLO WORLD.</HTML>";
-    auto it = std::find_if(send_headers.begin(), send_headers.end(), [](const entry_t& val) { return val.name == ":method"; });
-    if(it == send_headers.end() or it->value != "GET") {
+    const std::string message = "<HTML>HELLO WORLD</HTML>";
+    if(method_it == send_headers.end() or method_it->value != "GET") {
         send_headers.push_back({":status", "500"});
         send_headers.push_back({"content-length", std::to_string(message.size())});
         auto res = co_await connection->write_headers(send_headers);
         if(res != stream_result::ok) {
             co_return;
         }
-        std::span<const uint8_t> sp {(uint8_t*)message.data(), message.size()};
+        auto umessage = to_unsigned(message);
+        std::span<const uint8_t> sp {(uint8_t*)umessage.data(), umessage.size()};
         co_await connection->write_data(sp);
         co_return;
     }
@@ -63,7 +58,7 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) {
     }
     
     std::span<const uint8_t> sp {(uint8_t*)message.data(), message.size()};
-    co_await connection->write_data(sp);
+    co_await connection->write_data(sp, true);
     co_return;
 }
 

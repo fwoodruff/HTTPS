@@ -39,7 +39,7 @@ TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stre
 
 task<stream_result> TLS::read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early) {
     guard g { &m_async_read_mut };
-    m_async_read_mut.lock();
+    co_await m_async_read_mut.lock();
     auto initial_size = data.size();
     if(!early_data_buffer.empty()) {
         data.append(std::move(early_data_buffer));
@@ -53,7 +53,6 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
             co_return stream_result::closed;
         }
         ustring input_data;
-
         auto read_timeout = std::optional(project_options.handshake_timeout);
         if(m_engine.m_expected_read_record == HandshakeStage::application_data) {
             read_timeout = timeout;
@@ -75,7 +74,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
 
 task<stream_result> TLS::await_message(HandshakeStage stage) {
     guard g { &m_async_read_mut };
-    m_async_read_mut.lock();
+    co_await m_async_read_mut.lock();
     for(;;) {
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return stream_result::closed;
@@ -119,12 +118,13 @@ std::string TLS::alpn() {
 // application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     m_engine.process_net_write(output, data, timeout);
+    m_engine.process_net_flush(output); // remove this
     return net_write_all();
 }
 
 task<stream_result> TLS::net_write_all() {
-    std::unique_lock lock(m_write_region, std::try_to_lock);
-    if(!lock.owns_lock()) {
+    bool already_acquired = m_write_region.exchange(true);
+    if(already_acquired) {
         co_return stream_result::ok;
     }
     for(;;) {
@@ -132,7 +132,7 @@ task<stream_result> TLS::net_write_all() {
         {
             std::scoped_lock lk { m_engine.m_write_queue_mut };
             if(output.empty()) {
-                lock.unlock(); // unlock the mutex for this region before the mutex for the queue
+                m_write_region.store(false);
                 co_return stream_result::ok;
             }
             packet = std::move(output.front());
@@ -160,7 +160,7 @@ task<void> TLS::close_notify() {
         co_return;
     }
     guard g { &m_async_read_mut };
-    m_async_read_mut.lock();
+    co_await m_async_read_mut.lock();
     do {
         ustring input_data;
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {

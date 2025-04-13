@@ -98,14 +98,12 @@ constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
 
 ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers) {
     ustring encoded_fragment;
-    /*
-    todo: fix this
+
     if(encoder_max_capacity != m_encode_table.m_capacity) {
         auto update = dynamic_table_size_update(encoder_max_capacity);
         encoded_fragment.append(update);
         m_encode_table.set_capacity(encoder_max_capacity);
     }
-    */
     for (const auto& header : headers) {
         auto index = m_encode_table.index(header);
         if (index != 0) {
@@ -115,20 +113,20 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
                     encoded_fragment.append(indexed_name_new_value_never_dynamic(name_index, header.value));
-                } else if (header.do_index == do_indexing::never) {
+                } else if (header.do_index == do_indexing::without) {
                     encoded_fragment.append(indexed_name_new_value_without_dynamic(name_index, header.value));
                 } else {
                     encoded_fragment.append(indexed_name_new_value(name_index, header.value));
-                    m_decode_table.add_entry({header.name, header.value});
+                    m_encode_table.add_entry({header.name, header.value});
                 }
             } else {
                 if(header.do_index == do_indexing::never) {
                     encoded_fragment.append(new_name_new_value_never_dynamic(header.name, header.value));
-                } else if (header.do_index == do_indexing::never) {
+                } else if (header.do_index == do_indexing::without) {
                     encoded_fragment.append(new_name_new_value_without_dynamic(header.name, header.value));
                 } else {
                     encoded_fragment.append(new_name_new_value(header.name, header.value));
-                    m_decode_table.add_entry({header.name, header.value});
+                    m_encode_table.add_entry({header.name, header.value});
                 }
             }
         }
@@ -286,7 +284,8 @@ ustring encode_huffman(std::string str_literal) {
     }
 
     if (bit_idx > 0) { // EOS
-        current_byte |= ((1 << (8 - bit_idx)) - 1);
+        current_byte |=  (0xff >> bit_idx);
+        //current_byte |= ((1 << (8 - bit_idx)) - 1);
         out.push_back(current_byte);
     }
 
@@ -421,7 +420,7 @@ entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const ustring& en
         return {name, value, indexing};
     } else {
         // indexed name new value
-        auto entry = m_encode_table.field(idx);
+        auto entry = m_decode_table.field(idx);
         if(!entry) {
             throw h2_error("index not found in table", h2_code::COMPRESSION_ERROR);
         }
@@ -438,7 +437,7 @@ std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t
         if(idx == 0) {
             throw h2_error("index 0 requested", h2_code::COMPRESSION_ERROR);
         }
-        auto entry = m_encode_table.field(idx);
+        auto entry = m_decode_table.field(idx);
         if(!entry) {
             throw h2_error("decoding indexed value but index not found", h2_code::COMPRESSION_ERROR);
         }
@@ -447,7 +446,7 @@ std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t
     if((byte & 0xc0) == 0x40) { // named indexed, do index value
         auto idx = decode_integer(encoded, offset, 6);
         auto entry = extract_entry(idx, do_indexing::incremental, encoded, offset);
-        m_encode_table.add_entry(entry);
+        m_decode_table.add_entry(entry);
         return entry;
     }
     if((byte & 0xe0) == 0x00) { // name indexed, don't index value
@@ -463,7 +462,7 @@ std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t
     if((byte & 0xe0) == 0x20) {
         auto capacity = decode_integer(encoded, offset, 5);
         if(capacity > decoder_max_capacity) {
-            throw h2_error("could not update encoder", h2_code::COMPRESSION_ERROR);
+            throw h2_error("could not update decoder", h2_code::COMPRESSION_ERROR);
         }
         m_decode_table.set_capacity(capacity);
         return std::nullopt;

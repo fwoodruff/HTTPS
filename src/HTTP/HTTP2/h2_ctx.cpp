@@ -13,7 +13,7 @@ h2_context::h2_context() :
     last_server_stream_id(0),
     last_client_stream_id(0),
     connection_current_window_remaining(INITIAL_WINDOW_SIZE), 
-    connection_current_receive_window_remaining(0),
+    connection_current_receive_window_remaining(INITIAL_WINDOW_SIZE),
     awaiting_settings_ack(false),
     go_away_sent(false),
     go_away_received(false),
@@ -22,6 +22,8 @@ h2_context::h2_context() :
 
 std::optional<uint32_t> h2_context::receive_peer_frame(const h2frame& frame) {
     std::scoped_lock lk(m_mut);
+    std::cout << "received     " << frame.pretty() << std::endl;
+    
     try {
         using enum h2_type;
         if(!initial_settings_done and frame.type != SETTINGS) {
@@ -92,6 +94,8 @@ void h2_context::receive_peer_settings(const h2_settings& frame) {
     for (const auto& setting : frame.settings) {
         switch(setting.identifier) {
         case SETTINGS_HEADER_TABLE_SIZE:
+            client_settings.header_table_size = setting.value;
+            m_hpack.set_decoder_max_capacity(setting.value);
             break;
         case SETTINGS_ENABLE_PUSH:
             client_settings.push_promise_enabled = (setting.value != 0);
@@ -112,18 +116,19 @@ void h2_context::receive_peer_settings(const h2_settings& frame) {
             break;
         }
     }
-    
 
     if(!initial_settings_done) {
         h2_settings server_settings_frame;
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_HEADER_TABLE_SIZE, server_settings.header_table_size});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_CONCURRENT_STREAMS, server_settings.max_concurrent_streams});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_INITIAL_WINDOW_SIZE, server_settings.initial_window_size});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_FRAME_SIZE, server_settings.max_frame_size});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_HEADER_LIST_SIZE, server_settings.max_header_size});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, (server_settings.push_promise_enabled? 1u : 0u) });
         auto server_bytes = server_settings_frame.serialise();
-        outbox.insert(outbox.end(), server_bytes.begin(), server_bytes.end());
         initial_settings_done = true;
+        m_hpack.set_encoder_max_capacity(server_settings.header_table_size);
+        outbox.insert(outbox.end(), server_bytes.begin(), server_bytes.end());
     } else {
         const int32_t delta = server_settings.initial_window_size - old_initial_window;
         for (auto & [sid, stream] : stream_ctx_map) {
@@ -180,7 +185,7 @@ std::optional<uint32_t> h2_context::receive_data_frame(const h2_data& frame) {
         return frame.stream_id;
     }
     // Check connection-level flow control
-    if (data_length > connection_current_window_remaining) {
+    if (data_length > connection_current_receive_window_remaining) {
         throw h2_error("connection flow control error", h2_code::FLOW_CONTROL_ERROR);
     }
     if(stream.strm_state == stream_state::half_closed or stream.strm_state == stream_state::closed) {
@@ -203,26 +208,23 @@ std::optional<uint32_t> h2_context::receive_data_frame(const h2_data& frame) {
     return frame.stream_id;
 }
 
-bool is_next_odd(uint32_t curr, uint32_t next) {
+bool is_higher_odd(uint32_t curr, uint32_t next) {
     if((next % 2) != 1) {
         return false;
     }
-    if(curr > INT32_MAX - 1) {
+    if(next > INT32_MAX - 1) {
         return false;
     }
-    if(curr == 0 and next == 1) {
-        return true;
+    if(next <= curr) {
+        return false;
     }
-    if(curr + 2 == next) {
-        return true;
-    }
-    return false;
+    return true;
 }
 
 std::optional<uint32_t> h2_context::receive_headers_frame(const h2_headers& frame) {
     auto it = stream_ctx_map.find(frame.stream_id);
     if ( it ==stream_ctx_map.end()) {
-        if(!is_next_odd(last_client_stream_id, frame.stream_id)) {
+        if(!is_higher_odd(last_client_stream_id, frame.stream_id)) {
             throw h2_error("bad stream id", h2_code::PROTOCOL_ERROR);
         }
         if(stream_ctx_map.size() > server_settings.max_concurrent_streams) {
@@ -286,7 +288,7 @@ std::optional<uint32_t>  h2_context::receive_continuation_frame(const h2_continu
     if(strm.client_sent_headers == headers_cont_expected) {
         strm.m_received_headers.insert(strm.m_received_headers.end(), some_headers.begin(), some_headers.end());
     } else if (strm.client_sent_headers == trailer_cont_expected) {
-        strm.m_received_headers.insert(strm.m_received_headers.end(), some_headers.begin(), some_headers.end());
+        strm.m_received_trailers.insert(strm.m_received_trailers.end(), some_headers.begin(), some_headers.end());
     } else {
         throw h2_error("continuation not expected", h2_code::PROTOCOL_ERROR);
     }
@@ -307,19 +309,22 @@ bool h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend for complet
         return true;
     }
     const auto max_frame_size = std::min(connection_current_window_remaining, stream.stream_current_window_remaining);
-    auto frame_size = std::min<int32_t>(max_frame_size, stream.outbox.size());
+    const auto max_frame_size_allowed = std::min<int32_t>(max_frame_size, client_settings.max_frame_size);
+    auto frame_size = std::min<int32_t>(max_frame_size_allowed, stream.outbox.size());
     connection_current_window_remaining -= frame_size;
     stream.stream_current_window_remaining -= frame_size;
 
     h2_data frame;
+    frame.stream_id = stream.m_stream_id;
     frame.contents.assign(stream.outbox.begin(), stream.outbox.begin() + frame_size);
     stream.outbox.erase(stream.outbox.begin(), stream.outbox.begin() + frame_size);
-    if(stream.server_data_done) {
+    if(stream.server_data_done and stream.outbox.empty()) {
         frame.flags |= h2_flags::END_STREAM;
+        stream.strm_state = stream_state::closed;
     }
     auto serial_frame = frame.serialise();
     outbox.insert(outbox.end(), serial_frame.begin(), serial_frame.end());
-    return false;
+    return !stream.outbox.empty();
 }
 
 std::optional<std::pair<size_t, bool>> h2_context::read_data(const std::span<uint8_t> app_data, uint32_t stream_id) {
@@ -377,10 +382,11 @@ bool h2_context::buffer_data(const std::span<const uint8_t> app_data, uint32_t s
     assert(!stream.server_data_done);
     stream.server_data_done = end;
     stream.outbox.insert(stream.outbox.end(), app_data.begin(), app_data.end());
+
     auto res = stage_buffer(stream);
-    if(stream.outbox.empty() and stream.server_data_done) {
-        stream_ctx_map.erase(it);
-        return false;
+    if(stream.strm_state == stream_state::closed) {
+        stream_ctx_map.erase(stream_id);
+        return res;
     }
     return res;
 }
@@ -439,7 +445,7 @@ std::optional<uint32_t> h2_context::receive_window_frame(const h2_window_update&
             auto [_, stream] = *it;
             stage_buffer(stream);
             // todo: lots of bookkeeping optimisations here
-            if(stream.server_data_done and stream.outbox.empty()) {
+            if(stream.strm_state == stream_state::closed) {
                 it = stream_ctx_map.erase(it);
             } else{
                 it++;
@@ -448,12 +454,12 @@ std::optional<uint32_t> h2_context::receive_window_frame(const h2_window_update&
         return 0;
     }
     if(frame.stream_id % 2 == 0) {
-        if(frame.stream_id > last_client_stream_id) {
-            throw h2_error("bad window update", h2_code::PROTOCOL_ERROR);
+        if(frame.stream_id > last_server_stream_id) {
+            throw h2_error("bad window update for server-initiated stream", h2_code::PROTOCOL_ERROR);
         }
     } else {
-        if(frame.stream_id > last_server_stream_id) {
-            throw h2_error("bad window update", h2_code::PROTOCOL_ERROR);
+        if(frame.stream_id > last_client_stream_id) { 
+            throw h2_error("bad window update for client-initiated stream", h2_code::PROTOCOL_ERROR);
         }
     }
     
@@ -467,7 +473,7 @@ std::optional<uint32_t> h2_context::receive_window_frame(const h2_window_update&
         return frame.stream_id;
     }
     bool suspend = stage_buffer(stream);
-    if(stream.server_data_done and stream.outbox.empty()) {
+    if(stream.strm_state == stream_state::closed) {
         stream_ctx_map.erase(it);
     }
     if(suspend) {
@@ -481,7 +487,6 @@ void h2_context::enqueue_goaway(h2_code code, std::string message) {
     goawayframe.last_stream_id = last_server_stream_id;
     goawayframe.error_code = code;
     goawayframe.additional_debug_data = std::move(message);
-    std::scoped_lock lk {m_mut};
     go_away_sent = true;
     auto frame = goawayframe.serialise();
     outbox.insert(outbox.end(), frame.begin(), frame.end());

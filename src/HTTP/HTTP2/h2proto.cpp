@@ -32,7 +32,9 @@ task<void> HTTP2::client() {
                 co_return;
             }
         } while(extract_and_handle());
-        auto res = co_await m_stream->read_append(m_read_buffer, project_options.keep_alive);
+        std::cout << "TLS read" << std::endl;
+        auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
+        std::cout << "TLS read done" << std::endl;
         if(res != stream_result::ok) {
             co_await close_connection();
             co_return;
@@ -98,7 +100,6 @@ void HTTP2::handle_frame(h2frame& frame) {
 task<void> HTTP2::close_connection() {
     h2_ctx.close_connection();
     co_await send_outbox();
-    // co_await m_stream->close_notify(); // consider placement of this
 }
 
 // todo: need an async lock around claiming the mutex and then writing the buffer
@@ -115,6 +116,7 @@ task<stream_result> HTTP2::send_outbox() {
         }
     }
     if(closing) {
+        std::cout << "sending      TLS close notify" << std::endl;
         co_await m_stream->close_notify();
         co_return stream_result::closed;
     }

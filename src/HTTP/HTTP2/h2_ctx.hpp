@@ -23,6 +23,7 @@
 namespace fbw {
 
 struct setting_values {
+    uint32_t header_table_size = SETTINGS_HEADER_TABLE_SIZE;
     uint32_t max_concurrent_streams = INITIAL_MAX_CONCURRENT_STREAMS;
     uint32_t initial_window_size = INITIAL_WINDOW_SIZE;
     uint32_t max_frame_size = MINIMUM_MAX_FRAME_SIZE;

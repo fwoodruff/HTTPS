@@ -39,45 +39,34 @@ class HTTP2;
 struct h2_data;
 class h2_stream;
 
-// co_await a writeable, shrinks the input buffer to the remaining buffer, and returns the bytes written
-class h2writewindowable {
+// awaits until stream write buffer is cleared and we can write more
+class h2writeable {
 public:
-    h2writewindowable(std::weak_ptr<h2_stream> hstream, uint32_t desired_size);
+    h2writeable(std::weak_ptr<HTTP2> h2_contx, uint32_t stream_id);
     bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
-    int32_t await_resume(); // how many data bytes can we send?
+    stream_result await_resume();
 private:
-    std::weak_ptr<h2_stream> m_hstream;
-    int64_t m_desired_size;
+    std::weak_ptr<HTTP2> m_h2_contx;
+    uint32_t m_stream_id;
 };
 
-// co_await a readable, reads data - relevant to POST requests, not implemented yet
 class h2readable {
 public:
-    h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id);
+    h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data);
     bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
-    std::pair<std::optional<h2_data>, stream_result> await_resume();
+    std::pair<size_t, bool> await_resume();
 private:
-    std::weak_ptr<HTTP2> m_connection;
+    std::optional<std::pair<uint32_t, bool>> m_bytes_read;
+    std::weak_ptr<HTTP2> m_h2_contx;
     int32_t m_stream_id;
+    std::span<uint8_t> m_data;
 };
 
-// todo: this interface is a silly relic of when I considered writing data from multiple threads
-//[[nodiscard]] task<stream_result> write_headers(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::vector<entry_t>& headers);
-//[[nodiscard]] task<stream_result> write_some_data(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
+// todo: stream_yield awaitable that suspends for owners, incrementing processable_streams 
+// todo: await trailing headers
 
-
-class h2read_headers {
-    std::weak_ptr<h2_stream> m_hstream;
-public:
-    h2read_headers(std::weak_ptr<h2_stream> hstream);
-    bool await_ready() const noexcept;
-    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
-    std::pair<std::vector<entry_t>, stream_result> await_resume();
-};
-
-// todo: we need a stream_yield awaitable that suspends for owners, incrementing processable_streams 
 
 }
 

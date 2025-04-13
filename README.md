@@ -6,11 +6,20 @@ This has thrown up many curiosities and helped me harden the server.
 <details>
 <summary>Highlights</summary>
   
-* The implementations for HTTP/1.1 and TLS/1.2 are my own.
-* I am using my own finite elliptic curve group implementations for TLS key-exchange and signatures.
-* I have used C++20 coroutines to finesse control-flow, [improving](https://github.com/fwoodruff/https-archive) bulk file transfer latency.
-* The server runs at freddiewoodruff.co.uk on my Raspberry Pi 1B.
-* The C++20 executable was cross-compiled for the Raspberry Pi on an AWS EC2 instance.
+* Full TLS 1.3 implementation including 0-RTT, with modern ChaCha20-Poly1305 and AES-GCM AEAD ciphers
+* Homemade elliptic curve group implementations for TLS key-exchange and signatures
+* TLS 1.2 fallback with both modern and legacy ciphers
+* C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
+* Buffered and skippable video streaming supported with HTTP range requests
+* The server runs at https://freddiewoodruff.co.uk on a Raspberry Pi 1B.
+* Homemade event and task manager
+  - lock-free task executor with a fixed-size threadpool
+  - `poll()`-based event reactor
+  - [Rust port](https://github.com/fwoodruff/async_io) of this component
+* Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for lock-freedom
+
+* HTTP/2 is in the works, with HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
+
 </details>
 
 <details>
@@ -26,21 +35,25 @@ then run with Make
 ```
 make -j8 && ./target/codeymccodeface
 ```
-or Docker
+Note, this requires GCC 14 or later.
+
+Alternatively use Docker
 ```bash
 docker build -t server .
 docker run --init --rm -p 8443:8443 -p 8080:8080 server
 ```
 
-Every 60 days, CA certificates are updated with:
-  
+
+CA certificates can be renewed with:
+
 ```
 sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --elliptic-curve=secp256r1 --webroot --force-renewal
 ```
 
 `config.txt` is for localhost.
 
-`config_live.txt` is my Raspberry Pi server config.
+`live_config.txt` is my Raspberry Pi server config.
+
 </details>
 
 <details>

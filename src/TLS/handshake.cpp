@@ -227,7 +227,7 @@ std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_p
     }
     for(size_t i = 0; i < key->m_keys.size(); i++) { 
         auto key_entry = key->m_keys[i];
-        auto ticket = TLS13SessionTicket::decrypt_ticket(key_entry.m_key, session_ticket_master_secret);
+        const auto ticket = TLS13SessionTicket::decrypt_ticket(key_entry.m_key, session_ticket_master_secret);
         // todo: if ticket is old, rotate session_ticket_master_secret
         if(!ticket) {
             continue;
@@ -271,8 +271,11 @@ std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_p
         if(received_binder != computed_binder ) {
             continue;
         }
-        auto set_number_once = session_ticket_numbers_once[ticket->number_once % SESSION_HASHSET_SIZE].exchange(0, std::memory_order_relaxed);
-        if(set_number_once != ticket->number_once) {
+        auto ticket_number = ticket->number_once;
+        auto& cached_number_once = session_ticket_numbers_once[ticket->number_once % SESSION_HASHSET_SIZE];
+        using enum std::memory_order;
+        if(!cached_number_once.compare_exchange_weak(ticket_number, 0, relaxed, relaxed)) {
+            // try to reset the cache; spurious failures are ok
             continue;
         }
         return {ticket->resumption_secret, i, (ticket->early_data_allowed and i == 0) };

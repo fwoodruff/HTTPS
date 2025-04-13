@@ -97,28 +97,27 @@ std::array<uint8_t, 64> chacha20(const std::array<uint8_t, KEY_SIZE>& key, const
     return chacha20_inner(state, block_count);
 }
 
-ustring chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
+void chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             uint32_t blockid,
                             const std::array<uint8_t, IV_SIZE>& number_once,
-                            const std::span<const uint8_t> message) {
-    
-    ustring out;
-    out.resize(message.size());
+                            const std::span<uint8_t> message) {
 
     auto state = chacha20_state(key, number_once);
-    
+    constexpr size_t max_chunk_size = 64;
     size_t k = 0;
-    // massive parallelism here?
-    for(size_t i = 0; i < (message.size()+63) /64; i++) {
-        std::array<uint8_t, 64> ou = chacha20_inner(state, uint32_t(i)+blockid);
-        for(size_t j = 0;  j < 64 and k < message.size(); j++, k++) {
-            out[k] = ou[j];
-        }
+    std::array<uint8_t, max_chunk_size> ou;
+    
+    size_t loop_size = (message.size()+(max_chunk_size-1)) /max_chunk_size;
+    for(size_t i = 0; i < loop_size - 1; i++) {
+        const size_t chunk_size = max_chunk_size;
+        ou = chacha20_inner(state, uint32_t(i)+blockid);
+        std::transform( ou.begin(), ou.begin() + chunk_size, message.begin() + k, message.begin() + k, std::bit_xor<>());
+        k += max_chunk_size;
     }
-    for(size_t i = 0; i < message.size(); i++) {
-        out[i] ^= message[i];
-    }
-    return out;
+    const size_t remaining = message.size() - k;
+    const size_t chunk_size = std::min(max_chunk_size, remaining);
+    ou = chacha20_inner(state, uint32_t(loop_size - 1)+blockid);
+    std::transform( ou.begin(), ou.begin() + chunk_size, message.begin() + k, message.begin() + k, std::bit_xor<>());
 }
 
 void poly1305_clamp(uint8_t* r) {
@@ -185,7 +184,6 @@ ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
     }
 }
 
-
 std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
     
     std::array<uint8_t, 24> r_bytes {0};
@@ -233,35 +231,39 @@ std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZ
 }
 
 // encrypt or decrypt
-std::pair<ustring, std::array<uint8_t, TAG_SIZE>>
-chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once, const std::span<const uint8_t> text, bool do_encrypt) {
+std::array<uint8_t, TAG_SIZE>
+chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once, const std::span<uint8_t> text, bool do_encrypt) {
     
     auto otk = poly1305_key_gen(key, number_once);
-    auto xortext = chacha20_xorcrypt(key, 1, number_once, text);
-
-    std::array<uint8_t, 8> aad_size {};
-    std::array<uint8_t, 8> cip_size {};
-    
-    for(int i = 0; i < 4; i++) {
-        aad_size[i] = (aad.size() >> (8*i)) & 0xff;
-        cip_size[i] = (xortext.size() >> (8*i)) & 0xff;
-    }
-    
-    auto & ciphertext = do_encrypt ? std::span<uint8_t>(xortext) : text;
 
     size_t padaad = ((aad.size()+15)/16)*16 - aad.size();
-    size_t padcipher = ((ciphertext.size()+15)/16)*16 - xortext.size();
-    
+    std::array<uint8_t, 8> aad_size {};
+    std::array<uint8_t, 8> cip_size {};
+    for(int i = 0; i < 4; i++) {
+        aad_size[i] = (aad.size() >> (8*i)) & 0xff;
+        cip_size[i] = (text.size() >> (8*i)) & 0xff;
+    }
+
+    size_t padcipher = ((text.size()+15)/16)*16 - text.size();
     ustring mac_data;
     mac_data.append(aad.begin(), aad.end());
     mac_data.append(padaad, 0);
-    mac_data.append(ciphertext.begin(), ciphertext.end());
+
+    if(do_encrypt) {
+        chacha20_xorcrypt(key, 1, number_once, text);
+        auto ciphertext = std::span<uint8_t>(text);
+        mac_data.append(ciphertext.begin(), ciphertext.end());
+    } else {
+        mac_data.append(text.begin(), text.end());
+        chacha20_xorcrypt(key, 1, number_once, text);
+    }
+    
     mac_data.append(padcipher, 0);
     mac_data.append(aad_size.begin(), aad_size.end());
     mac_data.append(cip_size.begin(), cip_size.end());
 
     auto tag = poly1305_mac(mac_data, otk);
-    return {xortext, tag};
+    return tag;
 }
 
 void ChaCha20_Poly1305_tls13::set_server_traffic_key(const ustring& traffic_key) {
@@ -313,10 +315,12 @@ std::array<uint8_t, IV_SIZE> make_number_once(std::array<uint8_t, IV_SIZE> IV, u
     return IV;
 }
 
-ustring ChaCha20_Poly1305_ctx::encrypt(const std::span<const uint8_t> plaintext, const ustring& additional_data) {
+ustring ChaCha20_Poly1305_ctx::encrypt(const std::span<uint8_t> text, const ustring& additional_data) {
     auto number_once = make_number_once(server_implicit_write_IV, seqno_server);
     seqno_server++;
-    auto [ciphertext, tag] = chacha20_aead_crypt(additional_data, server_write_key, number_once, std::move(plaintext), true);
+    auto tag = chacha20_aead_crypt(additional_data, server_write_key, number_once, text, true);
+    ustring ciphertext;
+    ciphertext.append(text.begin(), text.end());
     ciphertext.append(tag.begin(), tag.end());
     return ciphertext;
 }
@@ -328,26 +332,26 @@ ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, const ustring& additi
     ciphertext.resize(ciphertext.size() - TAG_SIZE);
     auto number_once = make_number_once(client_implicit_write_IV, seqno_client);
     seqno_client++;
-    auto [plaintext, tag_recalc] = chacha20_aead_crypt(additional_data, client_write_key, number_once, ciphertext, false);
+    auto tag_recalc = chacha20_aead_crypt(additional_data, client_write_key, number_once, ciphertext, false);
     if(tag != tag_recalc) [[unlikely]] {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
-    if(plaintext.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
+    if(ciphertext.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }
-    return plaintext;
+    return ciphertext;
 }
 
 tls_record ChaCha20_Poly1305_tls13::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
     ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
-    record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
+    record.m_contents = ctx.encrypt(record.m_contents, additional_data);
     return record;
 }
 
 tls_record ChaCha20_Poly1305_tls12::protect(tls_record record) noexcept {
     ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
-    record.m_contents = ctx.encrypt(std::move(record.m_contents), additional_data);
+    record.m_contents = ctx.encrypt(record.m_contents, additional_data);
     return record;
 }
 

@@ -47,7 +47,7 @@ public:
 private:
     tls_engine m_engine;
     std::unique_ptr<stream> m_client;
-    std::mutex m_write_region;
+    std::atomic<bool> m_write_region = false;
 
     async_mutex m_async_read_mut;
 

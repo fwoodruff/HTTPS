@@ -8,9 +8,11 @@
 #ifndef http2_hpp
 #define http2_hpp
 
+#include "h2_ctx.hpp"
 #include "../../TCP/tcp_stream.hpp"
 #include "../../global.hpp"
 #include "../../Runtime/task.hpp"
+#include "../../Runtime/async_mutex.hpp"
 #include "../../Runtime/concurrent_queue.hpp"
 #include "hpack.hpp"
 #include "h2awaitable.hpp"
@@ -25,13 +27,9 @@ namespace fbw {
 // we ensure single threaded-ness by demanding that every time the coroutine resumes from a different thread, we yield, placing it on this thread's executor
 // every task must end in such a yield if it may have entered a different thread
 
-
-struct setting_values {
-    bool push_promise_enabled = true;
-    uint32_t max_concurrent_streams = 0x7fffffff;
-    int32_t initial_window_size = 65535;
-    uint32_t max_frame_size = 16384;
-    uint32_t max_header_size = 0x7fffffff;
+struct rw_handle {
+    std::coroutine_handle<> handle;
+    bool is_reader; // or writer
 };
 
 class HTTP2 : public std::enable_shared_from_this<HTTP2> {
@@ -40,41 +38,31 @@ public:
     [[nodiscard]] task<void> client();
     HTTP2(std::unique_ptr<stream> stream, std::string folder);
     ~HTTP2();
+    HTTP2(const HTTP2&) = delete;
+    HTTP2& operator=(const HTTP2&) = delete;
 
-    [[nodiscard]] task<stream_result> handle_frame(const h2frame& frame);
-    [[nodiscard]] task<stream_result> handle_peer_settings(h2_settings settings);
-    void handle_headers_frame(const h2_headers& frame);
-    void handle_continuation_frame(const h2_continuation& frame);
-    void handle_rst_stream(const h2_rst_stream& frame);
-    void handle_data_frame(const h2_data& frame);
-    [[nodiscard]] task<stream_result> handle_window_frame(const h2_window_update& frame);
-
-    task<stream_result> write_headers(int32_t stream_id, const std::vector<entry_t>& headers, bool data_end = false);
-    task<stream_result> write_some_data(int32_t stream_id, std::span<const uint8_t>& bytes, bool data_end);
+    task<void> close_connection();
     
+    h2_context h2_ctx;
+    std::unordered_map<uint32_t, rw_handle> m_coros; // contains all awaiting coroutines
+    std::mutex m_coro_mut;
 
-    hpack m_hpack;
-    std::unordered_map<size_t, std::weak_ptr<h2_stream>> m_h2streams; // contains all streams but not all coroutines
-    // a thread may choose to post itself onto a 'executor' to bring its execution onto non-competing threads - implement later
-    setting_values server_settings; // applies to server, sent by client
-    setting_values client_settings;
-    
     std::unique_ptr<stream> m_stream;
-    std::queue<std::coroutine_handle<>> waiters_global;
     std::string m_folder;
-    int64_t connection_current_window_remaining;
-    uint32_t last_stream_id; // most recent id
-    bool received_settings;
-    bool awaiting_settings_ack;
-    bool notify_close_sent;
-    
-    [[nodiscard]] task<void> send_goaway(h2_code code, std::string message);
-    [[nodiscard]] task<stream_result> raise_stream_error(h2_code code, uint32_t stream_id);
+    friend class h2_stream;
+private:
+    [[nodiscard]] task<bool> connection_startup();
+    [[nodiscard]] task<stream_result> send_outbox();
+    bool extract_and_handle();
+    void handle_frame(h2frame& frame);
+    async_mutex m_async_mut;
+    uint32_t last_coro_id = 0;
+    ustring m_read_buffer; // todo: use deque
 };
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
 
-task<void> handle_stream(std::shared_ptr<h2_stream> connection);
+task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
 
 } // namespace fbw
 

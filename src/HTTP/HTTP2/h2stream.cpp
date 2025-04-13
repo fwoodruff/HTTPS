@@ -10,56 +10,69 @@
 
 namespace fbw {
 
-void h2_stream::receive_headers(std::vector<entry_t> headers) {
-    if(m_received_headers.empty()) {
-        m_received_headers = std::move(headers);
-        return;
-    }
-    m_received_headers.insert(m_received_headers.end(), headers.begin(), headers.end());
-}
+h2_stream::h2_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) :
+    m_connection(connection), m_stream_id(stream_id)
+{}
 
-void h2_stream::receive_trailers(std::vector<entry_t> headers) {
-    for(auto&& header : headers) {
-        m_received_trailers.push_back(std::move(header));
-    }
-}
-
-task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers, bool end) {
-    auto conn = wp_connection.lock();
+task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers) {
+    auto conn = m_connection.lock();
     if(!conn) {
         co_return stream_result::closed;
     }
-    co_return co_await conn->write_headers(m_stream_id, headers, end);
+    bool success = conn->h2_ctx.buffer_headers(headers, m_stream_id);
+    if(!success) {
+        co_return stream_result::closed;
+    }
+    co_return co_await conn->send_outbox();
 }
 
 task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool end) {
-    auto conn = wp_connection.lock();
+    auto conn = m_connection.lock();
     if(!conn) {
         co_return stream_result::closed;
     }
-    while(!data.empty()) {
-        auto stres = co_await conn->write_some_data(m_stream_id, data, end);
-        if(stres != stream_result::ok) {
-            co_return stres;
+    assert(conn);
+    auto suspend = conn->h2_ctx.buffer_data(data, m_stream_id, end);
+    auto res = co_await conn->send_outbox();
+    if(res != stream_result::ok) {
+        co_return res;
+    }
+    if(suspend) {
+        auto connection_alive = co_await h2writeable(m_connection, m_stream_id);
+        if(connection_alive != stream_result::ok) {
+            co_return connection_alive;
         }
     }
     co_return stream_result::ok;
 }
 
-task<stream_result> h2_stream::read_headers(std::vector<entry_t>& headers) {
-    auto [ vec, res ] = co_await h2read_headers(weak_from_this());
-    headers = std::move(vec);
-    // if method == GET then state == half-closed, otherwise throw
-    co_return res;
+task<std::pair<stream_result, bool>> h2_stream::append_http_data(ustring& buffer) {
+    std::array<uint8_t, 4096> subbuffer{};
+    auto [bytes, data_done] = co_await h2readable(m_connection, m_stream_id, subbuffer);
+    if(bytes == 0) {
+        co_return {stream_result::closed, false};
+    }
+    buffer.append(subbuffer.begin(), subbuffer.begin() + bytes);
+
+    // push window updates
+    auto conn = m_connection.lock();
+    if(!conn) {
+        co_return { stream_result::closed, false };
+    }
+    auto res = co_await conn->send_outbox();
+    if(res != stream_result::ok) {
+        co_return {res, false};
+    }
+    co_return {stream_result::ok, data_done };
 }
 
-task<std::pair<stream_result, bool>> h2_stream::append_http_data(ustring& buffer) {
-    // when a data frame comes in on the connection, determine if it is allowed with window rules.
-    // if allowed, enqueue with this connection.
-
-    // this connection then dequeues and appends data.
-    // send periodic window updates
-    co_return {stream_result::ok, false };
+std::vector<entry_t> h2_stream::get_headers() {
+    auto connection = m_connection.lock();
+    if(!connection) {
+        return {};
+    }
+    auto& cx = connection->h2_ctx;
+    return cx.get_headers(m_stream_id);
 }
 
 }

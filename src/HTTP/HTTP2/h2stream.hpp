@@ -18,46 +18,20 @@
 
 namespace fbw {
 
-// revisit
-enum stream_frame_state {
-    headers_expected,
-    headers_cont_expected,
-    data_expected,
-    trailer_expected,
-    trailer_cont_expected,
-    done,
-};
-
 class HTTP2;
 
 class h2_stream : public http_ctx, public std::enable_shared_from_this<h2_stream> {
 public:
-    int64_t stream_current_window_remaining = INITIAL_WINDOW_SIZE;
-    uint32_t m_stream_id;
 
-    stream_state state = stream_state::idle;
-    stream_frame_state client_sent_headers = headers_expected;
-    stream_frame_state server_sent_headers = headers_expected;
-    std::vector<entry_t> m_received_headers;
-    std::vector<entry_t> m_received_trailers;
-    void receive_headers(std::vector<entry_t> headers); // populate headers
-    void receive_trailers(std::vector<entry_t> headers); // populate headers after data
-    std::queue<h2_data> inbox;
-
-    std::coroutine_handle<> m_reader { nullptr };
-    std::coroutine_handle<> m_writer { nullptr };
-
-    std::coroutine_handle<> m_read_headers { nullptr };
-
-    task<stream_result> write_headers(const std::vector<entry_t>& headers, bool end = false) override;
+    std::vector<entry_t> get_headers() override;
+    task<stream_result> write_headers(const std::vector<entry_t>& headers) override;
     task<stream_result> write_data(std::span<const uint8_t> data, bool end = true) override;
-    task<stream_result> read_headers(std::vector<entry_t>& headers) override; // todo: return pair
     task<std::pair<stream_result, bool>> append_http_data(ustring& buffer) override;
 
-
-    std::weak_ptr<HTTP2> wp_connection;
-
-    ~h2_stream();
+    h2_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
+private:
+    std::weak_ptr<HTTP2> m_connection;
+    uint32_t m_stream_id;
 };
 
 } // namespace

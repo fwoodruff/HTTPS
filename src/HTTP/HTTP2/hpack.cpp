@@ -134,7 +134,7 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
     return encoded_fragment;
 }
 
-table::table() : next_idx(static_entries) {}
+table::table() : next_idx(static_entries + 1) {}
 
 size_t table::index(const entry_t& entry) {
     for(size_t i = 0; i < s_static_table.size(); i++) {
@@ -295,37 +295,41 @@ ustring encode_huffman(std::string str_literal) {
 ustring encode_integer(uint32_t value, uint8_t prefix_bits) {
     assert(prefix_bits <= 8);
     ustring encoded;
-    uint32_t prefix = (1 << prefix_bits) - 1;
+    uint64_t prefix = (1 << prefix_bits) - 1;
     if(value < prefix) {
         encoded.push_back(value);
         return encoded;
     }
-    value -= prefix;
+    encoded.push_back(static_cast<uint8_t>(prefix));
+    uint64_t remainder = static_cast<uint64_t>(value) - prefix;
     do {
-        uint8_t byte = value & 0x7F;
-        value >>= 7;
-        if (value != 0) {
+        uint8_t byte = remainder & 0x7F;
+        remainder >>= 7;
+        if (remainder != 0) {
             byte |= 0x80;
         }
         encoded.push_back(byte);
-    } while (value != 0);
+    } while (remainder != 0);
     return encoded;
 }
 
 uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits) {
-    uint64_t value = 0;
     uint32_t prefix = (1 << prefix_bits) - 1;
     if(offset >= encoded.size()) {
         throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);
     }
-    if((encoded[offset] & prefix) != prefix) {
-        auto ret = encoded[offset] & prefix;
+    const uint32_t value_pre = encoded[offset] & prefix;
+    if(value_pre != prefix) {
         offset++;
-        return ret;
+        return value_pre;
     }
-    for(size_t i = 1; i < encoded.size() - offset; i++) {
+    uint64_t value = 0;
+    for(size_t i = 1; i < std::max<size_t>(7, (encoded.size() - offset)); i++) {
         uint8_t byte = encoded[offset + i];
-        value |= (byte & 0x7F);
+
+        const uint64_t seven_bits = (byte & 0x7F);
+        value += (seven_bits << (7*(i-1)));
+
         if (value > ((1ull << 31) - prefix)) {
             throw h2_error("encoded integer is too large", h2_code::COMPRESSION_ERROR);
         }
@@ -334,7 +338,6 @@ uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_b
             offset += (i + 1);
             return value;
         }
-        value <<= 7;
     }
     throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
 }

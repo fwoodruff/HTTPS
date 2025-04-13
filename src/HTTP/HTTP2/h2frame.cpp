@@ -396,7 +396,7 @@ ustring h2_ping::serialise() const {
 
 std::string h2_ping::pretty() const {
     std::stringstream out;
-    out << "type: PING,          stream id: " << stream_id << " opaque: " << opaque << pretty_flags(flags, false);
+    out << "type: PING,          stream id: " << stream_id << " opaque: " << opaque << pretty_flags(flags, true);
     return out.str();
 }
 

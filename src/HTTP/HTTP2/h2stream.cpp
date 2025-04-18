@@ -89,11 +89,6 @@ std::vector<entry_t> h2_stream::get_headers() {
     }
     auto& cx = connection->h2_ctx;
     auto headers = cx.get_headers(m_stream_id);
-    std::cout << "headers received: \n";
-    for(auto header : headers) {
-        std::cout << header.name << ": " << header.value << std::endl;
-    }
-    std::cout << "headers received end" << std::endl;
     return headers;
 }
 

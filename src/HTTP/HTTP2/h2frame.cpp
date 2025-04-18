@@ -254,7 +254,7 @@ std::string pretty_flags(uint8_t flags, bool can_ack) {
 }
 
 ustring h2frame::serialise_common(size_t reserved) const {
-    std::cout << "sent:    " << pretty() << std::endl;
+    std::cout << "sent:     " << pretty() << std::endl;
     ustring out;
     out.reserve(reserved);
     out.append({0,0,0});
@@ -278,14 +278,23 @@ ustring h2_data::serialise() const {
 
 std::string h2_data::pretty() const {
     std::stringstream out;
-    out << "type: DATA,          stream id: " << stream_id << ", data: ";
+    out << "type: DATA,          stream id: " << stream_id << " data size: " << contents.size();
+    /*
+    out << " data: ";
+    uint32_t non_ascii_char_count = 0;
     for(uint8_t c : contents) {
         if((c >= 32 and c <= 126) or c == 10) {
             out << char(c);
         } else {
+            non_ascii_char_count++;
             out << '.';
+            if(non_ascii_char_count > 10) {
+                out << " ... etc. binary data";
+                break;
+            }
         }
     }
+    */
     out << pretty_flags(flags, false);
     return out.str();
 }
@@ -432,7 +441,7 @@ ustring h2_window_update::serialise() const {
     ustring out = serialise_common();
     out.append({0,0,0,0});
     checked_bigend_write(window_size_increment, out, out.size() - 4, 4);
-    return {};
+    return out;
 }
 
 std::string h2_window_update::pretty() const {

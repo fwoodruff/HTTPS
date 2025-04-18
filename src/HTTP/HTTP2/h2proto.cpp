@@ -33,8 +33,16 @@ task<void> HTTP2::client() {
         } while(extract_and_handle());
         auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
         if(res != stream_result::ok) {
+            std::unordered_map<uint32_t, rw_handle> m_coros_local;
             h2_ctx.close_connection();
+            {
+                std::scoped_lock lk(m_coro_mut);
+                m_coros_local = std::exchange(m_coros, {});
+            }
             co_await send_outbox();
+            for(auto c : m_coros_local) {
+                c.second.handle.resume();
+            }
             co_return;
         }
     }
@@ -55,37 +63,19 @@ bool HTTP2::extract_and_handle() {
 
 void HTTP2::handle_frame(h2frame& frame) {
     std::cout << "received: " << frame.pretty() << std::endl;
-    // todo: return all streams to wake and get rid of 'can_resume'
-    auto stream_to_wake = h2_ctx.receive_peer_frame(frame);
-    if(stream_to_wake == std::nullopt) {
-        return;
-    }
+    auto streams_to_wake = h2_ctx.receive_peer_frame(frame);
 
-    if(stream_to_wake > last_coro_id) { // todo: receive_peer_frame should signal this
-        last_coro_id = *stream_to_wake;
-        sync_spawn(handle_stream(weak_from_this(), *stream_to_wake));
-        return;
-    }
     std::vector<std::coroutine_handle<>> waking;
-    {
-        std::scoped_lock lk { m_coro_mut };
-        if (stream_to_wake == 0) {
-            for (auto it = m_coros.begin(); it != m_coros.end(); ) {
-                auto [stream_id, handle] = std::move(*it);
-                if (h2_ctx.can_resume(stream_id, handle.is_reader)) {
-                    it = m_coros.erase(it);
-                    waking.push_back(handle.handle);
-                } else {
-                    ++it;
-                }
-            }
+    for(auto strm : streams_to_wake) {
+        if(strm.m_action == wake_action::new_stream) {
+            sync_spawn(handle_stream(weak_from_this(), strm.stream_id));
         } else {
-            auto it = m_coros.find(*stream_to_wake);
+            std::scoped_lock lk { m_coro_mut };
+            auto it = m_coros.find(strm.stream_id);
             if(it != m_coros.end()) {
-                auto& handle = it->second;
-                if(h2_ctx.can_resume(*stream_to_wake, handle.is_reader)) {
+                if((it->second.is_reader == (strm.m_action == wake_action::wake_read)) or strm.m_action == wake_action::wake_any) {
+                    waking.push_back(it->second.handle);
                     m_coros.erase(it);
-                    waking.push_back(handle.handle);
                 }
             }
         }
@@ -94,11 +84,6 @@ void HTTP2::handle_frame(h2frame& frame) {
         handle.resume();
     }
     return;
-}
-
-task<void> HTTP2::close_connection() {
-    h2_ctx.close_connection();
-    co_await send_outbox();
 }
 
 task<stream_result> HTTP2::send_outbox() {
@@ -122,15 +107,13 @@ task<stream_result> HTTP2::send_outbox() {
 
 task<bool> HTTP2::connection_startup() {
     assert(m_stream);
-    do {
-        auto res = co_await m_stream->read_append(m_read_buffer, project_options.keep_alive);
-        if(res == stream_result::closed) {
+    while (m_read_buffer.size() < connection_init.size()) {
+        auto res = co_await m_stream->read_append(m_read_buffer,
+                                                 project_options.keep_alive);
+        if (res == stream_result::closed) {
             co_return false;
         }
-        if(m_read_buffer.size() < connection_init.size()) {
-            continue;
-        }
-    } while(false);
+    }
     for(size_t i = 0; i < connection_init.size(); i++) {
         if(connection_init[i] != m_read_buffer[i]) {
             co_return false;
@@ -154,29 +137,28 @@ std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
 }
 
 task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
-    auto hcx = std::make_shared<h2_stream> (connection, stream_id);
-    assert(hcx != nullptr);
-    try {
-        co_await application_handler(hcx);
-    } catch(std::exception& e) {
-        std::cerr << e.what() << std::endl;
-    }
-    if(!hcx->is_done()) {
-        std::cout << "not done, sending empty data with END_STREAM" << std::endl;
-        co_await hcx->write_data(std::span<uint8_t> {}, true);
-    } else {
-        std::cout << "already done" << std::endl;
-    }
     auto conn = connection.lock();
     if(!conn) {
         co_return;
     }
+    auto hcx = std::make_shared<h2_stream> (connection, stream_id);
+    assert(hcx != nullptr);
+    try {
+        co_await conn->m_handler(hcx);
+    } catch(std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+    if(!hcx->is_done()) {
+        co_await hcx->write_data(std::span<uint8_t> {}, true);
+    }
+    
     std::scoped_lock lk { conn->m_coro_mut };
     conn->m_coros.erase(stream_id);
     co_return;
 }
 
-HTTP2::HTTP2(std::unique_ptr<stream> stream, std::string folder) : m_stream(std::move(stream)), m_folder(folder){}
+HTTP2::HTTP2(std::unique_ptr<stream> stream, std::function<task<bool>(std::shared_ptr<http_ctx>)> handler) :
+    m_stream(std::move(stream)), m_handler(handler) {}
 
 HTTP2::~HTTP2() {
     assert (m_coros.empty());

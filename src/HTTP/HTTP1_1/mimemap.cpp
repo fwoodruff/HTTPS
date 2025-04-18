@@ -114,7 +114,12 @@ std::string Mime_from_file(const std::filesystem::path &filename) {
     if(filename.filename() == "favicon.ico") {
         return "image/webp";
     } else {
-        return get_MIME(extension_from_path(filename));
+        auto ext = extension_from_path(filename);
+        if(ext == "jpeg") {
+            return "image/jpeg";
+        }
+        auto ret = get_MIME(ext);
+        return ret;
     }
 }
 

@@ -54,6 +54,18 @@ struct stream_ctx {
     stream_state strm_state = stream_state::idle;
 };
 
+enum class wake_action {
+    new_stream,
+    wake_read,
+    wake_write,
+    wake_any
+};
+
+struct id_new {
+    uint32_t stream_id;
+    wake_action m_action;
+};
+
 class h2_context {
 public:
     h2_context();
@@ -64,7 +76,7 @@ public:
     // enqueues errors and acks to outbox
     // returns the stream that can now make progress, and whether it is new
     // returns 0 for change at connection level
-    std::optional<uint32_t> receive_peer_frame(const h2frame& frame);
+    std::vector<id_new> receive_peer_frame(const h2frame& frame);
 
     // receive data from stream (application)
     // write full amount to stream buffer
@@ -82,8 +94,6 @@ public:
     std::optional<std::pair<size_t, bool>> read_data(const std::span<uint8_t> app_data, uint32_t stream_id);
     std::vector<entry_t> get_headers(uint32_t stream_id);
 
-    // todo: remove need for these functions?
-    bool can_resume(uint32_t stream_id, bool as_reader);
     stream_result is_closed(uint32_t stream_id);
 
     void close_connection();
@@ -92,12 +102,12 @@ public:
     std::pair<std::deque<ustring>, bool> extract_outbox(); 
     
 private:
-    std::optional<uint32_t> receive_data_frame(const h2_data& frame);
-    std::optional<uint32_t> receive_headers_frame(const h2_headers& frame);
-    std::optional<uint32_t> receive_continuation_frame(const h2_continuation& frame);
-    uint32_t receive_rst_stream(const h2_rst_stream& frame);
-    void receive_peer_settings(const h2_settings& frame);
-    std::optional<uint32_t> receive_window_frame(const h2_window_update& frame);
+    std::vector<id_new> receive_data_frame(const h2_data& frame);
+    std::vector<id_new> receive_headers_frame(const h2_headers& frame);
+    std::vector<id_new> receive_continuation_frame(const h2_continuation& frame);
+    std::vector<id_new> receive_rst_stream(const h2_rst_stream& frame);
+    std::vector<id_new> receive_peer_settings(const h2_settings& frame);
+    std::vector<id_new> receive_window_frame(const h2_window_update& frame);
     void raise_stream_error(h2_code, uint32_t stream_id);
     void enqueue_goaway(h2_code code, std::string message);
     stream_result stage_buffer(stream_ctx& stream); // returns suspend

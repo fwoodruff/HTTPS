@@ -4,19 +4,15 @@
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP1_1/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
-#include "HTTP/HTTP1_1/HTTP.hpp"
-#include "HTTP/HTTP2/h2proto.hpp"
 #include "global.hpp"
 #include "HTTP/HTTP1_1/mimemap.hpp"
-#include "HTTP/HTTP1_1/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
-#include "HTTP/HTTP1_1/string_utils.hpp"
 #include "HTTP/HTTP1_1/string_utils.hpp"
 #include "limiter.hpp"
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
-#include "TLS/session_ticket.hpp"
-#include "TLS/Cryptography/one_way/keccak.hpp"
+#include "HTTP/HTTP1_new/h1stream.hpp"
+#include "Application/http_handler.hpp"
 
 #include <memory>
 #include <fstream>
@@ -29,10 +25,11 @@
 // Wishlist:
 
 // Features:
-//      HTTP/2
 //      HTTP webroot for ACME
 //      HRR cookies
-//      HTTP/2 Timeouts
+//      HTTP/2 timeouts
+//      HTTP/2 error handling
+//      HTTP/1.1 move to shared interface
 
 // Correctness:
 //      Check that poly1305 is constant-time
@@ -73,8 +70,11 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect
         if(alpn == "http/1.1") {
             fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
             co_await http_handler.client();
+            // todo: move across to this so that HTTP/2 and HTTP/1.1 share an interface
+            // auto http_handler = std::make_shared<fbw::HTTP1>( std::move(client_stream), fbw::application_handler);
+            // co_await http_handler->client();
         } if(alpn == "h2") {
-            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), fbw::project_options.webpage_folder );
+            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), fbw::application_handler);
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {

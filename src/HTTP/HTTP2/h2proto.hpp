@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
+#include <functional>
 
 namespace fbw {
 
@@ -36,20 +37,18 @@ class HTTP2 : public std::enable_shared_from_this<HTTP2> {
 
 public:
     [[nodiscard]] task<void> client();
-    HTTP2(std::unique_ptr<stream> stream, std::string folder);
+    HTTP2(std::unique_ptr<stream> stream, std::function<task<bool>(std::shared_ptr<http_ctx>)> handler);
     ~HTTP2();
     HTTP2(const HTTP2&) = delete;
     HTTP2& operator=(const HTTP2&) = delete;
-
-    task<void> close_connection();
     
     h2_context h2_ctx;
     std::unordered_map<uint32_t, rw_handle> m_coros; // contains all awaiting coroutines
     std::mutex m_coro_mut;
 
     std::unique_ptr<stream> m_stream;
-    std::string m_folder;
     friend class h2_stream;
+    std::function<task<bool>(std::shared_ptr<http_ctx>)> m_handler;
 private:
     [[nodiscard]] task<bool> connection_startup();
     [[nodiscard]] task<stream_result> send_outbox();

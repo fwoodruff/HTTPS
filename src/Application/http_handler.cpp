@@ -47,7 +47,6 @@ task<void> send_error(std::shared_ptr<http_ctx> connection, uint32_t status_code
     }
     auto umessage = to_unsigned(message);
     std::span<const uint8_t> sp {umessage};
-    std::cout << "sending error" << std::endl;
     auto resu = co_await connection->write_data(sp, true);
     if(resu != stream_result::ok) {
         co_return;
@@ -74,7 +73,8 @@ std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool f
     }
     out.push_back({"date", timestring(time)});
     out.push_back({"expires", timestring(time + day)});
-    out.push_back({"content-type", mime + (mime.substr(0, 4) == "text" ? "; charset=UTF-8" : "")});
+    auto content_type = mime + (mime.substr(0, 4) == "text" ? "; charset=UTF-8" : "");
+    out.push_back({"content-type", content_type});
     out.push_back({"server", make_server_name()});
     
     return out;
@@ -91,7 +91,6 @@ task<stream_result> app_send_body_slice(std::shared_ptr<http_ctx> conn, const st
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
         buffer.resize(next_buffer_size);
         t.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
-        std::cout << "sending data" << std::endl;
         auto res = co_await conn->write_data(buffer);
         if(res != stream_result::ok) [[unlikely]] {
             co_return res;
@@ -130,22 +129,22 @@ std::pair<ssize_t, ssize_t> app_get_range_bounds(ssize_t file_size, std::pair<ss
     return {begin, end};
 }
 
-task<void> send_ranged_response(std::shared_ptr<http_ctx> conn, const std::filesystem::path& file_path, ssize_t file_size, std::string mime, std::pair<uint32_t, uint32_t> range,  bool send_body) {
+task<bool> send_ranged_response(std::shared_ptr<http_ctx> conn, const std::filesystem::path& file_path, ssize_t file_size, std::string mime, std::pair<uint32_t, uint32_t> range,  bool send_body) {
     if(range.first >= range.second) {
         co_await send_error(conn, 416, "Range Not Satisfiable");
-        co_return;
+        co_return false;
     }
     auto headers = headers_to_send(range.second - range.first, mime, false);
     headers.push_back({"accept-ranges", "bytes"});
     headers.push_back({"content-range", "bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size)});
     auto res = co_await conn->write_headers(headers);
     if(res != stream_result::ok) {
-        co_return;
+        co_return false;
     }
     if(send_body) {
         co_await app_send_body_slice(conn, file_path, range.first, range.second);
     }
-    co_return;
+    co_return true;
 }
 
 task<void> send_multi_ranged_response(std::shared_ptr<http_ctx> conn, const std::filesystem::path& file_path, ssize_t file_size, std::string mime, std::vector<std::pair<ssize_t, ssize_t>> ranges,  bool send_body) {
@@ -250,7 +249,7 @@ task<void> handle_post_request(std::shared_ptr<http_ctx> connection, const std::
 }
 
 // handle stream starts when headers have been received
-task<void> application_handler(std::shared_ptr<http_ctx> connection) { // todo: reference not shared_ptr?
+task<bool> application_handler(std::shared_ptr<http_ctx> connection) { // todo: reference not shared_ptr?
     assert(connection != nullptr);
     const std::vector<entry_t> request_headers = connection->get_headers();
     auto method = find_header(request_headers, ":method");
@@ -259,7 +258,7 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) { // todo: 
     auto scheme = find_header(request_headers, ":scheme");
     if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
         co_await send_error(connection, 400, "Bad Request");
-        co_return;
+        co_return false;
     }
     if(!authority or authority->starts_with("localhost")) {
         authority = project_options.default_subfolder;
@@ -276,9 +275,8 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) { // todo: 
 
     if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
         co_await send_error(connection, 403, "Forbidden");
-        co_return;
+        co_return false;
     }
-    
     if(method == "POST") {
         co_await handle_post_request(connection, file_path, request_headers);
     } else if(method == "GET") {
@@ -287,8 +285,9 @@ task<void> application_handler(std::shared_ptr<http_ctx> connection) { // todo: 
         co_await handle_get_request(connection, file_path, request_headers, false);
     } else {
         co_await send_error(connection, 405, "Method Not Allowed");
-        co_return;
+        co_return false;
     }
+    co_return true;
 }
 
 }

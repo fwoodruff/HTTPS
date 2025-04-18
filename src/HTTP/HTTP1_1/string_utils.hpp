@@ -82,6 +82,14 @@ void parse_tlds(const std::string& tld_filename);
 
 bool is_tld(std::string domain);
 
+char asciitolower(char in);
+
+std::string to_lower(std::string s);
+
+char asciitoupper(char in);
+
+std::string to_upper(std::string s);
+
 
 std::string parse_domain(std::string hostname);
 } // namespace fbw

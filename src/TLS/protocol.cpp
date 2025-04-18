@@ -60,13 +60,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
         if(m_engine.m_expected_read_record > HandshakeStage::client_early_data and return_early) {
             read_timeout = timeout;
         }
-        if(alpn() == "h2") {
-            std::cout << "TCP read" << std::endl;
-        }
         auto read_res = co_await m_client->read_append(input_data, read_timeout);
-        if(alpn() == "h2") {
-            std::cout << "TCP read done" << std::endl;
-        }
         if(read_res != stream_result::ok) {
             co_return read_res;
         }
@@ -124,7 +118,6 @@ std::string TLS::alpn() {
 // application code calls this to send data to the client
 task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
     m_engine.process_net_write(output, data, timeout);
-    m_engine.process_net_flush(output); // remove this
     co_return co_await net_write_all();
 }
 
@@ -150,12 +143,6 @@ task<stream_result> TLS::net_write_all() {
         }
     }
     co_return stream_result::ok;
-}
-
-// application data is sent on a buffered stream so the pattern of record sizes reveals much less
-task<stream_result> TLS::flush() {
-    m_engine.process_net_flush(output);
-    co_return co_await net_write_all();
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired

@@ -54,7 +54,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
     try {
         if(m_expected_read_record == HandshakeStage::application_data or m_expected_read_record == HandshakeStage::client_early_data) {
             std::scoped_lock lk { m_write_queue_mut };
-            flush_update_sync(network_output);
+            update_sync(network_output);
         }
         if(m_expected_read_record == HandshakeStage::application_closed) {
             return m_expected_read_record;
@@ -120,8 +120,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
     return m_expected_read_record;;
 }
 
-void tls_engine::flush_update_sync(std::queue<packet_timed>& output) {
-    flush_sync_internal(output);
+void tls_engine::update_sync(std::queue<packet_timed>& output) {
     if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
         if(ctx->do_key_reset()) {
             server_key_update_sync(output);
@@ -147,20 +146,11 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, us
     try {
         size_t idx = 0;
         while(idx < data.size()) {
-            if(write_buffer.empty()) {
-                write_buffer.emplace_back(Application);
-            }
-            auto& active_record = write_buffer.back();
-            size_t write_size = std::min(WRITE_RECORD_SIZE - active_record.m_contents.size(), data.size() - idx);
-            write_buffer.back().m_contents.append( data.begin() + idx, data.begin() + idx + write_size);
+            tls_record record(Application);
+            size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
+            record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
             idx += write_size;
-            if (active_record.m_contents.size() == WRITE_RECORD_SIZE) {
-                write_buffer.emplace_back(Application);
-                if(write_buffer.size() > 2) {
-                    write_record_sync(output, std::move(write_buffer.front()), timeout);
-                    write_buffer.pop_front();
-                }
-            }
+            write_record_sync(output, std::move(record), timeout);
         }
     } catch(const ssl_error& e) {
         error_ssl = e;
@@ -169,34 +159,6 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, us
         server_alert_sync(output, AlertLevel::fatal, AlertDescription::decode_error);
     }
     return stream_result::ok;
-}
-
-stream_result tls_engine::process_net_flush(std::queue<packet_timed>& output) {
-    std::scoped_lock lk { m_write_queue_mut };
-    if(write_connection_done) {
-        return stream_result::closed;
-    }
-    flush_sync_internal(output);
-    return stream_result::ok;
-}
-
-void tls_engine::flush_sync_internal(std::queue<packet_timed>& output) {
-    if(write_buffer.size() >= 2) {
-        if(squeeze_last_chunk(write_buffer.back().m_contents.size())) {
-            auto back = std::move(write_buffer.back());
-            write_buffer.pop_back();
-            write_buffer.back().m_contents.append(back.m_contents);
-        }
-    }
-    while(!write_buffer.empty()) {
-        auto& record = write_buffer.front();
-        if(record.m_contents.empty()) {
-            write_buffer.pop_front();
-            continue;
-        }
-        write_record_sync(output, std::move(record), project_options.session_timeout);
-        write_buffer.pop_front();
-    }
 }
 
 // When the server encounters an error, it sends that error here
@@ -674,7 +636,6 @@ void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
 // applications call this when graceful not abrupt closing of a connection is desired
 void tls_engine::process_close_notify(std::queue<packet_timed>& output) {
     std::scoped_lock lk { m_write_queue_mut };
-    flush_sync_internal(output);
     server_alert_sync(output, AlertLevel::warning, AlertDescription::close_notify);
 }
 

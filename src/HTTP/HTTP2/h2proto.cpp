@@ -28,15 +28,13 @@ task<void> HTTP2::client() {
         do {
             auto res = co_await send_outbox();
             if(res != stream_result::ok) {
-                co_await close_connection();
                 co_return;
             }
         } while(extract_and_handle());
-        std::cout << "TLS read" << std::endl;
         auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
-        std::cout << "TLS read done" << std::endl;
         if(res != stream_result::ok) {
-            co_await close_connection();
+            h2_ctx.close_connection();
+            co_await send_outbox();
             co_return;
         }
     }
@@ -56,6 +54,7 @@ bool HTTP2::extract_and_handle() {
 }
 
 void HTTP2::handle_frame(h2frame& frame) {
+    std::cout << "received: " << frame.pretty() << std::endl;
     // todo: return all streams to wake and get rid of 'can_resume'
     auto stream_to_wake = h2_ctx.receive_peer_frame(frame);
     if(stream_to_wake == std::nullopt) {
@@ -102,21 +101,19 @@ task<void> HTTP2::close_connection() {
     co_await send_outbox();
 }
 
-// todo: need an async lock around claiming the mutex and then writing the buffer
-// todo: extracting the outbox belongs in the sync logic
-
 task<stream_result> HTTP2::send_outbox() {
     guard g(&m_async_mut);
     co_await m_async_mut.lock();
     auto [data_contiguous, closing] = h2_ctx.extract_outbox();
-    if(!data_contiguous.empty()) {
-        auto res = co_await m_stream->write(data_contiguous, project_options.session_timeout);
+    while(!data_contiguous.empty()) {
+        auto packet = std::move(data_contiguous.front());
+        data_contiguous.pop_front();
+        auto res = co_await m_stream->write(std::move(packet), project_options.session_timeout);
         if(res != stream_result::ok) {
             co_return res;
         }
     }
     if(closing) {
-        std::cout << "sending      TLS close notify" << std::endl;
         co_await m_stream->close_notify();
         co_return stream_result::closed;
     }
@@ -159,8 +156,17 @@ std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
 task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     auto hcx = std::make_shared<h2_stream> (connection, stream_id);
     assert(hcx != nullptr);
-    co_await application_handler(hcx);
-    //co_await hcx->write_data(std::span<uint8_t> {}, true); // todo: check if already sent
+    try {
+        co_await application_handler(hcx);
+    } catch(std::exception& e) {
+        std::cerr << e.what() << std::endl;
+    }
+    if(!hcx->is_done()) {
+        std::cout << "not done, sending empty data with END_STREAM" << std::endl;
+        co_await hcx->write_data(std::span<uint8_t> {}, true);
+    } else {
+        std::cout << "already done" << std::endl;
+    }
     auto conn = connection.lock();
     if(!conn) {
         co_return;

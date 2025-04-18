@@ -72,7 +72,7 @@ public:
     // updates internal state
     // enqueues sendable to outbox
     // returns true if WINDOW_FRAME receipt required to continue
-    bool buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
+    stream_result buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
     bool buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id);
 
     // read data into the supplied span
@@ -89,7 +89,7 @@ public:
     void close_connection();
     
     // returns bytes to send and whether that's the end of data 
-    std::pair<ustring, bool> extract_outbox(); 
+    std::pair<std::deque<ustring>, bool> extract_outbox(); 
     
 private:
     std::optional<uint32_t> receive_data_frame(const h2_data& frame);
@@ -100,14 +100,14 @@ private:
     std::optional<uint32_t> receive_window_frame(const h2_window_update& frame);
     void raise_stream_error(h2_code, uint32_t stream_id);
     void enqueue_goaway(h2_code code, std::string message);
-    bool stage_buffer(stream_ctx& stream); // returns suspend
+    stream_result stage_buffer(stream_ctx& stream); // returns suspend
 
     // todo:
     // after stage_buffer we always check if the stream needs to be deleted.
     // receiving a connection window frame we need to run a lot of stage buffer calls
 
     hpack m_hpack;
-    std::deque<uint8_t> outbox; // send to network
+    std::deque<ustring> outbox; // send to network
     std::unordered_map<uint32_t, stream_ctx> stream_ctx_map; // processed by streams
     uint32_t last_server_stream_id;
     uint32_t last_client_stream_id;

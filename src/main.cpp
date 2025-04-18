@@ -32,6 +32,7 @@
 //      HTTP/2
 //      HTTP webroot for ACME
 //      HRR cookies
+//      HTTP/2 Timeouts
 
 // Correctness:
 //      Check that poly1305 is constant-time
@@ -39,6 +40,7 @@
 //      ustring is not UB but can be
 //      Check ALPN in session tickets
 //      g++-14-arm-linux-gnueabihf is only on trixie
+//      use std::exchange instead of std::move
 
 // Syntax:
 //      Add 'explict' to constructors

@@ -254,7 +254,7 @@ std::string pretty_flags(uint8_t flags, bool can_ack) {
 }
 
 ustring h2frame::serialise_common(size_t reserved) const {
-    std::cout << "sending      " << pretty() << std::endl;
+    std::cout << "sent:    " << pretty() << std::endl;
     ustring out;
     out.reserve(reserved);
     out.append({0,0,0});
@@ -278,7 +278,15 @@ ustring h2_data::serialise() const {
 
 std::string h2_data::pretty() const {
     std::stringstream out;
-    out << "type: DATA,          stream id: " << stream_id << ", data: " << to_signed(contents) << pretty_flags(flags, false);
+    out << "type: DATA,          stream id: " << stream_id << ", data: ";
+    for(uint8_t c : contents) {
+        if((c >= 32 and c <= 126) or c == 10) {
+            out << char(c);
+        } else {
+            out << '.';
+        }
+    }
+    out << pretty_flags(flags, false);
     return out.str();
 }
 
@@ -301,10 +309,8 @@ ustring h2_headers::serialise() const {
 
 std::string h2_headers::pretty() const {
     std::stringstream out;
-    out << "type: HEADERS,       stream id: " << stream_id << " field block fragment:";
-    for(unsigned c : field_block_fragment) {
-        out << ' ' << std::hex << std::setfill(' ') << std::setw(2) << c;
-    }
+    out << "type: HEADERS,       stream id: " << stream_id;
+    out << " field block fragment size: " << field_block_fragment.size();
     if(exclusive) {
         out << " exclusive";
     }

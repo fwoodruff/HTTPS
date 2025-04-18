@@ -40,7 +40,6 @@ public:
     [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] task<stream_result> await_hello();
-    [[nodiscard]] task<stream_result> flush() override;
 
     std::string alpn();
 

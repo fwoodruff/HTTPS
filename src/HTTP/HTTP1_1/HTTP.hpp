@@ -43,6 +43,8 @@ public:
     HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect);
 };
 
+ssize_t get_file_size(std::filesystem::path filename);
+
 } // namespace fbw
  
 #endif // http_hpp

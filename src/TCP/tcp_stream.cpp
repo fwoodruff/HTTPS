@@ -34,10 +34,6 @@ task<stream_result> tcp_stream::write(ustring abuffer, std::optional<millisecond
     co_return stream_result::ok;
 }
 
-[[nodiscard]] task<stream_result> tcp_stream::flush() {
-    co_return stream_result::ok;
-}
-
 tcp_stream::tcp_stream(int fd, std::string ip, uint16_t port) : stream(), m_ip(ip), m_port(port), m_fd(fd) { }
 
 readable tcp_stream::read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout) {

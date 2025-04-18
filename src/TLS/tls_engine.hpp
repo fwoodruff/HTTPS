@@ -38,7 +38,6 @@ public:
     HandshakeStage process_net_read(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout);
     
     stream_result process_net_write(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout);
-    stream_result process_net_flush(std::queue<packet_timed>& output);
 
     void process_close_notify(std::queue<packet_timed>& output);
     stream_result close_notify_finish(const ustring& bio_input);
@@ -48,7 +47,6 @@ public:
     HandshakeStage m_expected_read_record = HandshakeStage::client_hello;
     std::mutex m_write_queue_mut;
 private:
-    std::deque<tls_record> write_buffer;
     handshake_ctx handshake;
 
     bool server_cipher_spec = false;
@@ -91,9 +89,8 @@ private:
     void server_session_ticket_sync(std::queue<packet_timed>& output);
     void server_alert_sync(std::queue<packet_timed>& output, AlertLevel level, AlertDescription description);
 
-    void flush_update_sync(std::queue<packet_timed>& output);
+    void update_sync(std::queue<packet_timed>& output);
     void write_record_sync(std::queue<packet_timed>& output, tls_record record, std::optional<milliseconds> timeout);
-    void flush_sync_internal(std::queue<packet_timed>&);
 
     KeyUpdateRequest client_key_update_received(const ustring& handshake_message);
     static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);

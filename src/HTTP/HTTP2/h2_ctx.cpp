@@ -22,8 +22,6 @@ h2_context::h2_context() :
 
 std::optional<uint32_t> h2_context::receive_peer_frame(const h2frame& frame) {
     std::scoped_lock lk(m_mut);
-    std::cout << "received     " << frame.pretty() << std::endl;
-    
     try {
         using enum h2_type;
         if(!initial_settings_done and frame.type != SETTINGS) {
@@ -50,7 +48,7 @@ std::optional<uint32_t> h2_context::receive_peer_frame(const h2frame& frame) {
                     h2_ping response_frame = dynamic_cast<const h2_ping&>(frame);
                     response_frame.flags |= ACK;
                     auto bytes = response_frame.serialise();
-                    outbox.insert(outbox.end(), bytes.begin(), bytes.end());
+                    outbox.push_back(response_frame.serialise());
                 }
                 return std::nullopt;
             case GOAWAY:
@@ -75,11 +73,9 @@ void h2_context::close_connection() {
     }
 }
 
-std::pair<ustring, bool> h2_context::extract_outbox() {
+std::pair<std::deque<ustring>, bool> h2_context::extract_outbox() {
     std::scoped_lock lk { m_mut };
-    ustring data_contiguous(outbox.size(), 0); // todo: consider best container, iterator pair/range?
-    std::copy(outbox.begin(), outbox.end(), data_contiguous.begin());
-    outbox.clear();
+    std::deque<ustring> data_contiguous = std::exchange(outbox, {});
     bool closing = go_away_sent and stream_ctx_map.empty();
     return { data_contiguous, closing };
 }
@@ -125,10 +121,9 @@ void h2_context::receive_peer_settings(const h2_settings& frame) {
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_FRAME_SIZE, server_settings.max_frame_size});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_HEADER_LIST_SIZE, server_settings.max_header_size});
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, (server_settings.push_promise_enabled? 1u : 0u) });
-        auto server_bytes = server_settings_frame.serialise();
         initial_settings_done = true;
         m_hpack.set_encoder_max_capacity(server_settings.header_table_size);
-        outbox.insert(outbox.end(), server_bytes.begin(), server_bytes.end());
+        outbox.push_back(server_settings_frame.serialise());
     } else {
         const int32_t delta = server_settings.initial_window_size - old_initial_window;
         for (auto & [sid, stream] : stream_ctx_map) {
@@ -147,8 +142,7 @@ void h2_context::receive_peer_settings(const h2_settings& frame) {
 
     h2_settings ack;
     ack.flags = h2_flags::ACK;
-    auto ack_bytes = ack.serialise();
-    outbox.insert(outbox.end(), ack_bytes.begin(), ack_bytes.end());
+    outbox.push_back(ack.serialise());
 }
 
 bool h2_context::can_resume(uint32_t stream_id, bool as_reader) {
@@ -298,15 +292,16 @@ std::optional<uint32_t>  h2_context::receive_continuation_frame(const h2_continu
     return std::nullopt;
 }
 
-bool h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend for completion
-    if(stream.outbox.empty()) {
-        return false;
+stream_result h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend for completion
+    assert(stream.strm_state != stream_state::closed);
+    if(stream.outbox.empty() and !stream.server_data_done) {
+        return stream_result::ok;
     }
     if(stream.stream_current_window_remaining <= 0) {
-        return true;
+        return stream_result::awaiting;
     }
     if(connection_current_window_remaining <= 0) {
-        return true;
+        return stream_result::awaiting;
     }
     const auto max_frame_size = std::min(connection_current_window_remaining, stream.stream_current_window_remaining);
     const auto max_frame_size_allowed = std::min<int32_t>(max_frame_size, client_settings.max_frame_size);
@@ -322,9 +317,11 @@ bool h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend for complet
         frame.flags |= h2_flags::END_STREAM;
         stream.strm_state = stream_state::closed;
     }
-    auto serial_frame = frame.serialise();
-    outbox.insert(outbox.end(), serial_frame.begin(), serial_frame.end());
-    return !stream.outbox.empty();
+    outbox.push_back(frame.serialise());
+    if(stream.outbox.empty()) {
+        return stream_result::ok;
+    }
+    return stream_result::awaiting;
 }
 
 std::optional<std::pair<size_t, bool>> h2_context::read_data(const std::span<uint8_t> app_data, uint32_t stream_id) {
@@ -350,7 +347,7 @@ std::optional<std::pair<size_t, bool>> h2_context::read_data(const std::span<uin
         window.window_size_increment = server_settings.initial_window_size;
         stream.stream_current_receive_window_remaining += window.window_size_increment;
         auto bytes = window.serialise();
-        outbox.insert(outbox.end(), bytes.begin(), bytes.end());
+        outbox.push_back(window.serialise());
     }
     if(connection_current_receive_window_remaining > INT32_MAX - server_settings.initial_window_size ) {
         throw h2_error("flow control window overflow", h2_code::FLOW_CONTROL_ERROR);
@@ -361,7 +358,7 @@ std::optional<std::pair<size_t, bool>> h2_context::read_data(const std::span<uin
         window.window_size_increment = server_settings.initial_window_size;
         connection_current_receive_window_remaining += window.window_size_increment;
         auto bytes = window.serialise();
-        outbox.insert(outbox.end(), bytes.begin(), bytes.end());
+        outbox.push_back(window.serialise());
     }
     auto client_done = stream.strm_state == stream_state::closed or stream.strm_state == stream_state::half_closed;
     return {{bytes_read, client_done}};
@@ -372,11 +369,11 @@ uint32_t h2_context::receive_rst_stream(const h2_rst_stream& frame) {
     return frame.stream_id;
 }
 
-bool h2_context::buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end) { // bool: suspend for completion
+stream_result h2_context::buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end) { // bool: suspend for completion
     std::scoped_lock lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
-        return false;
+        return stream_result::closed;
     }
     auto& stream = it->second;
     assert(!stream.server_data_done);
@@ -386,7 +383,7 @@ bool h2_context::buffer_data(const std::span<const uint8_t> app_data, uint32_t s
     auto res = stage_buffer(stream);
     if(stream.strm_state == stream_state::closed) {
         stream_ctx_map.erase(stream_id);
-        return res;
+        return stream_result::closed;
     }
     return res;
 }
@@ -403,8 +400,7 @@ bool h2_context::buffer_headers(const std::vector<entry_t>& headers, uint32_t st
     frame.flags |= h2_flags::END_HEADERS; // todo: case where we must split headers
     frame.stream_id = stream_id;
     frame.type = h2_type::HEADERS;
-    auto frame_bytes = frame.serialise();
-    outbox.insert(outbox.end(), frame_bytes.begin(), frame_bytes.end());
+    outbox.push_back(frame.serialise());
     return true;
 }
 
@@ -472,11 +468,11 @@ std::optional<uint32_t> h2_context::receive_window_frame(const h2_window_update&
         raise_stream_error(h2_code::PROTOCOL_ERROR, frame.stream_id);
         return frame.stream_id;
     }
-    bool suspend = stage_buffer(stream);
+    stream_result suspend = stage_buffer(stream);
     if(stream.strm_state == stream_state::closed) {
         stream_ctx_map.erase(it);
     }
-    if(suspend) {
+    if(suspend == stream_result::awaiting) {
         return std::nullopt;
     }
     return frame.stream_id;
@@ -489,7 +485,7 @@ void h2_context::enqueue_goaway(h2_code code, std::string message) {
     goawayframe.additional_debug_data = std::move(message);
     go_away_sent = true;
     auto frame = goawayframe.serialise();
-    outbox.insert(outbox.end(), frame.begin(), frame.end());
+    outbox.push_back(goawayframe.serialise());
 }
 
 void h2_context::raise_stream_error(h2_code code, uint32_t stream_id) {
@@ -501,7 +497,7 @@ void h2_context::raise_stream_error(h2_code code, uint32_t stream_id) {
     frame.stream_id = stream_id;
     frame.error_code = code;
     auto frame_bytes = frame.serialise();
-    outbox.insert(outbox.end(), frame_bytes.begin(), frame_bytes.end());
+    outbox.push_back(frame.serialise());
     stream_ctx_map.erase(it);
 }
 

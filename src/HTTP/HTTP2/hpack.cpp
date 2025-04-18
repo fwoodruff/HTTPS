@@ -105,6 +105,7 @@ ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers
         m_encode_table.set_capacity(encoder_max_capacity);
     }
     for (const auto& header : headers) {
+        // todo: tolower case
         auto index = m_encode_table.index(header);
         if (index != 0) {
             encoded_fragment.append(indexed_field(index));
@@ -314,6 +315,8 @@ ustring encode_integer(uint32_t value, uint8_t prefix_bits) {
 }
 
 uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits) {
+    // todo: if an encoding has leading zeros, it might not be the most efficient encoding
+    // and we should throw in this case
     uint32_t prefix = (1 << prefix_bits) - 1;
     if(offset >= encoded.size()) {
         throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);

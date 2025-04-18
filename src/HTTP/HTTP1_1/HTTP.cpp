@@ -188,11 +188,6 @@ task<void> HTTP::client() {
                 if (res != stream_result::ok) {
                     co_return;
                 }
-                assert(m_stream);
-                res = co_await m_stream->flush();
-                if (res != stream_result::ok) {
-                    co_return;
-                }
             }
             handled_request = true;
         }
@@ -275,7 +270,7 @@ void HTTP::write_body(ustring frame) {
 ssize_t get_file_size(std::filesystem::path filename) {
     std::ifstream t(filename, std::ifstream::ate | std::ifstream::binary);
     if(t.fail()) {
-        throw http_error("404 Not Found");
+        return -1;
     }
     return t.tellg();
 }
@@ -326,9 +321,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
         if(res != stream_result::ok) {
             co_return res;
         }
-        co_return co_await m_stream->flush();
     }
-
     co_return stream_result::ok;
 }
 

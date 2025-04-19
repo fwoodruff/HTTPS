@@ -82,8 +82,8 @@ public:
 
     void set_encoder_max_capacity(uint32_t);
     void set_decoder_max_capacity(uint32_t);
-    std::vector<entry_t> parse_field_block_fragment(const ustring& field_block_fragment);
-    ustring generate_field_block_fragment(const std::vector<entry_t>& headers);
+    std::vector<entry_t> parse_field_block(const ustring& field_block_fragment);
+    ustring generate_field_block(const std::vector<entry_t>& headers);
 };
 
 }

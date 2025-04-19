@@ -19,7 +19,7 @@ bool h2_stream::is_done() {
     if(!conn) {
         return true;
     }
-    return conn->h2_ctx.is_closed(m_stream_id) == stream_result::closed;
+    return conn->h2_ctx.stream_status(m_stream_id) == stream_result::closed;
 }
 
 task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers) {
@@ -40,7 +40,7 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
         co_return stream_result::closed;
     }
     assert(conn);
-    if(conn->h2_ctx.is_closed(m_stream_id) == stream_result::closed) {
+    if(conn->h2_ctx.stream_status(m_stream_id) == stream_result::closed) {
         co_return stream_result::closed;
     }
     auto stream_resu = conn->h2_ctx.buffer_data(data, m_stream_id, end);

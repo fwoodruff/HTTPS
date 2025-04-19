@@ -16,7 +16,6 @@ using namespace std::chrono;
 
 namespace fbw {
 
-// Write data
 
 h2writeable::h2writeable(std::weak_ptr<HTTP2> h2_contx, uint32_t stream_id)
     : m_h2_contx(h2_contx), m_stream_id(stream_id) {}
@@ -31,6 +30,10 @@ bool h2writeable::await_suspend(std::coroutine_handle<> continuation) {
         return false;
     }
     std::scoped_lock lk { h2_contx->m_coro_mut };
+    // confirm under coroutine container lock
+    if(h2_contx->h2_ctx.stream_status(m_stream_id) != stream_result::awaiting) {
+        return false;
+    }
     h2_contx->m_coros.insert({m_stream_id, {continuation, false}});
     return true;
 }
@@ -38,10 +41,10 @@ bool h2writeable::await_suspend(std::coroutine_handle<> continuation) {
 stream_result h2writeable::await_resume() {
     auto h2_contx = m_h2_contx.lock();
     if(!h2_contx) {
-        return stream_result::closed; // connection closed
+        return stream_result::closed; // connection gone
     }
     auto& cx = h2_contx->h2_ctx;
-    return cx.is_closed(m_stream_id);
+    return cx.stream_status(m_stream_id);
 }
 
 // Read data

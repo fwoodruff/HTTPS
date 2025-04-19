@@ -86,9 +86,10 @@ std::unique_ptr<h2frame> h2frame::deserialise(const ustring& frame_bytes) { // t
             default:
                 return nullptr;
         }
-        return nullptr;
     } catch(const std::out_of_range& e) {
         throw h2_error("malformed frame", h2_code::FRAME_SIZE_ERROR);
+    } catch(const std::exception& e) {
+        throw h2_error("unexpected deserialisation error", h2_code::INTERNAL_ERROR);
     }
 }
 
@@ -97,7 +98,7 @@ std::unique_ptr<h2_data> deserialise_DATA(const ustring& frame_bytes) {
     assert(size + H2_FRAME_HEADER_SIZE == frame_bytes.size());
     auto frame = std::make_unique<h2_data>();
     set_base_frame_values(*frame, frame_bytes);
-    if(frame->flags % h2_flags::PADDED) {
+    if(frame->flags & h2_flags::PADDED) {
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
         frame->contents = frame_bytes.substr(H2_FRAME_HEADER_SIZE+1, size-1 - frame->pad_length);
     } else {
@@ -187,7 +188,7 @@ std::unique_ptr<h2_push_promise> deserialise_PUSH_PROMISE(const ustring& frame_b
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 1);
         idx += 1;
     }
-    frame->promised_stream_id = try_bigend_read(frame_bytes, idx, 4);
+    frame->promised_stream_id = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 4);
     frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE + idx + 4, size - idx - frame->pad_length);
     return frame;
 }
@@ -195,7 +196,7 @@ std::unique_ptr<h2_push_promise> deserialise_PUSH_PROMISE(const ustring& frame_b
 std::unique_ptr<h2_ping> deserialise_PING(const ustring& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
     if(size != 8) {
-        throw h2_error("malformed PRIORITY frame", h2_code::FRAME_SIZE_ERROR);
+        throw h2_error("malformed PING frame", h2_code::FRAME_SIZE_ERROR);
     }
     auto frame = std::make_unique<h2_ping>();
     set_base_frame_values(*frame, frame_bytes);
@@ -272,7 +273,7 @@ ustring h2_data::serialise() const {
     }
     out.append(contents);
     out.resize(out.size() + pad_length);
-    checked_bigend_write(out.size() - 9, out, 0, 3);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -333,6 +334,7 @@ ustring h2_priority::serialise() const {
     checked_bigend_write(stream_dependency, out, out.size() - 4, 4);
     out[out.size()-4] |= (uint8_t(exclusive) << 7);
     out.push_back(weight);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -349,6 +351,7 @@ ustring h2_rst_stream::serialise() const {
     ustring out = serialise_common();
     out.append({0,0,0,0});
     checked_bigend_write(uint32_t(error_code), out, out.size() - 4, 4);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -365,7 +368,7 @@ ustring h2_settings::serialise() const {
         checked_bigend_write(uint32_t(setting.identifier), out, out.size() - 6, 2);
         checked_bigend_write(uint32_t(setting.value), out, out.size() - 4, 4);
     }
-    checked_bigend_write(out.size() - 9, out, 0, 3);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -391,7 +394,7 @@ ustring h2_push_promise::serialise() const {
     checked_bigend_write(promised_stream_id, out, out.size() - 4, 4);
     out.append(field_block_fragment);
     out.resize(out.size() + pad_length);
-    checked_bigend_write(out.size() - 9, out, 0, 3);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -406,6 +409,7 @@ ustring h2_ping::serialise() const {
     ustring out = serialise_common(17);
     out.append({0,0,0,0,0,0,0,0});
     checked_bigend_write(opaque, out, out.size() - 8, 8);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -422,7 +426,7 @@ ustring h2_goaway::serialise() const {
     out.append({0,0,0,0});
     checked_bigend_write(uint32_t(error_code), out, out.size() - 4, 4);
     out.append(to_unsigned(additional_debug_data));
-    checked_bigend_write(out.size() - 9, out, 0, 3);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -441,6 +445,7 @@ ustring h2_window_update::serialise() const {
     ustring out = serialise_common();
     out.append({0,0,0,0});
     checked_bigend_write(window_size_increment, out, out.size() - 4, 4);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -453,7 +458,7 @@ std::string h2_window_update::pretty() const {
 ustring h2_continuation::serialise() const {
     ustring out = serialise_common(13);
     out.append(field_block_fragment.begin(), field_block_fragment.end());
-    checked_bigend_write(out.size() - 9, out, 0, 3);
+    checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
 
@@ -472,6 +477,32 @@ void set_base_frame_values(h2frame& frame, const ustring& frame_bytes) {
     frame.flags = try_bigend_read(frame_bytes, 4, 1);
     const uint32_t idres = try_bigend_read(frame_bytes, 5, 4);
     frame.stream_id  = idres & ~(1u << 31);
+}
+
+h2_settings construct_settings_frame(setting_values desired_settings, setting_values current_settings) {
+    h2_settings server_settings_frame;
+    if(desired_settings.header_table_size != current_settings.header_table_size) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_HEADER_TABLE_SIZE, desired_settings.header_table_size});
+    }
+    if(desired_settings.max_concurrent_streams != current_settings.max_concurrent_streams ) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_CONCURRENT_STREAMS, desired_settings.max_concurrent_streams });
+    }
+    if(desired_settings.initial_window_size != current_settings.initial_window_size) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_INITIAL_WINDOW_SIZE, desired_settings.initial_window_size});
+    }
+    if(desired_settings.max_frame_size != current_settings.max_frame_size) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_FRAME_SIZE, desired_settings.max_frame_size});
+    }
+    if(desired_settings.max_header_size != current_settings.max_header_size) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_HEADER_LIST_SIZE, desired_settings.max_header_size});
+    }
+    if(desired_settings.push_promise_enabled != current_settings.push_promise_enabled) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, desired_settings.push_promise_enabled});
+    }
+    if(desired_settings.no_rfc7540_priorities != current_settings.no_rfc7540_priorities) {
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, desired_settings.no_rfc7540_priorities});
+    }
+    return server_settings_frame;
 }
 
 }

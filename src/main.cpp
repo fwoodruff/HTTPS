@@ -38,6 +38,7 @@
 //      Check ALPN in session tickets
 //      g++-14-arm-linux-gnueabihf is only on trixie
 //      use std::exchange instead of std::move
+//      confirm no reference cycles that keep h2 connections alive
 
 // Syntax:
 //      Add 'explict' to constructors
@@ -63,6 +64,11 @@
 //      QUIC
 //      TLS Client
 //      Russian ciphers
+
+
+// check if coroutine handle actually sends data after sending data, or tries to reloop until a window update?
+// data could be getting lost if a std::span is bad?
+
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

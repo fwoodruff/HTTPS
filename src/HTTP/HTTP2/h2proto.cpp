@@ -30,6 +30,10 @@ task<void> HTTP2::client() {
             if(resa != stream_result::ok) {
                 co_return;
             }
+            auto res = co_await m_stream->read_append(m_read_buffer, 0s);
+            if(res == stream_result::closed) {
+                break;
+            }
         } while(extract_and_handle());
         auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
         if(res != stream_result::ok) {
@@ -72,6 +76,14 @@ void HTTP2::handle_frame(h2frame& frame) {
             std::scoped_lock lk { m_coro_mut };
             auto it = m_coros.find(strm.stream_id);
             if(it != m_coros.end()) {
+                if(!it->second.is_reader) {
+                    if(strm.m_action == wake_action::wake_write) {
+                        // confirm under coroutine container lock
+                        if(h2_ctx.stream_status(strm.stream_id) == stream_result::awaiting) {
+                            continue;
+                        }
+                    }
+                }
                 if((it->second.is_reader == (strm.m_action == wake_action::wake_read)) or strm.m_action == wake_action::wake_any) {
                     waking.push_back(it->second.handle);
                     m_coros.erase(it);

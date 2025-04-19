@@ -148,7 +148,7 @@ std::string choose_alpn(const std::vector<std::string>& client_alpn) {
     }
     if(std::find(client_alpn.begin(), client_alpn.end(), "h2") != client_alpn.end()) {
         // todo: toggle
-        // return "h2";
+        //return "h2";
     }
     if(std::find(client_alpn.begin(), client_alpn.end(), "http/1.1") == client_alpn.end()) {
         throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);

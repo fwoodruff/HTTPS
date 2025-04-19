@@ -22,15 +22,6 @@
 
 namespace fbw {
 
-struct setting_values {
-    uint32_t header_table_size = SETTINGS_HEADER_TABLE_SIZE;
-    uint32_t max_concurrent_streams = INITIAL_MAX_CONCURRENT_STREAMS;
-    uint32_t initial_window_size = INITIAL_WINDOW_SIZE;
-    uint32_t max_frame_size = MINIMUM_MAX_FRAME_SIZE;
-    uint32_t max_header_size = HEADER_LIST_SIZE;
-    bool push_promise_enabled = false;
-};
-
 enum stream_frame_state {
     headers_expected,
     headers_cont_expected,
@@ -46,6 +37,8 @@ struct stream_ctx {
     std::deque<uint8_t> outbox; // data for writing
     stream_frame_state client_sent_headers = headers_expected;
     bool server_data_done = false;
+    ustring header_block;
+    ustring trailer_block;
     std::vector<entry_t> m_received_headers;
     std::vector<entry_t> m_received_trailers;
     uint32_t m_stream_id;
@@ -94,7 +87,7 @@ public:
     std::optional<std::pair<size_t, bool>> read_data(const std::span<uint8_t> app_data, uint32_t stream_id);
     std::vector<entry_t> get_headers(uint32_t stream_id);
 
-    stream_result is_closed(uint32_t stream_id);
+    stream_result stream_status(uint32_t stream_id);
 
     void close_connection();
     

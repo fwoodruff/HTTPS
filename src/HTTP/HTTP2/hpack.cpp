@@ -96,43 +96,43 @@ constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
     {0x7ffffee, 27}, {0x7ffffef, 27}, {0x7fffff0, 27}, {0x3ffffee, 26} // , {3fffffff, 30} implicit
 };
 
-ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers) {
-    ustring encoded_fragment;
+ustring hpack::generate_field_block(const std::vector<entry_t>& headers) {
+    ustring encoded_block;
 
     if(encoder_max_capacity != m_encode_table.m_capacity) {
         auto update = dynamic_table_size_update(encoder_max_capacity);
-        encoded_fragment.append(update);
+        encoded_block.append(update);
         m_encode_table.set_capacity(encoder_max_capacity);
     }
     for (const auto& header : headers) {
         // todo: tolower case
         auto index = m_encode_table.index(header);
         if (index != 0) {
-            encoded_fragment.append(indexed_field(index));
+            encoded_block.append(indexed_field(index));
         } else {
             auto name_index = m_encode_table.index({header.name, ""});
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
-                    encoded_fragment.append(indexed_name_new_value_never_dynamic(name_index, header.value));
+                    encoded_block.append(indexed_name_new_value_never_dynamic(name_index, header.value));
                 } else if (header.do_index == do_indexing::without) {
-                    encoded_fragment.append(indexed_name_new_value_without_dynamic(name_index, header.value));
+                    encoded_block.append(indexed_name_new_value_without_dynamic(name_index, header.value));
                 } else {
-                    encoded_fragment.append(indexed_name_new_value(name_index, header.value));
+                    encoded_block.append(indexed_name_new_value(name_index, header.value));
                     m_encode_table.add_entry({header.name, header.value});
                 }
             } else {
                 if(header.do_index == do_indexing::never) {
-                    encoded_fragment.append(new_name_new_value_never_dynamic(header.name, header.value));
+                    encoded_block.append(new_name_new_value_never_dynamic(header.name, header.value));
                 } else if (header.do_index == do_indexing::without) {
-                    encoded_fragment.append(new_name_new_value_without_dynamic(header.name, header.value));
+                    encoded_block.append(new_name_new_value_without_dynamic(header.name, header.value));
                 } else {
-                    encoded_fragment.append(new_name_new_value(header.name, header.value));
+                    encoded_block.append(new_name_new_value(header.name, header.value));
                     m_encode_table.add_entry({header.name, header.value});
                 }
             }
         }
     }
-    return encoded_fragment;
+    return encoded_block;
 }
 
 table::table() : next_idx(static_entries + 1) {}
@@ -244,7 +244,7 @@ std::string decode_huffman(std::span<const uint8_t> encoded_str) {
     return result;
 }
 
-std::vector<entry_t> hpack::parse_field_block_fragment(const ustring& field_block_fragment) {
+std::vector<entry_t> hpack::parse_field_block(const ustring& field_block_fragment) {
     size_t offset = 0;
     std::vector<entry_t> entries;
     while(offset < field_block_fragment.size()) {

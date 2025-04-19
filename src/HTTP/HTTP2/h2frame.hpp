@@ -41,21 +41,24 @@ enum h2_flags : uint8_t {
 };
 
 enum class h2_settings_code : uint16_t {
+    SETTINGS_INVALID = 0x00,
     SETTINGS_HEADER_TABLE_SIZE = 0x01,
     SETTINGS_ENABLE_PUSH = 0x02,
     SETTINGS_MAX_CONCURRENT_STREAMS = 0x03,
     SETTINGS_INITIAL_WINDOW_SIZE = 0x04,
     SETTINGS_MAX_FRAME_SIZE = 0x05,
     SETTINGS_MAX_HEADER_LIST_SIZE = 0x06,
+    SETTINGS_ENABLE_CONNECT_PROTOCOL = 0x08,
+    SETTINGS_NO_RFC7540_PRIORITIES = 0x09,
 };
 
-constexpr size_t MINIMUM_MAX_FRAME_SIZE = 16384;
+constexpr size_t DEFAULT_MINIMUM_MAX_FRAME_SIZE = 16384;
 constexpr size_t MAX_FRAME_SIZE = 16777215;
 constexpr size_t MAX_WINDOW_SIZE = 0x7fffffff;
-constexpr size_t INITIAL_MAX_CONCURRENT_STREAMS = 0x7fffffff;
-constexpr int32_t INITIAL_WINDOW_SIZE = 65535;
-constexpr size_t HEADER_LIST_SIZE = 0x7fffffff;
-constexpr size_t SETTINGS_HEADER_TABLE_SIZE = 4096;
+constexpr size_t DEFAULT_INITIAL_MAX_CONCURRENT_STREAMS = 0x7fffffff;
+constexpr int32_t DEFAULT_INITIAL_WINDOW_SIZE = 65535;
+constexpr size_t DEFAULT_HEADER_LIST_SIZE = 0x7fffffff;
+constexpr size_t DEFAULT_HEADER_TABLE_SIZE = 4096;
 
 enum class stream_state {
     idle, // nothing sent
@@ -80,6 +83,16 @@ enum class h2_code {
     ENHANCE_YOUR_CALM = 0x0b,
     INADEQUATE_SECURITY = 0x0c,
     HTTP_1_1_REQUIRED = 0x0d,
+};
+
+struct setting_values {
+    uint32_t header_table_size = DEFAULT_HEADER_TABLE_SIZE;
+    uint32_t max_concurrent_streams = DEFAULT_INITIAL_MAX_CONCURRENT_STREAMS;
+    uint32_t initial_window_size = DEFAULT_INITIAL_WINDOW_SIZE;
+    uint32_t max_frame_size = DEFAULT_MINIMUM_MAX_FRAME_SIZE;
+    uint32_t max_header_size = DEFAULT_HEADER_LIST_SIZE;
+    bool push_promise_enabled = false;
+    bool no_rfc7540_priorities = false;
 };
 
 class h2_error : public std::runtime_error {
@@ -148,6 +161,8 @@ struct h2_settings : public h2frame {
     ustring serialise() const override;
     std::string pretty() const override;
 };
+
+h2_settings construct_settings_frame(setting_values desired_settings, setting_values current_settings);
 
 struct h2_push_promise : public h2frame {
     h2_push_promise();

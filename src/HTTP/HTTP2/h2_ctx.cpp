@@ -21,6 +21,8 @@ h2_context::h2_context() :
 
         connection_current_receive_window_remaining = server_settings.initial_window_size;
         connection_current_window_remaining = DEFAULT_INITIAL_WINDOW_SIZE;
+
+        send_initial_settings();
 }
 
 std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
@@ -119,6 +121,21 @@ void update_client_settings(setting_values& client_settings, const h2_settings& 
     }
 }
 
+void h2_context::send_initial_settings() {
+    assert(initial_settings_done  == false);
+    h2_settings server_settings_frame = construct_settings_frame(server_settings, setting_values{});
+    initial_settings_done = true;
+    m_hpack.set_encoder_max_capacity(server_settings.header_table_size);
+    outbox.push_back(server_settings_frame.serialise());
+
+    constexpr uint32_t CONNECTION_UPDATE_INITIAL = 1048515;
+    h2_window_update server_window;
+    server_window.stream_id = 0;
+    server_window.window_size_increment = CONNECTION_UPDATE_INITIAL;
+    outbox.push_back(server_window.serialise());
+    connection_current_receive_window_remaining += CONNECTION_UPDATE_INITIAL;
+}
+
 std::vector<id_new> h2_context::receive_peer_settings(const h2_settings& frame) {
     if (frame.flags & h2_flags::ACK) {
         awaiting_settings_ack = false; // this is an ACK
@@ -129,34 +146,21 @@ std::vector<id_new> h2_context::receive_peer_settings(const h2_settings& frame) 
     m_hpack.set_decoder_max_capacity(client_settings.header_table_size);
 
     std::vector<id_new> out;
-    if(!initial_settings_done) {
-        h2_settings server_settings_frame = construct_settings_frame(server_settings, setting_values{});
-        initial_settings_done = true;
-        m_hpack.set_encoder_max_capacity(server_settings.header_table_size);
-        outbox.push_back(server_settings_frame.serialise());
-
-        constexpr uint32_t CONNECTION_UPDATE_INITIAL = 1048515;
-        h2_window_update server_window;
-        server_window.stream_id = 0;
-        server_window.window_size_increment = CONNECTION_UPDATE_INITIAL;
-        outbox.push_back(server_window.serialise());
-        connection_current_receive_window_remaining += CONNECTION_UPDATE_INITIAL;
-    } else {
-        const int32_t delta = server_settings.initial_window_size - old_initial_window;
-        for (auto & [sid, stream] : stream_ctx_map) {
-            if (delta > 0) {
-                if (stream.stream_current_window_remaining > INT32_MAX - delta) {
-                    throw h2_error("stream window overflow", h2_code::FLOW_CONTROL_ERROR);
-                }
-            } else {
-                if (stream.stream_current_window_remaining < INT32_MIN - delta) {
-                    throw h2_error("stream window underflow", h2_code::FLOW_CONTROL_ERROR);
-                }
+    
+    const int32_t delta = server_settings.initial_window_size - old_initial_window;
+    for (auto & [sid, stream] : stream_ctx_map) {
+        if (delta > 0) {
+            if (stream.stream_current_window_remaining > INT32_MAX - delta) {
+                throw h2_error("stream window overflow", h2_code::FLOW_CONTROL_ERROR);
             }
-            stream.stream_current_window_remaining += delta;
-            if(stream.stream_current_window_remaining > 0 and connection_current_window_remaining > 0) {
-                out.push_back({sid, wake_action::wake_write});
+        } else {
+            if (stream.stream_current_window_remaining < INT32_MIN - delta) {
+                throw h2_error("stream window underflow", h2_code::FLOW_CONTROL_ERROR);
             }
+        }
+        stream.stream_current_window_remaining += delta;
+        if(stream.stream_current_window_remaining > 0 and connection_current_window_remaining > 0) {
+            out.push_back({sid, wake_action::wake_write});
         }
     }
 

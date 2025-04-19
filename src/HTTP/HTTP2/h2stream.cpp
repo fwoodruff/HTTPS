@@ -27,11 +27,6 @@ task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers
     if(!conn) {
         co_return stream_result::closed;
     }
-    std::cout << "headers sent: \n";
-    for(auto header : headers) {
-        std::cout << header.name << ": " << header.value << std::endl;
-    }
-    std::cout << "headers sent end" << std::endl;
     bool success = conn->h2_ctx.buffer_headers(headers, m_stream_id);
     if(!success) {
         co_return stream_result::closed;
@@ -55,9 +50,7 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
     }
     if(stream_resu == stream_result::awaiting) {
         auto connection_alive = co_await h2writeable(m_connection, m_stream_id);
-        if(connection_alive != stream_result::ok) {
-            co_return connection_alive;
-        }
+        co_return connection_alive;
     }
     co_return stream_resu;
 }

@@ -26,8 +26,8 @@ task<void> HTTP2::client() {
     }
     for(;;) {
         do {
-            auto res = co_await send_outbox();
-            if(res != stream_result::ok) {
+            auto resa = co_await send_outbox();
+            if(resa != stream_result::ok) {
                 co_return;
             }
         } while(extract_and_handle());
@@ -64,7 +64,6 @@ bool HTTP2::extract_and_handle() {
 void HTTP2::handle_frame(h2frame& frame) {
     std::cout << "received: " << frame.pretty() << std::endl;
     auto streams_to_wake = h2_ctx.receive_peer_frame(frame);
-
     std::vector<std::coroutine_handle<>> waking;
     for(auto strm : streams_to_wake) {
         if(strm.m_action == wake_action::new_stream) {

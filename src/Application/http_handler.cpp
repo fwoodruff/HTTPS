@@ -16,6 +16,7 @@
 
 namespace fbw {
 
+// todo: move this function somewhere sensible
 std::optional<std::string> find_header(const std::vector<entry_t>& request_headers, std::string header) {
     auto it = std::find_if(request_headers.begin(), request_headers.end(), [&](const entry_t& entry){ return entry.name == header; });
     if(it == request_headers.end()) {
@@ -53,7 +54,7 @@ task<void> send_error(std::shared_ptr<http_ctx> connection, uint32_t status_code
     }
 }
 
-std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool full = true) {
+std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool full) {
     auto time = std::time(0);
     constexpr time_t day = 24*60*60;
     std::vector<entry_t> out;

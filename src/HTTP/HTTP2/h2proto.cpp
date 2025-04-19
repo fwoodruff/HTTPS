@@ -15,6 +15,10 @@
 #include "h2awaitable.hpp"
 #include "../../global.hpp"
 #include "h2stream.hpp"
+#include "../HTTP1_1/string_utils.hpp"
+#include "../HTTP1_1/mimemap.hpp"
+#include "../HTTP1_1/HTTP.hpp"
+#include <algorithm>
 
 namespace fbw {
 
@@ -71,7 +75,8 @@ void HTTP2::handle_frame(h2frame& frame) {
     std::vector<std::coroutine_handle<>> waking;
     for(auto strm : streams_to_wake) {
         if(strm.m_action == wake_action::new_stream) {
-            sync_spawn(handle_stream(weak_from_this(), strm.stream_id));
+            handle_stream_immediately(weak_from_this(), strm.stream_id);
+            //sync_spawn(handle_stream(weak_from_this(), strm.stream_id));
         } else {
             std::scoped_lock lk { m_coro_mut };
             auto it = m_coros.find(strm.stream_id);
@@ -145,6 +150,77 @@ std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
         }
     }
     return {nullptr, false};
+}
+
+void buffer_error(h2_context &ctx, uint32_t stream_id, int http_error_code, std::string status_message) {
+    ustring message = to_unsigned(app_error_to_html(status_message));
+    std::vector<entry_t> send_headers;
+    send_headers.push_back({":status", std::to_string(400)});
+    send_headers.push_back({"content-length", std::to_string(message.size())});
+    send_headers.push_back({"content-type", "text/html; charset=utf-8"});
+    send_headers.push_back({"server", "FredPi/0.1 (Unix) (Raspbian/Linux)"});
+    ctx.buffer_headers(send_headers, stream_id);
+    ctx.buffer_data( message, stream_id, true);
+}
+
+void handle_stream_immediately_inner(h2_context& ctx, uint32_t stream_id) {
+    auto request_headers = ctx.get_headers(stream_id);
+
+    auto method = find_header(request_headers, ":method");
+    auto path = find_header(request_headers, ":path");
+    auto authority =find_header(request_headers, ":authority");
+    auto scheme = find_header(request_headers, ":scheme");
+    if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
+        buffer_error(ctx, stream_id, 400, "Bad Request");
+        return;
+    }
+    if(!authority or authority->starts_with("localhost")) {
+        authority = project_options.default_subfolder;
+    }
+    if (method != "GET") {
+        buffer_error(ctx, stream_id, 405, "Method Not Allowed");
+        return;
+    }
+
+    std::filesystem::path safe_path = fix_filename(*path);
+
+    auto webroot = project_options.webpage_folder;
+    auto file_path = (webroot/(*authority)/(safe_path.relative_path()));
+
+    auto canonical_webroot = std::filesystem::canonical(webroot);
+    auto canonical_file = std::filesystem::weakly_canonical(file_path);
+
+    if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
+        buffer_error(ctx, stream_id, 403, "Forbidden");
+        return;
+    }
+
+    if (!std::filesystem::exists(file_path)) {
+        buffer_error(ctx, stream_id, 404, "Not Found");
+        return;
+    }
+
+    std::string mime = Mime_from_file(file_path);
+    ssize_t file_size = get_file_size(file_path);
+    auto headers = headers_to_send(file_size, mime);
+    ctx.buffer_headers(headers, stream_id);
+
+    std::ifstream t(file_path, std::ifstream::binary);
+    std::vector<uint8_t> buffer(file_size);
+    if (!t.read(reinterpret_cast<char*>(buffer.data()), file_size)) {
+        buffer_error(ctx, stream_id, 500, "Internal Server Error");
+        return;
+    }
+    ctx.buffer_data(buffer, stream_id, true);
+}
+
+void handle_stream_immediately(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
+    auto conn = connection.lock();
+    if(!conn) {
+        return;
+    }
+    auto& ctx = conn->h2_ctx;
+    handle_stream_immediately_inner(ctx, stream_id);
 }
 
 task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {

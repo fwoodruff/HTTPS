@@ -62,6 +62,8 @@ private:
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
 
 task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
+void handle_stream_immediately(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
+void handle_stream_immediately_inner(h2_context& context, uint32_t stream_id);
 
 } // namespace fbw
 

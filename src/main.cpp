@@ -65,10 +65,21 @@
 //      TLS Client
 //      Russian ciphers
 
+// check std::span ownership soundness
+// the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
+// and send the server settings straight after the client preface (which isn't a frame)
 
-// check if coroutine handle actually sends data after sending data, or tries to reloop until a window update?
-// data could be getting lost if a std::span is bad?
+// write a 'round-trip detector' to determine when to we can delete old streams -
+// i.e. if we send an END_STREAM and then send a record after that which requires an ACK, then that client ACK tells that the client
+// has received the END_STREAM
+// for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
+// go through RFC 9113 ensuring correct handling of everything
 
+// write and use a 'safe add' function
+
+// something is going wrong with HPACK or outbound header parsing in some way?
+
+// rename stream_result enum to: ok, awaiting, timeout, fail
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

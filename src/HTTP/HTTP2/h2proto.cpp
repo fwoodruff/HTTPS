@@ -30,10 +30,6 @@ task<void> HTTP2::client() {
             if(resa != stream_result::ok) {
                 co_return;
             }
-            auto res = co_await m_stream->read_append(m_read_buffer, 0s);
-            if(res == stream_result::closed) {
-                break;
-            }
         } while(extract_and_handle());
         auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
         if(res != stream_result::ok) {

@@ -50,7 +50,6 @@ std::string tls_engine::alpn() {
 }
 
 HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout) {
-    std::optional<ssl_error> error_ssl {};
     try {
         if(m_expected_read_record == HandshakeStage::application_data or m_expected_read_record == HandshakeStage::client_early_data) {
             std::scoped_lock lk { m_write_queue_mut };
@@ -78,7 +77,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                 case Application:
                     if(m_expected_read_record == HandshakeStage::application_data) {
                         application_data.append(std::move(record.m_contents));
-                        return m_expected_read_record;
+                        continue;
                     }
                     if(m_expected_read_record == HandshakeStage::client_early_data or m_expected_read_record == HandshakeStage::client_handshake_finished) {
                         early_data_received += record.m_contents.size();
@@ -107,10 +106,10 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                 [[unlikely]] default:
                     throw ssl_error("nonexistent record type", AlertLevel::fatal, AlertDescription::decode_error);
             }
-        }        
+        }
     } catch(const ssl_error& e) {
         std::scoped_lock lk { m_write_queue_mut };
-        server_alert_sync(network_output, error_ssl->m_l, error_ssl->m_d);
+        server_alert_sync(network_output, e.m_l, e.m_d);
         return m_expected_read_record;
     } catch(const std::exception& e) {
         std::scoped_lock lk { m_write_queue_mut };

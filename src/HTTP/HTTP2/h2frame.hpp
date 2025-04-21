@@ -62,9 +62,11 @@ constexpr size_t DEFAULT_HEADER_TABLE_SIZE = 4096;
 
 enum class stream_state {
     idle, // nothing sent
-    reserved, // server has sent a push-promise
+    reserved_local, // server has sent a push-promise (server only)
+    reserved_remote, // push-promise received (client only)
     open, // server receives a headers frame, and not the last one
-    half_closed, // server receives the last headers frame (which may be the first esp. push promise)
+    half_closed_local,
+    half_closed_remote, // server receives the last headers frame (which may be the first esp. push promise)
     closed, // stream is never used again
 };
 

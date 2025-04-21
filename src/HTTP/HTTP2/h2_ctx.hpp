@@ -22,28 +22,20 @@
 
 namespace fbw {
 
-enum stream_frame_state {
-    headers_expected,
-    headers_cont_expected,
-    data_expected,
-    trailer_expected,
-    trailer_cont_expected,
-    done,
-};
 
 struct stream_ctx {
     // connect these buffers to the application layer
     std::deque<uint8_t> inbox; // data for reading
     std::deque<uint8_t> outbox; // data for writing
-    stream_frame_state client_sent_headers = headers_expected;
-    bool server_data_done = false;
+    bool application_server_data_done = false;
     ustring header_block;
-    ustring trailer_block;
     std::vector<entry_t> m_received_headers;
     std::vector<entry_t> m_received_trailers;
     uint32_t m_stream_id;
     int32_t stream_current_window_remaining; // how much data we can send
     int32_t stream_current_receive_window_remaining; // how much data we can receive
+    int32_t bytes_consumed_since_last_stream_window_update = 0;
+    bool sent_rst = false;
     stream_state strm_state = stream_state::idle;
 };
 
@@ -71,14 +63,9 @@ public:
     // returns 0 for change at connection level
     std::vector<id_new> receive_peer_frame(const h2frame& frame);
 
-    // receive data from stream (application)
-    // write full amount to stream buffer
-    // assesses windowing allowances
-    // updates internal state
-    // enqueues sendable to outbox
-    // returns true if WINDOW_FRAME receipt required to continue
+    // todo: nonblocking write that only writes the allowed amount.
     stream_result buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
-    bool buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id);
+    bool buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id, bool end = false);
 
     // read data into the supplied span
     // return std::nullopt if we need to block
@@ -106,6 +93,8 @@ private:
     stream_result stage_buffer(stream_ctx& stream); // returns suspend
     void send_initial_settings();
 
+    static constexpr int32_t WINDOW_UPDATE_INCREMENT_THRESHOLD = 32768;
+
     // todo:
     // after stage_buffer we always check if the stream needs to be deleted.
     // receiving a connection window frame we need to run a lot of stage buffer calls
@@ -124,6 +113,10 @@ private:
     bool go_away_sent = false;
     bool go_away_received = false; // if true, don't open new streams in inbox
     bool initial_settings_done = false;
+
+    uint32_t headers_partially_sent_stream_id = 0;
+
+    uint32_t bytes_consumed_since_last_connection_window_update = 0;
 };
 
 }

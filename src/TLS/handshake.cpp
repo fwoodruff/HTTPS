@@ -143,17 +143,24 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
 }
 
 std::string choose_alpn(const std::vector<std::string>& client_alpn) {
+    constexpr const char* ALPN_H1 = "http/1.1";
+    constexpr const char* ALPN_H2 = "h2";
     if(client_alpn.empty()) {
-        return "http/1.1";
+        return ALPN_H1;
     }
-    if(std::find(client_alpn.begin(), client_alpn.end(), "h2") != client_alpn.end()) {
-        // todo: toggle
-        //return "h2";
+    // toggle
+    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
+        // comment out to prioritise H2
+        return ALPN_H1;
     }
-    if(std::find(client_alpn.begin(), client_alpn.end(), "http/1.1") == client_alpn.end()) {
-        throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
+    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H2) != client_alpn.end()) {
+        // comment out to disable H2
+        return ALPN_H2;
     }
-    return "http/1.1";
+    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
+        return ALPN_H1;
+    }
+    throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
 }
 
 std::string choose_server_name(const std::vector<std::string>& server_names) {

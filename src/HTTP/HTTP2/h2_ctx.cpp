@@ -30,11 +30,11 @@ std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
     try {
         using enum h2_type;
         if(!initial_settings_done and frame.type != SETTINGS) {
-            throw h2_error("Did you forget to send a SETTINGS frame?", h2_code::PROTOCOL_ERROR);
+            throw h2_error("Expected SETTINGS frame", h2_code::PROTOCOL_ERROR);
         }
         if(headers_partially_sent_stream_id != 0) {
             if(frame.type != CONTINUATION) {
-                throw h2_error("Expected continuation frame", h2_code::PROTOCOL_ERROR);
+                throw h2_error("Expected CONTINUATION frame", h2_code::PROTOCOL_ERROR);
             }
         }
         
@@ -52,12 +52,12 @@ std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
                 return receive_peer_settings(dynamic_cast<const h2_settings&>(frame));
             }
             case PUSH_PROMISE:
-                throw h2_error("PUSH PROMISE frame sent as client", h2_code::PROTOCOL_ERROR);
+                throw h2_error("Unexpected PUSH PROMISE frame", h2_code::PROTOCOL_ERROR);
             case PING:
                 if(!(frame.flags & h2_flags::ACK)) {
                     h2_ping response_frame = dynamic_cast<const h2_ping&>(frame);
                     response_frame.flags |= ACK;
-                    outbox.push_front(response_frame.serialise());
+                    outbox.push_back(response_frame.serialise());
                 }
                 return {};
             case GOAWAY:

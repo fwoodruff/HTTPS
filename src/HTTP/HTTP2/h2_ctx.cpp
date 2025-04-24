@@ -17,7 +17,7 @@ h2_context::h2_context() :
     go_away_received(false),
     initial_settings_done(false) {
 
-        server_settings.max_concurrent_streams = 5;
+        server_settings.max_concurrent_streams = 100;
 
         connection_current_receive_window_remaining = DEFAULT_INITIAL_WINDOW_SIZE;
         connection_current_window_remaining = DEFAULT_INITIAL_WINDOW_SIZE;
@@ -44,9 +44,6 @@ std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
             case HEADERS:
                 return receive_headers_frame(dynamic_cast<const h2_headers&>(frame));
             case PRIORITY:
-                if(client_settings.no_rfc7540_priorities) {
-                    throw h2_error("You sent a PRIORITY frame. You said you wouldn't and you did it anyway.", h2_code::PROTOCOL_ERROR);
-                }
                 // RFC 9113 recommends ignoring these
                 return {};
             case RST_STREAM:
@@ -55,7 +52,7 @@ std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
                 return receive_peer_settings(dynamic_cast<const h2_settings&>(frame));
             }
             case PUSH_PROMISE:
-                throw h2_error("You sent a PUSH PROMISE frame. I am the server not you.", h2_code::PROTOCOL_ERROR);
+                throw h2_error("PUSH PROMISE frame sent as client", h2_code::PROTOCOL_ERROR);
             case PING:
                 if(!(frame.flags & h2_flags::ACK)) {
                     h2_ping response_frame = dynamic_cast<const h2_ping&>(frame);
@@ -545,7 +542,7 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
         }
         connection_current_window_remaining += frame.window_size_increment;
         for(auto it = stream_ctx_map.begin(); it != stream_ctx_map.end(); ) {
-            auto [id, stream] = *it;
+            auto& [id, stream] = *it;
             auto res = stage_buffer(stream);
             if(res != stream_result::awaiting) {
                 out.push_back({id, wake_action::wake_write});

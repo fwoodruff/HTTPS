@@ -93,7 +93,7 @@ struct setting_values {
     uint32_t initial_window_size = DEFAULT_INITIAL_WINDOW_SIZE;
     uint32_t max_frame_size = DEFAULT_MINIMUM_MAX_FRAME_SIZE;
     uint32_t max_header_size = DEFAULT_HEADER_LIST_SIZE;
-    bool push_promise_enabled = false;
+    bool push_promise_enabled = true;
     bool no_rfc7540_priorities = false;
 };
 

@@ -42,7 +42,7 @@ ustring hmac::hash() const {
     outsha->update(hsh);
     auto outarr = outsha->hash();
     ustring outvec;
-    outvec.append(outarr.cbegin(), outarr.cend());
+    outvec.insert(outvec.cend(), outarr.cbegin(), outarr.cend());
     return outvec;
 }
 

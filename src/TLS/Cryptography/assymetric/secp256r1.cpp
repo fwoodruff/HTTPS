@@ -387,8 +387,8 @@ ustring raw_ECDSA(std::array<uint8_t,32> k_random,
     auto r = signature.r.serialise();
     auto s = signature.s.serialise();
     ustring out;
-    out.append(r.begin(), r.end());
-    out.append(s.begin(), s.end());
+    out.insert(out.end(), r.begin(), r.end());
+    out.insert(out.end(), s.begin(), s.end());
     return out;
 }
 
@@ -403,21 +403,21 @@ ustring DER_ECDSA(
     
 
     ustring out;
-    out.append({0x30,0x00, 0x02});
+    out.insert(out.end(), {0x30,0x00, 0x02});
     
     if(r[0]&0x80) {
-        out.append({0x21,0x00});
+        out.insert(out.end(), {0x21,0x00});
     } else {
-        out.append({0x20});
+        out.insert(out.end(),{0x20});
     }
-    out.append(r.cbegin(),r.cend());
-    out.append({0x02});
+    out.insert(out.end(),r.cbegin(),r.cend());
+    out.insert(out.end(), {0x02});
     if(s[0]&0x80) {
-        out.append({0x21,0x00});
+        out.insert(out.end(), {0x21,0x00});
     } else {
-        out.append({0x20});
+        out.insert(out.end(), {0x20});
     }
-    out.append(s.cbegin(),s.cend());
+    out.insert(out.end(), s.cbegin(),s.cend());
     assert(out.size() >= 2);
     assert(out.size() < 256);
     out[1] = static_cast<uint8_t>(out.size()-2);

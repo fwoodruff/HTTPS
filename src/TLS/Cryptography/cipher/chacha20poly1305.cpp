@@ -246,21 +246,21 @@ chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t
 
     size_t padcipher = ((text.size()+15)/16)*16 - text.size();
     ustring mac_data;
-    mac_data.append(aad.begin(), aad.end());
-    mac_data.append(padaad, 0);
+    mac_data.insert(mac_data.end(), aad.begin(), aad.end());
+    mac_data.insert(mac_data.end(), padaad, 0);
 
     if(do_encrypt) {
         chacha20_xorcrypt(key, 1, number_once, text);
         auto ciphertext = std::span<uint8_t>(text);
-        mac_data.append(ciphertext.begin(), ciphertext.end());
+        mac_data.insert(mac_data.end(), ciphertext.begin(), ciphertext.end());
     } else {
-        mac_data.append(text.begin(), text.end());
+        mac_data.insert(mac_data.end(), text.begin(), text.end());
         chacha20_xorcrypt(key, 1, number_once, text);
     }
     
-    mac_data.append(padcipher, 0);
-    mac_data.append(aad_size.begin(), aad_size.end());
-    mac_data.append(cip_size.begin(), cip_size.end());
+    mac_data.insert(mac_data.end(), padcipher, 0);
+    mac_data.insert(mac_data.end(), aad_size.begin(), aad_size.end());
+    mac_data.insert(mac_data.end(), cip_size.begin(), cip_size.end());
 
     auto tag = poly1305_mac(mac_data, otk);
     return tag;
@@ -300,7 +300,7 @@ ustring make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_
     uint16_t msglen = htons(record.m_contents.size() - tag_size);
     ustring additional_data(8, 0);
     checked_bigend_write(sequence_no, additional_data, 0, 8);
-    additional_data.append({static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
+    additional_data.insert(additional_data.end(), {static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
     std::memcpy(&additional_data[11], &msglen, 2);
     return additional_data;
@@ -320,8 +320,8 @@ ustring ChaCha20_Poly1305_ctx::encrypt(const std::span<uint8_t> text, const ustr
     seqno_server++;
     auto tag = chacha20_aead_crypt(additional_data, server_write_key, number_once, text, true);
     ustring ciphertext;
-    ciphertext.append(text.begin(), text.end());
-    ciphertext.append(tag.begin(), tag.end());
+    ciphertext.insert(ciphertext.end(), text.begin(), text.end());
+    ciphertext.insert(ciphertext.end(), tag.begin(), tag.end());
     return ciphertext;
 }
 

@@ -524,7 +524,8 @@ void handshake_ctx::client_handshake_finished13_record(const ustring& handshake_
     auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
     auto verify_data = do_hmac(*hash_ctor, client_finished_key, server_finished_hash);
 
-    if(verify_data != handshake_message.substr(4)){
+    if (handshake_message.size() < 4 + verify_data.size() or 
+        ! std::equal(verify_data.begin(), verify_data.end(), handshake_message.begin() + 4)) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     handshake_hasher->update(handshake_message);
@@ -550,9 +551,9 @@ tls_record handshake_ctx::server_key_exchange_record() {
     
     // Public Key
     ustring signed_empheral_key;
-    signed_empheral_key.append(curve_info.cbegin(), curve_info.cend());
-    signed_empheral_key.append({static_cast<uint8_t>(pubkey_ephem.size())});
-    signed_empheral_key.append(pubkey_ephem.cbegin(), pubkey_ephem.cend());
+    signed_empheral_key.insert(signed_empheral_key.end(), curve_info.cbegin(), curve_info.cend());
+    signed_empheral_key.insert(signed_empheral_key.end(), {static_cast<uint8_t>(pubkey_ephem.size())});
+    signed_empheral_key.insert(signed_empheral_key.end(), pubkey_ephem.cbegin(), pubkey_ephem.cend());
 
     assert(hash_ctor != nullptr);
     auto hashctx = hash_ctor->clone();
@@ -679,14 +680,18 @@ ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) 
     std::array<uint8_t, 32> client_pub{};
     std::copy_n(client_public_key.key.begin(), 32, client_pub.begin());
     auto premaster_secret = fbw::curve25519::multiply(server_private_key_ephem, client_pub);
-    ustring client_hello_str(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
-    tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", client_hello_str + m_server_random, 48);
+    ustring combined_random(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
+    combined_random.insert(combined_random.end(), m_server_random.begin(), m_server_random.end());
+    tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", combined_random, 48);
 
     assert(handshake_hasher);
     handshake_hasher->update(key_exchange);
 
+    ustring combined_random_flipped(m_server_random.begin(), m_server_random.end());
+    combined_random_flipped.insert(combined_random_flipped.end(), client_hello.m_client_random.begin(), client_hello.m_client_random.end());
+
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes
-    auto key_material = prf(*hash_ctor,  tls12_master_secret, "key expansion", m_server_random + client_hello_str, 128);
+    auto key_material = prf(*hash_ctor,  tls12_master_secret, "key expansion", combined_random_flipped, 128);
     return key_material;
 }
 
@@ -696,17 +701,24 @@ void handshake_ctx::client_handshake_finished12_record(const ustring& handshake_
     if(handshake_message[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
+
+    if (handshake_message.size() < 4) {
+        throw ssl_error("message too short", AlertLevel::fatal, AlertDescription::decode_error);
+    }
     
     const size_t len = try_bigend_read(handshake_message, 1, 3);
     if(len != 12) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 
-    auto finish = handshake_message.substr(4);
+    if (handshake_message.size() < 4 + len) {
+        throw ssl_error("message too short for finished data", AlertLevel::fatal, AlertDescription::decode_error);
+    }
+
     auto handshake_hash = handshake_hasher->hash();
     ustring expected_finished = prf(*hash_ctor, tls12_master_secret, "client finished", handshake_hash, 12);
 
-    if(expected_finished != finish) [[unlikely]] {
+    if (!std::equal(expected_finished.begin(), expected_finished.end(), handshake_message.begin() + 4)) [[unlikely]] {
         throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     handshake_hasher->update(handshake_message);

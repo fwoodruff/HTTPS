@@ -53,7 +53,7 @@ ustring decode64(std::string data) {
         j += 6;
         if(j >= 8) {
             j -= 8;
-            out.append({static_cast<uint8_t>(buffer >> j)});
+            out.insert(out.end(), {static_cast<uint8_t>(buffer >> j)});
         }
     }
     return out;
@@ -66,7 +66,8 @@ std::array<uint8_t,32> deserialise(ustring asn1) {
     const ustring eckey_id = { 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
     const ustring secp256k1_id = { 0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
 
-    if (eckey_id != asn1.substr(8, 9) or secp256k1_id != asn1.substr(17, 10)) {
+    if (!std::equal(eckey_id.begin(), eckey_id.end(), asn1.begin() + 8) ||
+        !std::equal(secp256k1_id.begin(), secp256k1_id.end(), asn1.begin() + 17)) {
         throw ssl_error("unsupported certificate private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 

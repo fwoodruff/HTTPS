@@ -67,7 +67,7 @@ ustring pad_message(ustring message) {
     assert(padded_message_size > message.size());
     assert(padding_checked < padmax);
     const uint8_t padding = padding_checked;
-    message.append(padding, padding-1);
+    message.resize(message.size() + padding, padding-1 );
     assert(message.size() % blocksize == 0);
     return message;
 }
@@ -85,17 +85,17 @@ tls_record AES_CBC_SHA::protect(tls_record record) noexcept {
     ctx.update(sequence);
     ctx.update(record.m_contents);
     auto machash = std::move(ctx).hash();
-    record.m_contents.append(machash);
+    record.m_contents.insert(record.m_contents.end(), machash.begin(), machash.end());
     std::array<uint8_t, 16> record_IV {};
     randomgen.randgen(record_IV);
     record.m_contents = pad_message(std::move(record.m_contents));
     ustring out;
-    out.append(record_IV.cbegin(),record_IV.cend());
+    out.assign(record_IV.cbegin(),record_IV.cend());
     auto in_block = record_IV;
     for(size_t i = 0; i < record.m_contents.size(); i += 16) {
         std::transform(in_block.cbegin(), in_block.cend(), &record.m_contents[i], in_block.begin(), std::bit_xor<uint8_t>());
         auto out_block = aes_encrypt(in_block, server_write_round_keys);
-        out.append(out_block.cbegin(),out_block.cend());
+        out.insert(out.end(), out_block.cbegin(),out_block.cend());
         in_block = out_block;
     }
     record.m_contents = std::move(out);
@@ -127,7 +127,7 @@ tls_record AES_CBC_SHA::deprotect(tls_record record) {
         std::transform(plainxor.cbegin(), plainxor.cend(), xor_block.cbegin(), plainxor.begin(), std::bit_xor<uint8_t>());
         xor_block = in_block;
 
-        plaintext.append(plainxor.cbegin(),plainxor.cend());
+        plaintext.insert(plaintext.end(),plainxor.cbegin(),plainxor.cend());
     }
     
     

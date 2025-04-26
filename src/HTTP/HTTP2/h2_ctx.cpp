@@ -22,7 +22,6 @@ h2_context::h2_context() :
         connection_current_receive_window_remaining = DEFAULT_INITIAL_WINDOW_SIZE;
         connection_current_window_remaining = DEFAULT_INITIAL_WINDOW_SIZE;
 
-        send_initial_settings();
 }
 
 std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
@@ -183,8 +182,11 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
         throw h2_error("DATA with stream 0", h2_code::PROTOCOL_ERROR);
     }
     auto it = stream_ctx_map.find(frame.stream_id);
+    if(frame.stream_id > last_client_stream_id) {
+        throw h2_error("DATA on unestablished stream", h2_code::PROTOCOL_ERROR);
+    }
     if (it == stream_ctx_map.end()) {
-        throw h2_error("DATA frame for nonexistent stream", h2_code::PROTOCOL_ERROR);
+        return {};
     }
     stream_ctx &stream = it->second;
 
@@ -316,7 +318,7 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
     if(strm.strm_state != stream_state::open) {
         headers = &strm.m_received_trailers;
     }
-    strm.header_block.append(frame.field_block_fragment);
+    strm.header_block.insert(strm.header_block.end(), frame.field_block_fragment.begin(), frame.field_block_fragment.end());
     if(frame.flags & h2_flags::END_HEADERS) {
         headers_partially_sent_stream_id = 0;
         *headers = m_hpack.parse_field_block(strm.header_block);
@@ -326,7 +328,7 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
     return {};
 }
 
-stream_result h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend for completion
+stream_result h2_context::stage_buffer(stream_ctx& stream) {
     if(stream.strm_state != stream_state::open and stream.strm_state != stream_state::half_closed_remote) {
         return stream_result::closed;
     }
@@ -357,6 +359,8 @@ stream_result h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend fo
         
         h2_data frame;
         frame.stream_id = stream.m_stream_id;
+        frame.contents.assign(stream.outbox.begin(), stream.outbox.begin() + frame_size);
+        stream.outbox.erase(stream.outbox.begin(), stream.outbox.begin() + frame_size);
         if(stream.application_server_data_done and stream.outbox.empty()) {
             frame.flags |= h2_flags::END_STREAM;
             if(stream.strm_state == stream_state::open) {
@@ -365,8 +369,6 @@ stream_result h2_context::stage_buffer(stream_ctx& stream) { // bool: suspend fo
                 stream.strm_state = stream_state::closed;
             }
         }
-        frame.contents.assign(stream.outbox.begin(), stream.outbox.begin() + frame_size);
-        stream.outbox.erase(stream.outbox.begin(), stream.outbox.begin() + frame_size);
         outbox.push_back(frame.serialise());
         if(stream.outbox.empty()) {
             return stream_result::ok;
@@ -452,7 +454,11 @@ stream_result h2_context::buffer_data(const std::span<const uint8_t> app_data, u
     }
 
     auto res = stage_buffer(stream);
-    if(stream.strm_state == stream_state::half_closed_local or stream.strm_state == stream_state::closed) {
+    if(stream.strm_state == stream_state::half_closed_local) {
+        return stream_result::closed;
+    }
+    if(stream.strm_state == stream_state::closed) {
+        stream_ctx_map.erase(it);
         return stream_result::closed;
     }
     return res;
@@ -548,8 +554,8 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
                 out.push_back({id, wake_action::wake_write});
             }
             if(stream.strm_state == stream_state::closed) {
-                it++;// = stream_ctx_map.erase(it); // todo
-            } else{
+                it = stream_ctx_map.erase(it);
+            } else {
                 it++;
             }
         }
@@ -567,7 +573,6 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
     
     auto it = stream_ctx_map.find(frame.stream_id);
     if (it == stream_ctx_map.end()) {
-        throw h2_error("cannot receive on stream", h2_code::PROTOCOL_ERROR);
         return {};
     }
     stream_ctx &stream = it->second;
@@ -584,6 +589,9 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
     stream_result suspend = stage_buffer(stream);
     if(suspend == stream_result::awaiting) {
         return {};
+    }
+    if(stream.strm_state == stream_state::closed) {
+        stream_ctx_map.erase(it);
     }
     return {{frame.stream_id, wake_action::wake_write}};
 }
@@ -612,6 +620,7 @@ void h2_context::raise_stream_error(h2_code code, uint32_t stream_id) {
     frame.error_code = code;
     outbox.push_back(frame.serialise());
     it->second.strm_state = stream_state::closed;
+    stream_ctx_map.erase(it);
 }
 
 

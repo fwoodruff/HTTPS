@@ -52,7 +52,10 @@ ustring P_hash(const hash_base& hash_ctor, const T& secret, const ustring& seed,
     ustring result;
     ustring A = do_hmac(hash_ctor, secret, seed);
     while (result.size() < len) {
-        result.append(do_hmac(hash_ctor, secret, A + seed));
+        ustring A_seed = A;
+        A_seed.insert(A_seed.cend(), seed.cbegin(), seed.cend());
+        const auto hm = do_hmac(hash_ctor, secret, A_seed);
+        result.insert(result.cend(), hm.cbegin(), hm.cend());
         A = do_hmac(hash_ctor, secret, A);
     }
     result.resize(len);
@@ -64,7 +67,7 @@ template<typename T, typename U>
 ustring prf(const hash_base& hash_ctor, const T& secret, const std::string& label, const U& seed, size_t len) {
     // Concatenate label and seed
     ustring label_seed(label.cbegin(), label.cend());
-    label_seed.append(seed.cbegin(), seed.cend());
+    label_seed.insert(label_seed.end(), seed.cbegin(), seed.cend());
     return P_hash(hash_ctor, secret, label_seed, len);
 }
 
@@ -100,10 +103,10 @@ ustring hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::s
     ustring info(3, 0);
     checked_bigend_write(length, info, 0, 2);
     info[2] =  full_label.size();
-    info.append(full_label.begin(), full_label.end());
+    info.insert(info.end(), full_label.begin(), full_label.end());
 
     info.push_back(static_cast<uint8_t>(context.size()));
-    info.append(context.begin(), context.end());
+    info.insert(info.end(), context.begin(), context.end());
 
     return hkdf_expand(hash_ctor, prk, info, length);
 }

@@ -15,11 +15,12 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace fbw {
 
 class HTTP {
-    static std::optional<http_header> try_extract_header(ustring& m_buffer);
+    static std::optional<http_header> try_extract_header(std::vector<uint8_t>& m_buffer);
 
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
     [[nodiscard]] task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);

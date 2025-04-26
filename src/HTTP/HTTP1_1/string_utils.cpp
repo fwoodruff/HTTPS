@@ -60,26 +60,31 @@ std::string timestring(time_t t) {
 }
 
 // helps parse HTTP streams
-ustring extract(ustring& bytes, std::string delimiter) {
-    if(delimiter == "") return {};
-    const size_t n = bytes.find(to_unsigned(delimiter));
-    if (n == std::string::npos) {
+std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, std::string delimiter) {
+    if (delimiter.empty()) {
         return {};
     }
-    ustring ret = bytes.substr(0, n + delimiter.size());
-    bytes = bytes.substr(n + delimiter.size());
-    return ret;
+
+    std::vector<uint8_t> delimiter_bytes(delimiter.begin(), delimiter.end());
+    auto it = std::search(bytes.begin(), bytes.end(), delimiter_bytes.begin(), delimiter_bytes.end());
+
+    if (it == bytes.end()) {
+        return {};
+    }
+
+    std::vector<uint8_t> result(bytes.begin(), it + delimiter_bytes.size());
+    bytes.erase(bytes.begin(), it + delimiter_bytes.size());
+    return result;
 }
 
-ustring extract(ustring& bytes, size_t nbytes) {
-    if(nbytes == 0) return {};
-    const auto n = bytes.size();
-    if(n < nbytes) {
+std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, size_t nbytes) {
+    if (nbytes == 0 || bytes.size() < nbytes) {
         return {};
     }
-    const ustring ret = bytes.substr(0, n);
-    bytes = bytes.substr(n);
-    return ret;
+
+    std::vector<uint8_t> result(bytes.begin(), bytes.begin() + nbytes);
+    bytes.erase(bytes.begin(), bytes.begin() + nbytes);
+    return result;
 }
 
 
@@ -104,20 +109,20 @@ http_header parse_http_headers(const std::string& header_str) {
         auto objs = split(line, " ");
         start = end + delim.size();
         if(objs.size() != 3) {
-            throw http_error("400 Bad Request");
+            throw http_error(400, "Bad Request");
         }
         headers.verb = to_upper(trim(objs[0]));
         headers.resource = trim(objs[1]);
         headers.protocol = to_upper(trim(objs[2]));
     }
     if(header_str.size() - end > MAX_HEADER_FIELD_SIZE) {
-        throw http_error("431 Request Header Fields Too Large");
+        throw http_error(431, "Request Header Fields Too Large");
     }
     if(headers.resource.size() > MAX_URI_SIZE) {
-        throw http_error("414 URI Too Long");
+        throw http_error(414, "URI Too Long");
     }
     if(!verbs.contains(headers.verb)) {
-        throw http_error("400 Bad Request");
+        throw http_error(400, "Bad Request");
     }
     while ((end = header_str.find(delim, start)) != std::string::npos) {
         auto line = header_str.substr(start, end - start);
@@ -319,18 +324,24 @@ std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_
     }
 
     if (range.first > range.second or range.second >= file_size) {
-        throw http_error("416 Requested Range Not Satisfiable");
+        throw http_error(416, "Requested Range Not Satisfiable");
     }
     assert(end > begin);
     return {begin, end};
 }
 
-std::string error_to_html(std::string error) {
+std::string error_to_html(int status, std::string message) {
+    auto it = http_code_map.find(status);
+    std::string standard_msg;
+    if(it != http_code_map.end()) {
+        standard_msg = it->second;
+    }
     std::ostringstream oss;
     oss << "<!DOCTYPE html>\n"
         << "<html>\n"
-        << "<head><title>\n" << error << "</title></head>\n"
-        << "\t<body><h1>\n" << error << "</h1></body>\n" 
+        << "<head><title>\n" << status << " " << standard_msg << "\n"
+        << "</title></head>\n"
+        << "\t<body><h1>\n" << status << " " << message << "</h1></body>\n" 
         << "</html>";
     return oss.str();
 }

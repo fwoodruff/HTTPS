@@ -17,11 +17,11 @@
 
 namespace fbw {
 
-class HTTP1 : public http_ctx, std::enable_shared_from_this<HTTP1> {
+class HTTP1 : public http_ctx {
 
 public:
     [[nodiscard]] task<void> client();
-    HTTP1(std::unique_ptr<stream> stream, std::function<task<bool>(std::shared_ptr<http_ctx>)> handler);
+    HTTP1(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx&) > handler);
     HTTP1(const HTTP1&) = delete;
     HTTP1& operator=(const HTTP1&) = delete;
 
@@ -33,13 +33,11 @@ public:
     task<std::pair<stream_result, bool>> append_http_data(ustring& buffer) override;
     bool is_done() override;
 
-    std::function<task<bool>(std::shared_ptr<http_ctx>)> m_handler;
+    std::function<task<bool>(http_ctx&)> m_application_handler;
 private:
     int32_t content_length_to_read = 0;
     std::vector<entry_t> headers;
-    ustring m_read_buffer;
-
-    task<void> send_error(http_error http_err);
+    std::vector<uint8_t> m_read_buffer; // todo: deque
 };
 
 } // namespace

@@ -61,7 +61,7 @@ task<std::pair<stream_result, bool>> h2_stream::append_http_data(ustring& buffer
     if(bytes == 0) {
         co_return {stream_result::closed, false};
     }
-    buffer.append(subbuffer.begin(), subbuffer.begin() + bytes);
+    buffer.insert(buffer.end(), subbuffer.begin(), subbuffer.begin() + bytes);
 
     // push window updates
     auto conn = m_connection.lock();

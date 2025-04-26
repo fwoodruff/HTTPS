@@ -58,7 +58,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
         if(m_expected_read_record == HandshakeStage::application_closed) {
             return m_expected_read_record;
         }
-        m_buffer.append(bio_input);
+        m_buffer.insert(m_buffer.end(), bio_input.begin(), bio_input.end() );
         while(auto opt_record = pop_record_from_buffer()) {
             
             assert(opt_record);
@@ -76,7 +76,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                     break;
                 case Application:
                     if(m_expected_read_record == HandshakeStage::application_data) {
-                        application_data.append(std::move(record.m_contents));
+                        application_data.insert(application_data.end(), record.m_contents.begin(), record.m_contents.end());
                         continue;
                     }
                     if(m_expected_read_record == HandshakeStage::client_early_data or m_expected_read_record == HandshakeStage::client_handshake_finished) {
@@ -87,7 +87,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                         if(!handshake.zero_rtt) {
                             break;
                         }
-                        application_data.append(std::move(record.m_contents));
+                        application_data.insert(application_data.end(), record.m_contents.begin(), record.m_contents.end());
                         break;
                     }
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
@@ -238,7 +238,7 @@ void tls_engine::write_record_sync(std::queue<packet_timed>& output, tls_record 
 
 std::vector<ustring> extract_handshake_messages(tls_record handshake_record, ustring& fragment) {
     std::vector<ustring> messages;
-    fragment.append(handshake_record.m_contents.begin(), handshake_record.m_contents.end());
+    fragment.insert(fragment.end(), handshake_record.m_contents.begin(), handshake_record.m_contents.end());
 
     size_t offset = 0;
     while(offset + 4 <= fragment.size()) {
@@ -603,11 +603,14 @@ std::pair<bool, tls_record> tls_engine::client_heartbeat_record(tls_record recor
         return { true, {}};
     }
 
-    auto length_and_payload = heartbeat_message.substr(1, payload_length + 2);
+    std::vector<uint8_t> length_and_payload(heartbeat_message.begin() + 1,
+                                            heartbeat_message.begin() + 3 + payload_length);
+
+    
 
     tls_record heartbeat_record( Heartbeat);
     heartbeat_record.m_contents = { 0x02 };
-    heartbeat_record.m_contents.append( length_and_payload );
+    heartbeat_record.m_contents.insert(heartbeat_record.m_contents.end(), length_and_payload.begin(), length_and_payload.end());
     return {false, heartbeat_record} ;
 }
 
@@ -639,7 +642,7 @@ void tls_engine::process_close_notify(std::queue<packet_timed>& output) {
 }
 
 stream_result tls_engine::close_notify_finish(const ustring& bio_input) {
-    m_buffer.append(bio_input);
+    m_buffer.insert(m_buffer.end(), bio_input.begin(), bio_input.end());
     auto opt_record = pop_record_from_buffer();
     if(!opt_record) {
         return stream_result::awaiting;

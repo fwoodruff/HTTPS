@@ -24,10 +24,15 @@ task<void> HTTP2::client() {
     if(!co_await connection_startup()) {
         co_return;
     }
+    h2_ctx.send_initial_settings();
     for(;;) {
         do {
             auto resa = co_await send_outbox();
             if(resa != stream_result::ok) {
+                co_return;
+            }
+            auto res = co_await m_stream->read_append(m_read_buffer, 0ms);
+            if(res == stream_result::closed) {
                 co_return;
             }
         } while(extract_and_handle());
@@ -126,7 +131,7 @@ task<bool> HTTP2::connection_startup() {
             co_return false;
         }
     }
-    m_read_buffer = m_read_buffer.substr(connection_init.size());
+    m_read_buffer.erase(m_read_buffer.begin(), m_read_buffer.begin() + connection_init.size());
     co_return true;
 }
 
@@ -134,9 +139,10 @@ std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
     if(buffer.size() >= 3) {
         auto size = try_bigend_read(buffer, 0, 3);
         if(size + H2_FRAME_HEADER_SIZE <= buffer.size()) {
-            auto frame_bytes = buffer.substr(0, size + H2_FRAME_HEADER_SIZE);
+            std::vector<uint8_t> frame_bytes;
+            frame_bytes.assign(buffer.begin(), buffer.begin() + size + H2_FRAME_HEADER_SIZE);
             std::unique_ptr<h2frame> frame = h2frame::deserialise(frame_bytes);
-            buffer = buffer.substr(size + H2_FRAME_HEADER_SIZE);
+            buffer.erase(buffer.begin(), buffer.begin() + size + H2_FRAME_HEADER_SIZE);
             return {std::move(frame), true};
         }
     }
@@ -151,7 +157,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     auto hcx = std::make_shared<h2_stream> (connection, stream_id);
     assert(hcx != nullptr);
     try {
-        co_await conn->m_handler(hcx);
+        co_await conn->m_handler(*hcx);
     } catch(std::exception& e) {
         std::cerr << e.what() << std::endl;
     }
@@ -164,7 +170,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     co_return;
 }
 
-HTTP2::HTTP2(std::unique_ptr<stream> stream, std::function<task<bool>(std::shared_ptr<http_ctx>)> handler) :
+HTTP2::HTTP2(std::unique_ptr<stream> stream, std::function<task<bool>(http_ctx&)> handler) :
     m_stream(std::move(stream)), m_handler(handler) {}
 
 HTTP2::~HTTP2() {

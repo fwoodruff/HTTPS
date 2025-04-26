@@ -77,6 +77,7 @@ public:
     stream_result stream_status(uint32_t stream_id);
 
     void close_connection();
+    void send_initial_settings();
     
     // returns bytes to send and whether that's the end of data 
     std::pair<std::deque<ustring>, bool> extract_outbox();
@@ -91,7 +92,6 @@ private:
     void raise_stream_error(h2_code, uint32_t stream_id);
     void enqueue_goaway(h2_code code, std::string message);
     stream_result stage_buffer(stream_ctx& stream); // returns suspend
-    void send_initial_settings();
 
     static constexpr int32_t WINDOW_UPDATE_INCREMENT_THRESHOLD = 32768;
 

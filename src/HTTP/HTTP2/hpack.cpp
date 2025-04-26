@@ -9,6 +9,8 @@
 #include "h2frame.hpp"
 #include "h2proto.hpp"
 
+#include "../HTTP1_1/string_utils.hpp"
+
 namespace fbw {
 
 extern const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode;
@@ -101,32 +103,40 @@ ustring hpack::generate_field_block(const std::vector<entry_t>& headers) {
 
     if(encoder_max_capacity != m_encode_table.m_capacity) {
         auto update = dynamic_table_size_update(encoder_max_capacity);
-        encoded_block.append(update);
+        encoded_block.insert(encoded_block.end(), update.begin(), update.end());
         m_encode_table.set_capacity(encoder_max_capacity);
     }
-    for (const auto& header : headers) {
-        // todo: tolower case
+    for (auto header : headers) {
+        header.do_index = do_indexing::without; // todo: overly pessimistic
+        header.name = to_lower(header.name);
         auto index = m_encode_table.index(header);
         if (index != 0) {
-            encoded_block.append(indexed_field(index));
+            auto field = indexed_field(index);
+            encoded_block.insert(encoded_block.end(), field.begin(), field.end());
         } else {
             auto name_index = m_encode_table.index({header.name, ""});
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
-                    encoded_block.append(indexed_name_new_value_never_dynamic(name_index, header.value));
+                    auto field = indexed_name_new_value_never_dynamic(name_index, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else if (header.do_index == do_indexing::without) {
-                    encoded_block.append(indexed_name_new_value_without_dynamic(name_index, header.value));
+                    auto field = indexed_name_new_value_without_dynamic(name_index, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else {
-                    encoded_block.append(indexed_name_new_value(name_index, header.value));
+                    auto field = indexed_name_new_value(name_index, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                     m_encode_table.add_entry({header.name, header.value});
                 }
             } else {
                 if(header.do_index == do_indexing::never) {
-                    encoded_block.append(new_name_new_value_never_dynamic(header.name, header.value));
+                    auto field = new_name_new_value_never_dynamic(header.name, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else if (header.do_index == do_indexing::without) {
-                    encoded_block.append(new_name_new_value_without_dynamic(header.name, header.value));
+                    auto field = new_name_new_value_without_dynamic(header.name, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else {
-                    encoded_block.append(new_name_new_value(header.name, header.value));
+                    auto field = new_name_new_value(header.name, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                     m_encode_table.add_entry({header.name, header.value});
                 }
             }
@@ -347,7 +357,7 @@ uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_b
 
 ustring encode_string_literal(std::string str) {
     auto lit = encode_integer(str.size(), 7);
-    lit.append(str.begin(), str.end());
+    lit.insert(lit.end(), str.begin(), str.end());
     return lit;
 }
 
@@ -356,11 +366,11 @@ ustring encode_string_efficient(std::string str) {
     if(hstr.size() < str.size()) {
         auto lit = encode_integer(hstr.size(), 7);
         lit[0] |= 0x80;
-        lit.append(hstr);
+        lit.insert(lit.end(), hstr.begin(), hstr.end());
         return lit;
     } else {
         auto lit = encode_integer(str.size(), 7);
-        lit.append(str.begin(), str.end());
+        lit.insert(lit.end(), str.begin(), str.end());
         return lit;
     }
 }
@@ -374,41 +384,50 @@ ustring indexed_field(uint32_t idx) {
 ustring indexed_name_new_value(uint32_t idx, std::string value) {
     ustring rep = encode_integer(idx, 6);
     rep[0] |= 0x40;
-    rep.append(encode_string_efficient(value));
+    const auto string_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), string_encoded.begin(), string_encoded.end());
     return rep;
 }
 
 ustring new_name_new_value(std::string name, std::string value) {
     ustring rep {0x40};
-    rep.append(encode_string_efficient(name));
-    rep.append(encode_string_efficient(value));
+    const auto name_encoded = encode_string_efficient(name);
+    const auto value_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
 ustring indexed_name_new_value_without_dynamic(uint32_t idx, std::string value) {
     ustring rep = encode_integer(idx, 4);
-    rep.append(encode_string_efficient(value));
+    const auto value_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
 ustring new_name_new_value_without_dynamic(std::string name, std::string value) {
     ustring rep {0};
-    rep.append(encode_string_efficient(name));
-    rep.append(encode_string_efficient(value));
+    const auto name_encoded = encode_string_efficient(name);
+    const auto value_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
 ustring indexed_name_new_value_never_dynamic(uint32_t idx, std::string value) {
     ustring rep = encode_integer(idx, 4);
-    rep.append(encode_string_literal(value));
+    const auto value_encoded = encode_string_literal(value);
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     rep[0] |= 0x10;
     return rep;
 }
 
 ustring new_name_new_value_never_dynamic(std::string name, std::string value) {
     ustring rep {0x10};
-    rep.append(encode_string_literal(name));
-    rep.append(encode_string_literal(value));
+    const auto name_encoded = encode_string_literal(name);
+    const auto value_encoded = encode_string_literal(value);
+    rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 

@@ -18,7 +18,7 @@ task<stream_result> tcp_stream::read_append(ustring& abuffer, std::optional<mill
     std::span<uint8_t> remaining_buffer = { readbuff.data(), readbuff.size() };
     auto [bytes_read, status] = co_await read(remaining_buffer, timeout);
     if (status == stream_result::ok) [[likely]] {
-        abuffer.append(bytes_read.begin(), bytes_read.end());
+        abuffer.insert(abuffer.end(), bytes_read.begin(), bytes_read.end());
     }
     co_return status;
 }

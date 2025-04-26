@@ -100,10 +100,11 @@ std::unique_ptr<h2_data> deserialise_DATA(const ustring& frame_bytes) {
     set_base_frame_values(*frame, frame_bytes);
     if(frame->flags & h2_flags::PADDED) {
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
-        frame->contents = frame_bytes.substr(H2_FRAME_HEADER_SIZE+1, size-1 - frame->pad_length);
+        auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE+1;
+        frame->contents.assign(begin, begin + size-1 - frame->pad_length);
     } else {
         frame->pad_length = 0;
-        frame->contents = frame_bytes.substr(H2_FRAME_HEADER_SIZE);
+        frame->contents.assign(frame_bytes.begin() + H2_FRAME_HEADER_SIZE, frame_bytes.end());
     }
     return frame;
 }
@@ -127,7 +128,8 @@ std::unique_ptr<h2_headers> deserialise_HEADERS(const ustring& frame_bytes) {
         frame->weight = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx + 4, 1);
         idx += 5;
     }
-    frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE + idx, size - idx - frame->pad_length);
+    auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE + idx;
+    frame->field_block_fragment.assign(begin, begin + size - idx - frame->pad_length);
     assert(frame->field_block_fragment.size() + idx + frame->pad_length == size);
     return frame;
 }
@@ -189,7 +191,8 @@ std::unique_ptr<h2_push_promise> deserialise_PUSH_PROMISE(const ustring& frame_b
         idx += 1;
     }
     frame->promised_stream_id = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 4);
-    frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE + idx + 4, size - idx - frame->pad_length);
+    auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE + idx + 4;
+    frame->field_block_fragment.assign(begin, begin + size - idx - frame->pad_length);
     return frame;
 }
 
@@ -210,7 +213,7 @@ std::unique_ptr<h2_goaway> deserialise_GOAWAY(const ustring& frame_bytes) {
     const uint32_t lastidres = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
     frame->last_stream_id = lastidres & ~(1u << 31);
     frame->error_code = (h2_code)try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 4, 4);
-    frame->additional_debug_data = to_signed(frame_bytes.substr(H2_FRAME_HEADER_SIZE + 8));
+    frame->additional_debug_data.assign(frame_bytes.begin() + H2_FRAME_HEADER_SIZE + 8, frame_bytes.end());
     return frame;
 }
 
@@ -229,7 +232,7 @@ std::unique_ptr<h2_window_update> deserialise_WINDOW_UPDATE(const ustring& frame
 std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const ustring& frame_bytes) {
     auto frame = std::make_unique<h2_continuation>();
     set_base_frame_values(*frame, frame_bytes);
-    frame->field_block_fragment = frame_bytes.substr(H2_FRAME_HEADER_SIZE);
+    frame->field_block_fragment.assign(frame_bytes.begin() + H2_FRAME_HEADER_SIZE, frame_bytes.end());
     return frame;
 }
 
@@ -258,10 +261,10 @@ ustring h2frame::serialise_common(size_t reserved) const {
     std::cout << "sent:     " << pretty() << std::endl;
     ustring out;
     out.reserve(reserved);
-    out.append({0,0,0});
+    out.insert(out.end(), {0,0,0});
     out.push_back((uint8_t)type);
     out.push_back(flags);
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(stream_id, out, 5, 4);
     return out;
 }
@@ -271,7 +274,7 @@ ustring h2_data::serialise() const {
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
     }
-    out.append(contents);
+    out.insert(out.end(), contents.begin(), contents.end());
     out.resize(out.size() + pad_length);
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -306,12 +309,12 @@ ustring h2_headers::serialise() const {
         out.push_back(pad_length);
     }
     if(flags & h2_flags::PRIORITY) {
-        out.append({0,0,0,0});
+        out.insert(out.end(), {0,0,0,0});
         checked_bigend_write(stream_dependency, out, out.size() - 4, 4);
         out[out.size() - 4] |= (uint8_t(exclusive) << 7);
         out.push_back(weight);
     }
-    out.append(field_block_fragment.begin(), field_block_fragment.end());
+    out.insert(out.end(), field_block_fragment.begin(), field_block_fragment.end());
     out.resize(out.size() + pad_length);
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -330,7 +333,7 @@ std::string h2_headers::pretty() const {
 
 ustring h2_priority::serialise() const {
     ustring out = serialise_common(12);
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(stream_dependency, out, out.size() - 4, 4);
     out[out.size()-4] |= (uint8_t(exclusive) << 7);
     out.push_back(weight);
@@ -349,7 +352,7 @@ std::string h2_priority::pretty() const {
 
 ustring h2_rst_stream::serialise() const {
     ustring out = serialise_common();
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(uint32_t(error_code), out, out.size() - 4, 4);
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -364,7 +367,7 @@ std::string h2_rst_stream::pretty() const {
 ustring h2_settings::serialise() const {
     ustring out = serialise_common(9 + settings.size() * 6);
     for(auto setting : settings) {
-        out.append({0,0,0,0,0,0});
+        out.insert(out.end(), {0,0,0,0,0,0});
         checked_bigend_write(uint32_t(setting.identifier), out, out.size() - 6, 2);
         checked_bigend_write(uint32_t(setting.value), out, out.size() - 4, 4);
     }
@@ -390,9 +393,9 @@ ustring h2_push_promise::serialise() const {
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
     }
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(promised_stream_id, out, out.size() - 4, 4);
-    out.append(field_block_fragment);
+    out.insert(out.end(), field_block_fragment.begin(), field_block_fragment.end());
     out.resize(out.size() + pad_length);
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -407,7 +410,7 @@ std::string h2_push_promise::pretty() const {
 
 ustring h2_ping::serialise() const { 
     ustring out = serialise_common(17);
-    out.append({0,0,0,0,0,0,0,0});
+    out.insert(out.end(), {0,0,0,0,0,0,0,0});
     checked_bigend_write(opaque, out, out.size() - 8, 8);
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -421,11 +424,11 @@ std::string h2_ping::pretty() const {
 
 ustring h2_goaway::serialise() const { 
     ustring out = serialise_common();
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(last_stream_id, out, out.size() - 4, 4);
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(uint32_t(error_code), out, out.size() - 4, 4);
-    out.append(to_unsigned(additional_debug_data));
+    out.insert(out.end(), additional_debug_data.begin(), additional_debug_data.end());
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
@@ -443,7 +446,7 @@ std::string h2_goaway::pretty() const {
 
 ustring h2_window_update::serialise() const { 
     ustring out = serialise_common();
-    out.append({0,0,0,0});
+    out.insert(out.end(), {0,0,0,0});
     checked_bigend_write(window_size_increment, out, out.size() - 4, 4);
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -457,7 +460,7 @@ std::string h2_window_update::pretty() const {
 
 ustring h2_continuation::serialise() const {
     ustring out = serialise_common(13);
-    out.append(field_block_fragment.begin(), field_block_fragment.end());
+    out.insert(out.end(), field_block_fragment.begin(), field_block_fragment.end());
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }

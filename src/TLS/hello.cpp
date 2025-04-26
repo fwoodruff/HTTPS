@@ -249,7 +249,7 @@ hello_record_data parse_client_hello(const ustring& hello) {
     // session ID
     size_t idx = 38;
     auto session_id_span = der_span_read(hello, idx, 1);
-    record.client_session_id.append(session_id_span.begin(), session_id_span.end());
+    record.client_session_id.insert(record.client_session_id.end(), session_id_span.begin(), session_id_span.end());
     idx += (session_id_span.size() + 1);
 
     // cipher suites

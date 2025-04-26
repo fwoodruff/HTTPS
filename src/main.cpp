@@ -69,18 +69,30 @@
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
-// write a 'round-trip detector' to determine when to we can delete old streams -
-// i.e. if we send an END_STREAM and then send a record after that which requires an ACK, then that client ACK tells that the client
-// has received the END_STREAM
+// replace vectors with deques for buffers
+
 // for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 // go through RFC 9113 ensuring correct handling of everything
 
 // write and use a 'safe add' function
-
-// something is going wrong with HPACK or outbound header parsing in some way?
-
 // rename stream_result enum to: ok, awaiting, timeout, fail
+// HTTP errors are getting thrown and not caught properly
 
+// better logic for deciding if a header should be indexed
+// after sending some data, we should yield to read some frames
+// test if our inbound hpack dynamic table is actually getting used
+
+// don't need multiple async layers for TLS + HTTP/2, combine
+
+// handle client sending HTTP request on HTTPS port
+
+// check whether content-length is essential and debug accordingly
+
+// pass everything by span
+
+// HTTP 406 content negotiation
+
+// POST request handling
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
     try {

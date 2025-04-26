@@ -42,7 +42,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
     co_await m_async_read_mut.lock();
     auto initial_size = data.size();
     if(!early_data_buffer.empty()) {
-        data.append(std::move(early_data_buffer));
+        data.insert(data.end(), early_data_buffer.begin(), early_data_buffer.end());
         early_data_buffer.clear();
     }
     for(;;) {

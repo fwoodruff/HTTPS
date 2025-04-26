@@ -36,6 +36,10 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
     }
     if(succ < 0) {
         if(errno == EWOULDBLOCK or errno == EAGAIN) {
+            if(m_millis == 0ms) {
+                m_res = stream_result::read_timeout;
+                return false;
+            }
             auto& exec = executor_singleton();
             exec.m_reactor.add_task(m_fd, continuation, IO_direction::Read, m_millis);
             m_res = stream_result::awaiting;

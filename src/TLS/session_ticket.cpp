@@ -27,9 +27,9 @@ ustring TLS13SessionTicket::serialise() {
     checked_bigend_write(sni.size(), out, 21, 1);
     checked_bigend_write(alpn.size(), out, 22, 1);
 
-    out.append(resumption_secret.begin(), resumption_secret.end());
-    out.append(sni.begin(), sni.end());
-    out.append(alpn.begin(), alpn.end());
+    out.insert(out.end(), resumption_secret.begin(), resumption_secret.end());
+    out.insert(out.end(), sni.begin(), sni.end());
+    out.insert(out.end(), alpn.begin(), alpn.end());
     return out;
 }
 
@@ -78,7 +78,7 @@ ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryp
         bytestream.squeeze(&c, 1);
         plaintext[i] ^= c;
     }
-    plaintext.append(number_once_bytes.begin(), number_once_bytes.end());
+    plaintext.insert(plaintext.end(), number_once_bytes.begin(), number_once_bytes.end());
 
     keccak_sponge macgen;
     macgen.absorb(encryption_key.data(), encryption_key.size());

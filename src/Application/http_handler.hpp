@@ -16,7 +16,8 @@
 namespace fbw {
 
 class http_ctx;
-[[nodiscard]] task<bool> application_handler(std::shared_ptr<http_ctx> connection);
+[[nodiscard]] task<bool> application_handler(http_ctx& connection);
+task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message);
 
 } // namespace fbw
 

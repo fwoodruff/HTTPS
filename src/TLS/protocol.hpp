@@ -61,6 +61,8 @@ private:
 
 tls_record server_key_update_record(KeyUpdateRequest req);
 
+// todo: writes to the TLS context should be buffered
+// flush if waiting for a WINDOW_UPDATE or about to block on read
 class buffer {
 public:
     std::deque<uint8_t> write(const std::span<const uint8_t> data);

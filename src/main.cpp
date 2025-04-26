@@ -93,6 +93,10 @@
 
 // HTTP 406 content negotiation
 
+// request_headers struct rather than a vector.
+
+// buffered writes
+
 // POST request handling
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {

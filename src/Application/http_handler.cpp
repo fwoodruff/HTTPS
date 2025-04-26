@@ -11,18 +11,42 @@
 #include "../HTTP/HTTP1_1/mimemap.hpp"
 #include "../TLS/Cryptography/one_way/keccak.hpp"
 #include <algorithm>
+#include <string>
 
 #include "../global.hpp"
 
 namespace fbw {
 
 std::optional<std::string> find_header(const std::vector<entry_t>& request_headers, std::string header) {
+    header = to_lower(header);
     auto it = std::find_if(request_headers.begin(), request_headers.end(), [&](const entry_t& entry){ return entry.name == header; });
     if(it == request_headers.end()) {
         return std::nullopt;
     }
     return it->value;
 }
+
+std::string replace_all_app(std::string str, const std::string& from, const std::string& to) {
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.size(), to);
+        start_pos += to.size();
+    }
+    return str;
+};
+
+void write_body_app(std::string body) {
+    std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
+    body = replace_all_app(std::move(body), "username=", "username: ");
+    body = replace_all_app(std::move(body), "&password=", ", password: ");
+    body = replace_all_app(std::move(body), "&confirm=", ", confirmed: ");
+    body = replace_all_app(std::move(body), "<", "&lt;");
+    body = replace_all_app(std::move(body), ">", "&gt;");
+    body.append("</p>");
+    body.insert(0,"<p>");
+    fout << body << std::endl;
+}
+
 
 task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message) {
     std::vector<entry_t> send_headers;
@@ -206,6 +230,10 @@ task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_
 }
 
 task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_path, const std::vector<entry_t>& headers, bool send_body) {
+    if(find_header(headers, "content-length")) {
+        throw http_error(400, "Bad Request");
+    }
+    // todo: check if HTTP/2 stream is half-closed local?
     std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
     if(file.fail()) {
         throw http_error(404, "Not Found");
@@ -228,7 +256,52 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
     }
 }
 
+task<stream_result> read_all(http_ctx& connection, std::deque<uint8_t>& request_body) {
+    for(;;) {
+        auto [stream_st, data_done] = co_await connection.append_http_data(request_body);
+        if(stream_st != stream_result::ok) {
+            co_return stream_st;
+        }
+        if(data_done) {
+            break;
+        }
+    }
+    co_return stream_result::ok;
+}
+
 task<void> handle_post_request(http_ctx& connection, const std::filesystem::path& file_path, const std::vector<entry_t>& headers) {
+
+    std::string mime = Mime_from_file(file_path);
+
+    auto content_length = find_header(headers, "content-length");
+    if(!content_length) {
+        throw http_error(411, "Length Required");
+    }
+    ssize_t request_size;
+    try { 
+        request_size = std::stoll(*content_length);
+    } catch(std::exception& e) {
+        throw http_error(400, "Bad Request");
+    }
+    
+    if(request_size < 0) {
+        throw http_error(400, "Bad Request");
+    }
+
+    std::deque<uint8_t> request_body;
+    if(co_await read_all(connection, request_body) != stream_result::ok) {
+        co_return;
+    }
+    std::string body(request_body.begin(), request_body.end());
+    write_body_app(body);
+
+    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
+    if(file.fail()) {
+        throw http_error(404, "Not Found");
+    }
+    ssize_t file_size = file.tellg();
+
+    co_await send_full_response(connection, file, file_size, mime, true);
     co_return;
 }
 

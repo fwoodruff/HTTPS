@@ -1,8 +1,8 @@
 //
-//  h2stream.cpp
+//  h1stream.cpp
 //  HTTPS Server
 //
-//  Created by Frederick Benjamin Woodruff on 24/11/2024.
+//  Created by Frederick Benjamin Woodruff on 18/04/2025.
 //
 
 #include "h1stream.hpp"
@@ -107,7 +107,17 @@ task<void> HTTP1::client() {
             }
             for(auto& entry : headers ) {
                 if(entry.name == "content-length") {
-                    content_length_to_read = std::stoi( entry.value );
+                    try {
+                        content_length_to_read = std::stoi( entry.value );
+                    } catch(const std::exception& e) {
+                        throw http_error(400, "Bad Request");
+                    }
+                    if(content_length_to_read > MAX_BODY_SIZE) {
+                        throw http_error(413, "Payload Too Large");
+                    }
+                    if(content_length_to_read < 0) {
+                        throw http_error(400, "Bad Request");
+                    }
                 }
             }
             bool keep_alive = co_await m_application_handler(*this);

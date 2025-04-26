@@ -35,7 +35,7 @@ public:
 
     std::function<task<bool>(http_ctx&)> m_application_handler;
 private:
-    int32_t content_length_to_read = 0;
+    ssize_t content_length_to_read = 0;
     std::vector<entry_t> headers;
     std::deque<uint8_t> m_read_buffer; // todo: deque
 };

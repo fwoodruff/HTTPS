@@ -31,7 +31,7 @@ class HTTP {
    
     [[nodiscard]] task<stream_result> send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end);
 
-    void write_body(std::vector<uint8_t> request);
+
     [[nodiscard]] task<void> send_error(http_error e);
     
     std::string m_folder;
@@ -45,6 +45,8 @@ public:
 };
 
 ssize_t get_file_size(std::filesystem::path filename);
+
+void write_body(std::vector<uint8_t> frame);
 
 } // namespace fbw
  

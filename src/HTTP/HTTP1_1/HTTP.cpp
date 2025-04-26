@@ -262,9 +262,9 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 
 // POST requests need some server-dependent program logic
 // Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
-void HTTP::write_body(std::vector<uint8_t> frame) {
+void write_body(std::vector<uint8_t> frame) {
     auto body = to_signed(std::move(frame));
-    std::ofstream fout(project_options.webpage_folder/"final.html", std::ios_base::app);
+    std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
     body = replace_all(std::move(body), "username=", "username: ");
     body = replace_all(std::move(body), "&password=", ", password: ");
     body = replace_all(std::move(body), "&confirm=", ", confirmed: ");

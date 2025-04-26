@@ -1,12 +1,12 @@
 # Compiler and flags
 CXX := g++
 #CXX := arm-linux-gnueabihf-g++
-CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2 -march=native
+CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP #-O2 # -march=native
 LDFLAGS :=
 
 ifeq ($(shell uname -s),Linux)
 # GLIBCXX_3.4.30 does not support armv6
-#	CXXFLAGS += -flto=6 -static
+	CXXFLAGS += -flto=6 -static
     LDFLAGS += # -static-libstdc++ -static-libgcc
 else
  	#CXXFLAGS += -flto

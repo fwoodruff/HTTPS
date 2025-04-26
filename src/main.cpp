@@ -74,6 +74,10 @@
 
 // tls record serialisation could be simpler
 
+// check multithreading still works
+// check all ciphers still work
+// check if key rotation still works
+
 // for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 // go through RFC 9113 ensuring correct handling of everything
 

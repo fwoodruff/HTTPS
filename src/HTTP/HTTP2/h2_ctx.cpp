@@ -200,7 +200,7 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
         return {};
     }
 
-    uint32_t data_length = frame.contents.size();
+    int32_t data_length = frame.contents.size();
     
     // Check stream-level flow control
     if (data_length > stream.stream_current_receive_window_remaining) {
@@ -397,7 +397,7 @@ std::optional<std::pair<size_t, bool>> h2_context::read_data(const std::span<uin
     stream.bytes_consumed_since_last_stream_window_update += bytes_read;
     bytes_consumed_since_last_connection_window_update += bytes_read;
 
-    if(stream.stream_current_receive_window_remaining > INT32_MAX - server_settings.initial_window_size ) {
+    if(stream.stream_current_receive_window_remaining > INT32_MAX - int32_t(server_settings.initial_window_size) ) {
         throw h2_error("flow control window overflow", h2_code::FLOW_CONTROL_ERROR);
     }
 
@@ -543,7 +543,7 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
             throw h2_error("received 0 size window update", h2_code::PROTOCOL_ERROR);
         }
         assert(frame.window_size_increment <= INT32_MAX);
-        if (connection_current_window_remaining > INT32_MAX - frame.window_size_increment) {
+        if (connection_current_window_remaining > INT32_MAX - int32_t(frame.window_size_increment)) {
             throw h2_error("flow control window overflow", h2_code::FLOW_CONTROL_ERROR);
         }
         connection_current_window_remaining += frame.window_size_increment;

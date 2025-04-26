@@ -101,7 +101,6 @@ std::string get_MIME(std::string extension) {
     try {
         return MIMEmap.at(extension);
     } catch(const std::logic_error& e) {
-        // todo: no http errors
         throw http_error(415, "Unsupported Media Type");
     } catch(...) {
         assert(false);

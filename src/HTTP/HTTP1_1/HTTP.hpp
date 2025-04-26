@@ -20,7 +20,7 @@
 namespace fbw {
 
 class HTTP {
-    static std::optional<http_header> try_extract_header(std::vector<uint8_t>& m_buffer);
+    static std::optional<http_header> try_extract_header(std::deque<uint8_t>& m_buffer);
 
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
     [[nodiscard]] task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);
@@ -37,7 +37,7 @@ class HTTP {
     std::string m_folder;
     bool m_redirect;
     std::unique_ptr<stream> m_stream;
-    std::vector<uint8_t> m_buffer;
+    std::deque<uint8_t> m_buffer;
     bool handled_request = false;
 public:
     [[nodiscard]] task<void> client();

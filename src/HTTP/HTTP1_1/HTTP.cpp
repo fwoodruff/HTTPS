@@ -32,7 +32,7 @@ HTTP::HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect) :
 
 // to extract a full HTTP request we first need to extract the request's header but
 // the full header may not be in the buffer yet
-std::optional<http_header> HTTP::try_extract_header(std::vector<uint8_t>& m_buffer) {
+std::optional<http_header> HTTP::try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
         throw http_error(413, "Payload Too Large");
     }
@@ -81,7 +81,7 @@ bool is_body_required(const http_header& header) {
 
 // we may receive a partial HTTP request, in which case we want to leave it in a buffer
 // extracting an HTTP request is required to generate a response
-std::optional<std::vector<uint8_t>> try_extract_body(std::vector<uint8_t>& m_buffer, const http_header& header) {
+std::optional<std::vector<uint8_t>> try_extract_body(std::deque<uint8_t>& m_buffer, const http_header& header) {
     auto len = header.headers.at("content-length");
     auto size = http_stoll(len);
     if(size > MAX_BODY_SIZE) {

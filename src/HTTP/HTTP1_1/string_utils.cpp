@@ -19,6 +19,7 @@
 #include <cassert>
 #include <iostream>
 #include <algorithm>
+#include <deque>
 
 namespace fbw {
 
@@ -60,7 +61,7 @@ std::string timestring(time_t t) {
 }
 
 // helps parse HTTP streams
-std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, std::string delimiter) {
+std::vector<uint8_t> extract(std::deque<uint8_t>& bytes, std::string delimiter) {
     if (delimiter.empty()) {
         return {};
     }
@@ -77,7 +78,7 @@ std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, std::string delimiter)
     return result;
 }
 
-std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, size_t nbytes) {
+std::vector<uint8_t> extract(std::deque<uint8_t>& bytes, size_t nbytes) {
     if (nbytes == 0 || bytes.size() < nbytes) {
         return {};
     }

@@ -10,10 +10,11 @@
 
 #include <unistd.h>
 #include <utility>
+#include <deque>
 
 namespace fbw {
 
-task<stream_result> tcp_stream::read_append(std::vector<uint8_t>& abuffer, std::optional<milliseconds> timeout) {
+task<stream_result> tcp_stream::read_append(std::deque<uint8_t>& abuffer, std::optional<milliseconds> timeout) {
     std::array<uint8_t, 8192> readbuff;
     std::span<uint8_t> remaining_buffer = { readbuff.data(), readbuff.size() };
     auto [bytes_read, status] = co_await read(remaining_buffer, timeout);

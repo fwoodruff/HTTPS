@@ -52,7 +52,7 @@ task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end) {
     co_return res;
 }
 
-task<std::pair<stream_result, bool>> HTTP1::append_http_data(std::vector<uint8_t>& buffer) {
+task<std::pair<stream_result, bool>> HTTP1::append_http_data(std::deque<uint8_t>& buffer) {
     auto size_before = buffer.size();
     auto res = m_stream->read_append(buffer, project_options.session_timeout);
     auto size_after = buffer.size();
@@ -66,7 +66,7 @@ std::vector<entry_t> HTTP1::get_headers() {
 
 HTTP1::HTTP1(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx&) > handler) : m_stream(std::move(stream)), m_application_handler(handler) {}
 
-std::vector<entry_t> app_try_extract_header(std::vector<uint8_t>& m_buffer) {
+std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
         throw http_error(413, "Payload Too Large");
     }

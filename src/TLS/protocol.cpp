@@ -37,7 +37,7 @@ using enum ContentType;
 
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
-task<stream_result> TLS::read_append_common(std::vector<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early) {
+task<stream_result> TLS::read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early) {
     guard g { &m_async_read_mut };
     co_await m_async_read_mut.lock();
     auto initial_size = data.size();
@@ -52,7 +52,7 @@ task<stream_result> TLS::read_append_common(std::vector<uint8_t>& data, std::opt
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return stream_result::closed;
         }
-        std::vector<uint8_t> input_data;
+        std::deque<uint8_t> input_data;
         auto read_timeout = std::optional(project_options.handshake_timeout);
         if(m_engine.m_expected_read_record == HandshakeStage::application_data) {
             read_timeout = timeout;
@@ -82,7 +82,7 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
         if(m_engine.m_expected_read_record > stage) {
             co_return stream_result::ok;
         }
-        std::vector<uint8_t> input_data;
+        std::deque<uint8_t> input_data;
         auto read_res = co_await m_client->read_append(input_data, project_options.handshake_timeout);
         if(read_res != stream_result::ok) {
             co_return read_res;
@@ -95,11 +95,11 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
     }
 }
 
-task<stream_result> TLS::read_append(std::vector<uint8_t>& data, std::optional<milliseconds> timeout) {
+task<stream_result> TLS::read_append(std::deque<uint8_t>& data, std::optional<milliseconds> timeout) {
     return read_append_common(data, timeout, false);
 }
 
-task<stream_result> TLS::read_append_early_data(std::vector<uint8_t>& data, std::optional<milliseconds> timeout) {
+task<stream_result> TLS::read_append_early_data(std::deque<uint8_t>& data, std::optional<milliseconds> timeout) {
     return read_append_common(data, timeout, true);
 }
 
@@ -155,7 +155,7 @@ task<void> TLS::close_notify() {
     guard g { &m_async_read_mut };
     co_await m_async_read_mut.lock();
     do {
-        std::vector<uint8_t> input_data;
+        std::deque<uint8_t> input_data;
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return;
         }

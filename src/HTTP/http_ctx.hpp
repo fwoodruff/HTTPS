@@ -46,7 +46,7 @@ namespace fbw {
 class http_ctx {
 public:
     virtual std::vector<entry_t> get_headers() = 0;
-    virtual task<std::pair<stream_result, bool>> append_http_data(std::vector<uint8_t>& buffer) = 0; // bool end
+    virtual task<std::pair<stream_result, bool>> append_http_data(std::deque<uint8_t>& buffer) = 0; // bool end
     virtual task<stream_result> write_headers(const std::vector<entry_t>& headers) = 0;
     //virtual task<stream_result> write_push_promise(std::vector<entry_t>& headers) = 0;
     virtual task<stream_result> write_data(std::span<const uint8_t> data, bool end = false) = 0;

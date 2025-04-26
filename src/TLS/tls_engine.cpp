@@ -49,7 +49,7 @@ std::string tls_engine::alpn() {
     return handshake.alpn;
 }
 
-HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, std::vector<uint8_t>& application_data, const std::vector<uint8_t>& bio_input, std::optional<milliseconds> app_timeout) {
+HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, std::deque<uint8_t>& application_data, const std::deque<uint8_t>& bio_input, std::optional<milliseconds> app_timeout) {
     try {
         if(m_expected_read_record == HandshakeStage::application_data or m_expected_read_record == HandshakeStage::client_early_data) {
             std::scoped_lock lk { m_write_queue_mut };
@@ -641,7 +641,7 @@ void tls_engine::process_close_notify(std::queue<packet_timed>& output) {
     server_alert_sync(output, AlertLevel::warning, AlertDescription::close_notify);
 }
 
-stream_result tls_engine::close_notify_finish(const std::vector<uint8_t>& bio_input) {
+stream_result tls_engine::close_notify_finish(const std::deque<uint8_t>& bio_input) {
     m_buffer.insert(m_buffer.end(), bio_input.begin(), bio_input.end());
     auto opt_record = pop_record_from_buffer();
     if(!opt_record) {

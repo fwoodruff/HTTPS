@@ -158,12 +158,12 @@ struct http_frame {
 // returns n bytes FIFO from an HTTP stream, and removes those bytes from the stream
 // Note that this returns an empty string if there are fewer than n bytes in the stream
 // O(N) in the current length of the stream
-std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, size_t nbytes);
+std::vector<uint8_t> extract(std::deque<uint8_t>& bytes, size_t nbytes);
 
 // returns bytes FIFO up to a delimiter from an HTTP stream, and removes those bytes from the stream
 // Note that this returns an empty string if the delimiter is not present
 // O(N) in the current length of the stream
-std::vector<uint8_t> extract(std::vector<uint8_t>& bytes, std::string delimiter);
+std::vector<uint8_t> extract(std::deque<uint8_t>& bytes, std::string delimiter);
 
 // adds "index", ".html" as necessary and moves to lowercase
 // to convert an HTTP request file to a filesystem file name

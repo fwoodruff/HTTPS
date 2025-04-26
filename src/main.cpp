@@ -69,8 +69,6 @@
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
-// replace vectors with deques for buffers
-
 // for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 // go through RFC 9113 ensuring correct handling of everything
 

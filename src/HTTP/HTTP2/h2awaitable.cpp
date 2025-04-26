@@ -47,6 +47,33 @@ stream_result h2writeable::await_resume() {
     return cx.stream_status(m_stream_id);
 }
 
+unless_blocking_read::unless_blocking_read(std::weak_ptr<HTTP2> h2_contx): m_h2_contx(h2_contx) {}
+
+bool unless_blocking_read::await_ready() const noexcept {
+    return false;
+}
+
+bool unless_blocking_read::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+    auto h2_contx = m_h2_contx.lock();
+    if(!h2_contx) {
+        return false;
+    }
+    std::scoped_lock lk { h2_contx->m_coro_mut };
+    if(h2_contx->is_blocking_read) {
+        return false;
+    }
+    h2_contx->m_writers.push_back(awaiting_coroutine);
+    return true;
+}
+
+stream_result unless_blocking_read::await_resume() {
+    auto h2_contx = m_h2_contx.lock();
+    if(!h2_contx) {
+        return stream_result::closed;
+    }
+    return stream_result::ok;
+}
+
 // Read data
 // todo: alias the pointer to the context
 h2readable::h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data) :

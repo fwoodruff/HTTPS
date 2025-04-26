@@ -51,6 +51,16 @@ private:
     uint32_t m_stream_id;
 };
 
+class unless_blocking_read {
+public:
+    unless_blocking_read(std::weak_ptr<HTTP2> h2_contx);
+    bool await_ready() const noexcept;
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
+    stream_result await_resume();
+private:
+    std::weak_ptr<HTTP2> m_h2_contx;
+};
+
 class h2readable {
 public:
     h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data);

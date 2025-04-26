@@ -69,6 +69,8 @@
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
+// tls record serialisation could be simpler
+
 // for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 // go through RFC 9113 ensuring correct handling of everything
 
@@ -83,6 +85,8 @@
 // don't need multiple async layers for TLS + HTTP/2, combine
 
 // handle client sending HTTP request on HTTPS port
+
+// Post and range request handling for http/2 (video?)
 
 // check whether content-length is essential and debug accordingly
 

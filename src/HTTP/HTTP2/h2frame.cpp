@@ -258,7 +258,7 @@ std::string pretty_flags(uint8_t flags, bool can_ack) {
 }
 
 std::vector<uint8_t> h2frame::serialise_common(size_t reserved) const {
-    std::cout << "sent:     " << pretty() << std::endl;
+    // std::cout << "sent:     " << pretty() << std::endl;
     std::vector<uint8_t> out;
     out.reserve(reserved);
     out.insert(out.end(), {0,0,0});

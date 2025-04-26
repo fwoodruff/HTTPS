@@ -43,20 +43,23 @@ public:
     HTTP2& operator=(const HTTP2&) = delete;
     
     h2_context h2_ctx;
-    std::unordered_map<uint32_t, rw_handle> m_coros; // contains all awaiting coroutines
+    std::unordered_map<uint32_t, rw_handle> m_coros; // window updates
+    std::deque<std::coroutine_handle<>> m_writers; // back-pressure
     std::mutex m_coro_mut;
 
     std::unique_ptr<stream> m_stream;
     friend class h2_stream;
     std::function<task<bool>(http_ctx&)> m_handler;
+    bool is_blocking_read = false; // todo: friend awaitable?
 private:
     [[nodiscard]] task<bool> connection_startup();
     [[nodiscard]] task<stream_result> send_outbox();
     bool extract_and_handle();
     void handle_frame(h2frame& frame);
+    bool resume_back_pressure();
     async_mutex m_async_mut;
     uint32_t last_coro_id = 0;
-    std::deque<uint8_t> m_read_buffer; // todo: use deque
+    std::deque<uint8_t> m_read_buffer;
 };
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(std::deque<uint8_t>& buffer);

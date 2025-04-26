@@ -26,7 +26,7 @@ task<void> HTTP2::client() {
     }
     h2_ctx.send_initial_settings();
     for(;;) {
-        do {
+        for(;;) {
             auto resa = co_await send_outbox();
             if(resa != stream_result::ok) {
                 co_return;
@@ -35,13 +35,21 @@ task<void> HTTP2::client() {
             if(res == stream_result::closed) {
                 co_return;
             }
-        } while(extract_and_handle());
+            if(!extract_and_handle()) {
+                if(resume_back_pressure()) {
+                    continue;
+                };
+                break;
+            }
+        }
+        
         auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
         if(res != stream_result::ok) {
             std::unordered_map<uint32_t, rw_handle> m_coros_local;
             h2_ctx.close_connection();
             {
                 std::scoped_lock lk(m_coro_mut);
+                is_blocking_read = false;
                 m_coros_local = std::exchange(m_coros, {});
             }
             co_await send_outbox();
@@ -50,6 +58,8 @@ task<void> HTTP2::client() {
             }
             co_return;
         }
+        std::scoped_lock lk(m_coro_mut);
+        is_blocking_read = false;
     }
 }
 
@@ -67,7 +77,7 @@ bool HTTP2::extract_and_handle() {
 }
 
 void HTTP2::handle_frame(h2frame& frame) {
-    std::cout << "received: " << frame.pretty() << std::endl;
+    // std::cout << "received: " << frame.pretty() << std::endl;
     auto streams_to_wake = h2_ctx.receive_peer_frame(frame);
     std::vector<std::coroutine_handle<>> waking;
     for(auto strm : streams_to_wake) {
@@ -133,6 +143,23 @@ task<bool> HTTP2::connection_startup() {
     }
     m_read_buffer.erase(m_read_buffer.begin(), m_read_buffer.begin() + connection_init.size());
     co_return true;
+}
+
+
+bool HTTP2::resume_back_pressure() {
+    std::coroutine_handle<> handle = nullptr;
+    {
+        std::scoped_lock lk { m_coro_mut };
+        if(m_writers.empty()) {
+            is_blocking_read = true;
+            return false;
+        }
+        handle = std::exchange(m_writers.front(), nullptr);
+        m_writers.pop_front();
+    }
+    assert(handle);
+    handle.resume();
+    return true;
 }
 
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(std::deque<uint8_t>& buffer)  {

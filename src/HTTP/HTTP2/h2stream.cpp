@@ -51,6 +51,9 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
     if(stream_resu == stream_result::awaiting) {
         auto connection_alive = co_await h2writeable(m_connection, m_stream_id);
         co_return connection_alive;
+    } else if (stream_resu == stream_result::ok) {
+        auto connection_alive = co_await unless_blocking_read(m_connection);
+        co_return connection_alive;
     }
     co_return stream_resu;
 }

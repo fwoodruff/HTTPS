@@ -28,7 +28,7 @@ struct stream_ctx {
     std::deque<uint8_t> inbox; // data for reading
     std::deque<uint8_t> outbox; // data for writing
     bool application_server_data_done = false;
-    ustring header_block;
+    std::vector<uint8_t> header_block;
     std::vector<entry_t> m_received_headers;
     std::vector<entry_t> m_received_trailers;
     uint32_t m_stream_id;
@@ -80,7 +80,7 @@ public:
     void send_initial_settings();
     
     // returns bytes to send and whether that's the end of data 
-    std::pair<std::deque<ustring>, bool> extract_outbox();
+    std::pair<std::deque<std::vector<uint8_t>>, bool> extract_outbox();
 
 private:
     std::vector<id_new> receive_data_frame(const h2_data& frame);
@@ -100,7 +100,7 @@ private:
     // receiving a connection window frame we need to run a lot of stage buffer calls
 
     hpack m_hpack;
-    std::deque<ustring> outbox; // send to network
+    std::deque<std::vector<uint8_t>> outbox; // send to network
     std::unordered_map<uint32_t, stream_ctx> stream_ctx_map; // processed by streams
     uint32_t last_server_stream_id;
     uint32_t last_client_stream_id;

@@ -380,19 +380,19 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
     return {r, s};
 }
 
-ustring raw_ECDSA(std::array<uint8_t,32> k_random,
+std::vector<uint8_t> raw_ECDSA(std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,
                      std::array<uint8_t,32> private_key) {
     auto signature = ECDSA_impl(std::move(k_random), std::move(digest), std::move(private_key));
     auto r = signature.r.serialise();
     auto s = signature.s.serialise();
-    ustring out;
+    std::vector<uint8_t> out;
     out.insert(out.end(), r.begin(), r.end());
     out.insert(out.end(), s.begin(), s.end());
     return out;
 }
 
-ustring DER_ECDSA(
+std::vector<uint8_t> DER_ECDSA(
                      std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,
                      std::array<uint8_t,32> private_key) {
@@ -402,7 +402,7 @@ ustring DER_ECDSA(
     auto s = signature.s.serialise();
     
 
-    ustring out;
+    std::vector<uint8_t> out;
     out.insert(out.end(), {0x30,0x00, 0x02});
     
     if(r[0]&0x80) {

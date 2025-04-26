@@ -81,13 +81,13 @@ bool is_body_required(const http_header& header) {
 
 // we may receive a partial HTTP request, in which case we want to leave it in a buffer
 // extracting an HTTP request is required to generate a response
-std::optional<ustring> try_extract_body(ustring& m_buffer, const http_header& header) {
+std::optional<std::vector<uint8_t>> try_extract_body(std::vector<uint8_t>& m_buffer, const http_header& header) {
     auto len = header.headers.at("content-length");
     auto size = http_stoll(len);
     if(size > MAX_BODY_SIZE) {
         throw http_error(413, "Payload Too Large");
     }
-    ustring body;
+    std::vector<uint8_t> body;
     if(size != 0) {
         auto ext = extract(m_buffer, size);
         body.insert(body.end(), ext.begin(), ext.end());
@@ -102,7 +102,7 @@ std::optional<ustring> try_extract_body(ustring& m_buffer, const http_header& he
 // leaves the input buffer intact and ready to consume further HTTP requests
 task<std::optional<http_frame>> HTTP::try_read_http_request() {
     std::optional<http_header> header;
-    std::optional<ustring> body;
+    std::optional<std::vector<uint8_t>> body;
     for(;;) {
         header = try_extract_header(m_buffer);
         if(header) {
@@ -169,7 +169,7 @@ task<void> HTTP::send_error(http_error http_err) {
     << "Server: FredPi/0.1 (Unix) (Raspbian/Linux)\r\n"
     << "\r\n"
     << error_html;
-    ustring output = to_unsigned(oss.str());
+    std::vector<uint8_t> output = to_unsigned(oss.str());
     assert(m_stream);
     auto res = co_await m_stream->write(output, project_options.session_timeout);
     if(res == stream_result::ok) {
@@ -262,7 +262,7 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 
 // POST requests need some server-dependent program logic
 // Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
-void HTTP::write_body(ustring frame) {
+void HTTP::write_body(std::vector<uint8_t> frame) {
     auto body = to_signed(std::move(frame));
     std::ofstream fout(project_options.webpage_folder/"final.html", std::ios_base::app);
     body = replace_all(std::move(body), "username=", "username: ");
@@ -317,7 +317,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
         headers.insert({"Accept-Ranges", "bytes"});
     }
     auto status_code = (file_size != 0)? "200 OK": "206 No Content";
-    ustring header_str = make_header(status_code, headers);
+    std::vector<uint8_t> header_str = make_header(status_code, headers);
     assert(m_stream);
     
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
@@ -349,7 +349,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdirectory,
     headers.insert({"Accept-Ranges", "bytes"});
     headers.insert({"Content-Range", "bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size)});
 
-    ustring header_str = make_header("206 Partial Content", headers);
+    std::vector<uint8_t> header_str = make_header("206 Partial Content", headers);
     assert(m_stream);
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
@@ -394,7 +394,7 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
     auto headers = prepare_headers(content_size, MIME, file_path);
     headers["Content-Type"] = "multipart/byteranges; boundary=" + boundary_string;
     
-    ustring header_str = make_header("206 Partial Content", headers);
+    std::vector<uint8_t> header_str = make_header("206 Partial Content", headers);
     assert(m_stream);
 
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
@@ -427,7 +427,7 @@ task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path
     if(t.fail()) {
         throw http_error(404, "Not Found");
     }
-    ustring buffer;
+    std::vector<uint8_t> buffer;
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));

@@ -30,8 +30,8 @@ struct ChaCha20_Poly1305_ctx {
     std::array<uint8_t, IV_SIZE> server_implicit_write_IV;
     uint64_t seqno_server = 0;
     uint64_t seqno_client = 0;
-    ustring encrypt(const std::span<uint8_t> plaintext, const ustring& additional_data);
-    ustring decrypt(ustring ciphertext, const ustring& additional_data);
+    std::vector<uint8_t> encrypt(const std::span<uint8_t> plaintext, const std::vector<uint8_t>& additional_data);
+    std::vector<uint8_t> decrypt(std::vector<uint8_t> ciphertext, const std::vector<uint8_t>& additional_data);
 };
 
 class ChaCha20_Poly1305_tls13 : public cipher_base_tls13 {
@@ -39,8 +39,8 @@ private:
     ChaCha20_Poly1305_ctx ctx;
 public:
     ChaCha20_Poly1305_tls13() = default;
-    void set_server_traffic_key(const ustring& key) override;
-    void set_client_traffic_key(const ustring& key) override;
+    void set_server_traffic_key(const std::vector<uint8_t>& key) override;
+    void set_client_traffic_key(const std::vector<uint8_t>& key) override;
     bool do_key_reset() override;
     tls_record protect(tls_record record) noexcept override;
     tls_record deprotect(tls_record record) override;
@@ -51,7 +51,7 @@ private:
     ChaCha20_Poly1305_ctx ctx;
 public:
     ChaCha20_Poly1305_tls12() = default;
-    void set_key_material_12(ustring material) override;
+    void set_key_material_12(std::vector<uint8_t> material) override;
     tls_record protect(tls_record record) noexcept override;
     tls_record deprotect(tls_record record) override;
 };

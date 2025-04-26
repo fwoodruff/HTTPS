@@ -27,7 +27,7 @@ AES_CBC_SHA::AES_CBC_SHA() : server_write_round_keys({}),
                                             seqno_client(0) { }
 
 
-void AES_CBC_SHA::set_key_material_12(ustring expanded_master)  {
+void AES_CBC_SHA::set_key_material_12(std::vector<uint8_t> expanded_master)  {
     assert(expanded_master.size() >= 104);
 
     auto client_write_key = std::vector<uint8_t>(16,0);
@@ -49,7 +49,7 @@ void AES_CBC_SHA::set_key_material_12(ustring expanded_master)  {
 }
 
 
-ustring pad_message(ustring message) {
+std::vector<uint8_t> pad_message(std::vector<uint8_t> message) {
     const auto blocksize = 16;
     const auto padmax = 256;
     
@@ -89,7 +89,7 @@ tls_record AES_CBC_SHA::protect(tls_record record) noexcept {
     std::array<uint8_t, 16> record_IV {};
     randomgen.randgen(record_IV);
     record.m_contents = pad_message(std::move(record.m_contents));
-    ustring out;
+    std::vector<uint8_t> out;
     out.assign(record_IV.cbegin(),record_IV.cend());
     auto in_block = record_IV;
     for(size_t i = 0; i < record.m_contents.size(); i += 16) {
@@ -108,7 +108,7 @@ tls_record AES_CBC_SHA::deprotect(tls_record record) {
         throw ssl_error("bad encrypted record length", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
 
-    ustring plaintext;
+    std::vector<uint8_t> plaintext;
     std::array<uint8_t, 16> record_IV {};
     constexpr auto blocksize = record_IV.size();
     

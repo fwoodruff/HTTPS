@@ -30,7 +30,7 @@ private:
 public:
     AES_CBC_SHA();
     
-    void set_key_material_12(ustring material) override;
+    void set_key_material_12(std::vector<uint8_t> material) override;
     tls_record protect(tls_record record) noexcept override;
     tls_record deprotect(tls_record record) override;
 };

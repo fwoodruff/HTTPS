@@ -37,8 +37,8 @@ uint8_t letter_to_num(uint8_t byt) {
     throw ssl_error("unexpected character; could not parse PEM", AlertLevel::fatal, AlertDescription::bad_certificate);
 }
 
-ustring decode64(std::string data) {
-    ustring out;
+std::vector<uint8_t> decode64(std::string data) {
+    std::vector<uint8_t> out;
     uint16_t buffer = 0;
     int j = 0;
     for(size_t i = 0; i < data.size(); i++) {
@@ -59,12 +59,12 @@ ustring decode64(std::string data) {
     return out;
 }
 
-std::array<uint8_t,32> deserialise(ustring asn1) {
+std::array<uint8_t,32> deserialise(std::vector<uint8_t> asn1) {
     if (asn1.size() < 68) {
         throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    const ustring eckey_id = { 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
-    const ustring secp256k1_id = { 0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
+    const std::vector<uint8_t> eckey_id = { 0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
+    const std::vector<uint8_t> secp256k1_id = { 0x06, 0x08, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
 
     if (!std::equal(eckey_id.begin(), eckey_id.end(), asn1.begin() + 8) ||
         !std::equal(secp256k1_id.begin(), secp256k1_id.end(), asn1.begin() + 17)) {
@@ -107,12 +107,12 @@ std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
         throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     std::string data = file.substr(start_idx,end_idx-start_idx);
-    ustring DER = decode64(data);
+    std::vector<uint8_t> DER = decode64(data);
     auto key = deserialise(DER);
     return key;
 }
 
-std::vector<ustring> der_cert_for_domain(std::string domain) {
+std::vector<std::vector<uint8_t>> der_cert_for_domain(std::string domain) {
     auto cert_file = project_options.key_folder / domain / project_options.certificate_file;
     if(!std::filesystem::exists(cert_file) or domain == "") {
         cert_file = project_options.key_folder / project_options.default_subfolder / project_options.certificate_file;
@@ -120,14 +120,14 @@ std::vector<ustring> der_cert_for_domain(std::string domain) {
     return der_cert_from_file(cert_file);
 }
 
-std::vector<ustring> der_cert_from_file(std::filesystem::path filename) {
+std::vector<std::vector<uint8_t>> der_cert_from_file(std::filesystem::path filename) {
     std::ifstream t(filename);
     std::stringstream buffer;
     buffer << t.rdbuf();
     std::string file = buffer.str();
     
     size_t end_idx = 0;
-    std::vector<ustring> output;
+    std::vector<std::vector<uint8_t>> output;
     while(true) {
         const std::string begin = "-----BEGIN CERTIFICATE-----\n";
         const std::string end = "-----END CERTIFICATE-----\n";
@@ -149,7 +149,7 @@ std::vector<ustring> der_cert_from_file(std::filesystem::path filename) {
         }
         std::string data = file.substr(start_idx, end_idx - start_idx);
         end_idx += end.size();
-        const ustring DER = decode64(data);
+        const std::vector<uint8_t> DER = decode64(data);
         output.push_back(DER);
     }
     return output;

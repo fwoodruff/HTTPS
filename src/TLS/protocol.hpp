@@ -34,10 +34,10 @@ public:
     TLS(std::unique_ptr<stream> output_stream);
     ~TLS() = default;
     
-    [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-    [[nodiscard]] task<stream_result> read_append_early_data(ustring&, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> read_append(std::vector<uint8_t>&, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> read_append_early_data(std::vector<uint8_t>&, std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
-    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] task<stream_result> await_hello();
 
@@ -51,10 +51,10 @@ private:
     async_mutex m_async_read_mut;
 
     std::queue<packet_timed> output;
-    ustring early_data_buffer;
+    std::vector<uint8_t> early_data_buffer;
 
     
-    task<stream_result> read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early);
+    task<stream_result> read_append_common(std::vector<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early);
     task<stream_result> net_write_all();
     task<stream_result> await_message(HandshakeStage stage);
 };

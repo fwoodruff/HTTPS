@@ -65,8 +65,8 @@ std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> exte
 }
 
 std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> extension_data) {
-    const ustring peer_may_send {0x00, 0x01, 0x00};
-    const ustring peer_no_send { 0x00, 0x01, 0x02};
+    const std::vector<uint8_t> peer_may_send {0x00, 0x01, 0x00};
+    const std::vector<uint8_t> peer_no_send { 0x00, 0x01, 0x02};
     if(extension_data.size() == 3) [[likely]] {
         if(std::equal(extension_data.begin(), extension_data.end(), peer_may_send.begin())) {
             return { true, true };
@@ -114,7 +114,7 @@ std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_d
         auto group = static_cast<NamedGroup>(try_bigend_read(key_type, 0, 2));
         size_t len = try_bigend_read(extension_data, 2, 2);
         auto key_value = extension_data.subspan(4, len);
-        auto typed_key = key_share({group, ustring(key_value.begin(), key_value.end())});
+        auto typed_key = key_share({group, std::vector<uint8_t>(key_value.begin(), key_value.end())});
         shared_keys.push_back(std::move(typed_key));
         extension_data = extension_data.subspan(len + 4);
     }
@@ -227,7 +227,7 @@ void parse_extension(hello_record_data& record, extension ext) {
     }
 }
 
-hello_record_data parse_client_hello(const ustring& hello) {
+hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
 
     hello_record_data record;
 
@@ -281,7 +281,7 @@ hello_record_data parse_client_hello(const ustring& hello) {
             throw ssl_error("bad extensions", AlertLevel::fatal, AlertDescription::decode_error);
         }
         extensions = extensions.subspan(extension_span.size() + 4);
-        ustring ext_data(extension_span.begin(), extension_span.end());
+        std::vector<uint8_t> ext_data(extension_span.begin(), extension_span.end());
         extension ext = {static_cast<ExtensionType>(extension_type), ext_data};
         parse_extension(record, ext);
 
@@ -373,7 +373,7 @@ void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
     record.end_size_header();
 }
 
-ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
+std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
     assert(!peer_key.key.empty());
     switch(peer_key.key_type) {
         case NamedGroup::x25519:
@@ -382,7 +382,7 @@ ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_
             std::array<uint8_t, curve25519::PUBKEY_SIZE> cli_pub;
             std::copy(peer_key.key.begin(), peer_key.key.end(), cli_pub.begin());
             auto shared_secret = curve25519::multiply(server_private_key_ephem, cli_pub);
-            auto shared_secret_str = ustring(shared_secret.begin(), shared_secret.end());
+            auto shared_secret_str = std::vector<uint8_t>(shared_secret.begin(), shared_secret.end());
             return shared_secret_str;
         }
         case NamedGroup::secp256r1:
@@ -391,7 +391,7 @@ ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_
             std::array<uint8_t, secp256r1::PUBKEY_SIZE> cli_pub;
             std::copy_n(peer_key.key.begin(), secp256r1::PUBKEY_SIZE, cli_pub.begin());
             auto shared_secret = secp256r1::multiply(server_private_key_ephem, cli_pub);
-            auto shared_secret_str = ustring(shared_secret.begin(), shared_secret.end());
+            auto shared_secret_str = std::vector<uint8_t>(shared_secret.begin(), shared_secret.end());
             return shared_secret_str;
         }
         default:
@@ -407,7 +407,7 @@ std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& c
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
             std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_privkey);
-            ustring server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
+            std::vector<uint8_t> server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
             key_share server_key { client_keytype, server_pub };
             return { server_privkey, server_key };
         }
@@ -416,7 +416,7 @@ std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& c
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
             std::array<uint8_t, 65> pubkey_ephem = secp256r1::get_public_key(server_privkey);
-            ustring server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
+            std::vector<uint8_t> server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
             key_share server_key { client_keytype, server_pub };
             return { server_privkey, server_key };
         }
@@ -425,21 +425,21 @@ std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& c
     }
 }
 
-ustring make_hello_random(uint16_t version, bool requires_hello_retry) {
+std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_retry) {
     constexpr std::array<uint8_t, 8> tls_11_downgrade_protection_sentinel = { 0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x00 };
     constexpr std::array<uint8_t, 8> tls_12_downgrade_protection_sentinel = { 0x44, 0x4f, 0x57, 0x4e, 0x47, 0x52, 0x44, 0x01 };
     constexpr std::array<uint8_t, 32> tls13_hello_retry_sentinel = { 0xcf, 0x21, 0xad, 0x74, 0xe5, 0x9a, 0x61, 0x11,
                                                                      0xbe, 0x1d, 0x8c, 0x02, 0x1e, 0x65, 0xb8, 0x91,
                                                                      0xc2, 0xa2, 0x11, 0x16, 0x7a, 0xbb, 0x8c, 0x5e,
                                                                      0x07, 0x9e, 0x09, 0xe2, 0xc8, 0xa8, 0x33, 0x9c };
-    ustring server_random(32, 0);
+    std::vector<uint8_t> server_random(32, 0);
     do {
         randomgen.randgen(server_random);
         if(std::equal(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.begin() + 4, server_random.begin()+24)) {
             continue;
         }
     } while(false);
-    assert(server_random != ustring(32, 0));
+    assert(server_random != std::vector<uint8_t>(32, 0));
     if(version < TLS12) {
         std::copy(tls_11_downgrade_protection_sentinel.begin(), tls_11_downgrade_protection_sentinel.end(), server_random.begin()+24);
     }

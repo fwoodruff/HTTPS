@@ -84,9 +84,9 @@ void h2_context::close_connection() {
     stream_ctx_map.clear();
 }
 
-std::pair<std::deque<ustring>, bool> h2_context::extract_outbox() {
+std::pair<std::deque<std::vector<uint8_t>>, bool> h2_context::extract_outbox() {
     std::scoped_lock lk { m_mut };
-    std::deque<ustring> data_contiguous = std::exchange(outbox, {});
+    std::deque<std::vector<uint8_t>> data_contiguous = std::exchange(outbox, {});
     bool closing = go_away_sent and stream_ctx_map.empty();
     return { data_contiguous, closing };
 }
@@ -477,7 +477,7 @@ bool h2_context::buffer_headers(const std::vector<entry_t>& headers, uint32_t st
     while (offset < field_block.size()) {
         uint32_t remaining = field_block.size() - offset;
         uint32_t chunk_size = std::min(client_settings.max_frame_size, remaining);
-        ustring chunk(field_block.begin() + offset, field_block.begin() + offset + chunk_size);
+        std::vector<uint8_t> chunk(field_block.begin() + offset, field_block.begin() + offset + chunk_size);
         h2_headers headers_frame;
         h2_continuation cont_frame;
         h2frame* frame;

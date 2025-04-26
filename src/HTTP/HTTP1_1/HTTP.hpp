@@ -31,13 +31,13 @@ class HTTP {
    
     [[nodiscard]] task<stream_result> send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end);
 
-    void write_body(ustring request);
+    void write_body(std::vector<uint8_t> request);
     [[nodiscard]] task<void> send_error(http_error e);
     
     std::string m_folder;
     bool m_redirect;
     std::unique_ptr<stream> m_stream;
-    ustring m_buffer;
+    std::vector<uint8_t> m_buffer;
     bool handled_request = false;
 public:
     [[nodiscard]] task<void> client();

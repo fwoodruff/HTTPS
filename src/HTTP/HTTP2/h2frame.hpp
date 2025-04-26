@@ -114,19 +114,19 @@ struct h2frame {
     uint8_t flags = 0;
     uint32_t stream_id = 0;
     h2frame() = default;
-    virtual ustring serialise() const = 0;
-    ustring serialise_common(size_t reserve = 0) const;
+    virtual std::vector<uint8_t> serialise() const = 0;
+    std::vector<uint8_t> serialise_common(size_t reserve = 0) const;
     virtual std::string pretty() const = 0;
     virtual ~h2frame() = default;
-    static std::unique_ptr<h2frame> deserialise(const ustring& frame_data);
+    static std::unique_ptr<h2frame> deserialise(const std::vector<uint8_t>& frame_data);
 };
 
 struct h2_data : public h2frame {
     h2_data();
     uint8_t pad_length {};
     uint32_t stream_dependency {};
-    ustring contents;
-    ustring serialise() const override;
+    std::vector<uint8_t> contents;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
@@ -136,8 +136,8 @@ struct h2_headers : public h2frame {
     bool exclusive {};
     uint32_t stream_dependency {};
     uint8_t weight {};
-    ustring field_block_fragment;
-    ustring serialise() const override;
+    std::vector<uint8_t> field_block_fragment;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
@@ -146,21 +146,21 @@ struct h2_priority : public h2frame {
     bool exclusive {};
     uint32_t stream_dependency {};
     uint8_t weight {};
-    ustring serialise() const override;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
 struct h2_rst_stream : public h2frame {
     h2_rst_stream();
     h2_code error_code = h2_code::NO_ERROR;
-    ustring serialise() const override;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
 struct h2_settings : public h2frame {
     h2_settings();
     std::vector<h2_setting_value> settings;
-    ustring serialise() const override;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
@@ -170,15 +170,15 @@ struct h2_push_promise : public h2frame {
     h2_push_promise();
     uint8_t pad_length {};
     uint32_t promised_stream_id {};
-    ustring field_block_fragment;
-    ustring serialise() const override;
+    std::vector<uint8_t> field_block_fragment;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
 struct h2_ping : public h2frame {
     h2_ping();
     uint64_t opaque {};
-    ustring serialise() const override;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
@@ -187,21 +187,21 @@ struct h2_goaway : public h2frame {
     uint32_t last_stream_id {};
     h2_code error_code {};
     std::string additional_debug_data;
-    ustring serialise() const override;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
 struct h2_window_update : public h2frame {
     h2_window_update();
     uint32_t window_size_increment {};
-    ustring serialise() const override;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 
 struct h2_continuation : public h2frame {
     h2_continuation();
-    ustring field_block_fragment;
-    ustring serialise() const override;
+    std::vector<uint8_t> field_block_fragment;
+    std::vector<uint8_t> serialise() const override;
     std::string pretty() const override;
 };
 

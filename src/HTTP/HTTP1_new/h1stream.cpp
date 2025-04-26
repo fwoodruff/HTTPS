@@ -47,12 +47,12 @@ task<stream_result> HTTP1::write_headers(const std::vector<entry_t>& headers) {
 }
 
 task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end) {
-    ustring dat(data.begin(), data.end());
+    std::vector<uint8_t> dat(data.begin(), data.end());
     auto res = co_await m_stream->write(dat, project_options.session_timeout);
     co_return res;
 }
 
-task<std::pair<stream_result, bool>> HTTP1::append_http_data(ustring& buffer) {
+task<std::pair<stream_result, bool>> HTTP1::append_http_data(std::vector<uint8_t>& buffer) {
     auto size_before = buffer.size();
     auto res = m_stream->read_append(buffer, project_options.session_timeout);
     auto size_after = buffer.size();

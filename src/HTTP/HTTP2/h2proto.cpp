@@ -135,7 +135,7 @@ task<bool> HTTP2::connection_startup() {
     co_return true;
 }
 
-std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer)  {
+std::pair<std::unique_ptr<h2frame>, bool> extract_frame(std::vector<uint8_t>& buffer)  {
     if(buffer.size() >= 3) {
         auto size = try_bigend_read(buffer, 0, 3);
         if(size + H2_FRAME_HEADER_SIZE <= buffer.size()) {

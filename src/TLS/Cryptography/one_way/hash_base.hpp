@@ -31,14 +31,14 @@ public:
         return update_impl(data.data(), data.size());
     }
      
-    [[nodiscard]] virtual ustring hash() const = 0;
+    [[nodiscard]] virtual std::vector<uint8_t> hash() const = 0;
 
     [[nodiscard]] virtual size_t get_block_size() const noexcept = 0;
     [[nodiscard]] virtual size_t get_hash_size() const noexcept = 0;
 };
 
 template<typename T> 
-ustring do_hash(const hash_base& hash_ctor, const T& data) {
+std::vector<uint8_t> do_hash(const hash_base& hash_ctor, const T& data) {
     auto ctx = hash_ctor.clone();
     ctx->update(data);
     return ctx->hash();

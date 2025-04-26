@@ -287,7 +287,7 @@ std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& r
     return out;
 }
 
-ustring make_header(std::string status, std::unordered_map<std::string, std::string> header) {
+std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header) {
     std::ostringstream oss;
     oss << "HTTP/1.1 " << status << "\r\n";
     size_t content_size = 0;

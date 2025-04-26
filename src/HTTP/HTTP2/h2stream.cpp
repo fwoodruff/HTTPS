@@ -55,7 +55,7 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
     co_return stream_resu;
 }
 
-task<std::pair<stream_result, bool>> h2_stream::append_http_data(ustring& buffer) {
+task<std::pair<stream_result, bool>> h2_stream::append_http_data(std::vector<uint8_t>& buffer) {
     std::array<uint8_t, 4096> subbuffer{};
     auto [bytes, data_done] = co_await h2readable(m_connection, m_stream_id, subbuffer);
     if(bytes == 0) {

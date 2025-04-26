@@ -34,8 +34,8 @@ public:
     tcp_stream(tcp_stream&& other);
     tcp_stream& operator=(tcp_stream&& other);
     
-    [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> read_append(std::vector<uint8_t>&, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
 
     std::string m_ip;

@@ -44,14 +44,14 @@ class handshake_ctx {
 public:
     key_share client_public_key {};
     std::unique_ptr<hash_base> handshake_hasher = nullptr;
-    ustring m_server_random {};
+    std::vector<uint8_t> m_server_random {};
     
     std::unique_ptr<const hash_base> hash_ctor = nullptr;
     std::array<uint8_t,32> server_private_key_ephem {};
     
     hello_record_data client_hello;
     key_schedule tls13_key_schedule;
-    ustring tls12_master_secret;
+    std::vector<uint8_t> tls12_master_secret;
 
     std::string alpn;
 
@@ -77,13 +77,13 @@ public:
     tls_record server_encrypted_extensions_record();
     tls_record server_hello_done_record();
 
-    void client_end_of_early_data_record(const ustring& handshake_message);
+    void client_end_of_early_data_record(const std::vector<uint8_t>& handshake_message);
 
-    void client_hello_record(const ustring& handshake_message);
-    ustring client_key_exchange_receipt(const ustring& handshake_message);
+    void client_hello_record(const std::vector<uint8_t>& handshake_message);
+    std::vector<uint8_t> client_key_exchange_receipt(const std::vector<uint8_t>& handshake_message);
 
-    void client_handshake_finished12_record(const ustring& handshake_message);
-    void client_handshake_finished13_record(const ustring& handshake_message);
+    void client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message);
+    void client_handshake_finished13_record(const std::vector<uint8_t>& handshake_message);
 
     tls_record server_handshake_finished12_record();
     tls_record server_handshake_finished13_record();
@@ -94,7 +94,7 @@ private:
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 
-    std::tuple<ustring, std::optional<size_t>, bool> get_resumption_psk(const ustring& hello_message) const;
+    std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> get_resumption_psk(const std::vector<uint8_t>& hello_message) const;
     
 };
 

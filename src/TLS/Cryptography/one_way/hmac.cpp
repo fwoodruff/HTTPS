@@ -30,7 +30,7 @@ size_t hmac::get_hash_size() const noexcept {
     return m_hasher->get_block_size();
 }
 
-ustring hmac::hash() const {
+std::vector<uint8_t> hmac::hash() const {
     std::vector<uint8_t> opadkey;
     opadkey.resize(m_factory->get_block_size());
     std::transform(KeyPrime.cbegin(), KeyPrime.cend(), opadkey.begin(), [](uint8_t c){return c ^ 0x5c;});
@@ -41,7 +41,7 @@ ustring hmac::hash() const {
     outsha->update(opadkey);
     outsha->update(hsh);
     auto outarr = outsha->hash();
-    ustring outvec;
+    std::vector<uint8_t> outvec;
     outvec.insert(outvec.cend(), outarr.cbegin(), outarr.cend());
     return outvec;
 }
@@ -82,7 +82,7 @@ hmac::hmac(const hash_base& hasher, const uint8_t* key, size_t key_len) {
         std::copy_n(key, key_len, KeyPrime.begin());
     }
     assert(KeyPrime.size() == hasher.get_block_size());
-    ustring ipadkey;
+    std::vector<uint8_t> ipadkey;
     ipadkey.resize(m_factory->get_block_size());
     assert(ipadkey.size() == hasher.get_block_size());
     std::transform(KeyPrime.cbegin(), KeyPrime.cend(), ipadkey.begin(), [](uint8_t c){return c ^ 0x36;});

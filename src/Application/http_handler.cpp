@@ -76,7 +76,7 @@ task<stream_result> app_send_body_slice(http_ctx& conn, const std::filesystem::p
     if(t.fail()) {
         co_return stream_result::closed;
     }
-    ustring buffer;
+    std::vector<uint8_t> buffer;
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));

@@ -34,7 +34,7 @@
 // Correctness:
 //      Check that poly1305 is constant-time
 //      Points at infinity?
-//      ustring is not UB but can be
+//      std::vector<uint8_t> is not UB but can be
 //      Check ALPN in session tickets
 //      g++-14-arm-linux-gnueabihf is only on trixie
 //      use std::exchange instead of std::move

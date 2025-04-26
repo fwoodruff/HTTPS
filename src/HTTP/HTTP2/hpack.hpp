@@ -74,16 +74,16 @@ private:
     table m_encode_table;
     table m_decode_table;
 
-    std::optional<entry_t> decode_hpack_string(const ustring& data, size_t& offset);
-    entry_t extract_entry(size_t idx, do_indexing do_index, const ustring& encoded, size_t& offset);
+    std::optional<entry_t> decode_hpack_string(const std::vector<uint8_t>& data, size_t& offset);
+    entry_t extract_entry(size_t idx, do_indexing do_index, const std::vector<uint8_t>& encoded, size_t& offset);
 public:
     size_t encoder_max_capacity = 4096;
     size_t decoder_max_capacity = 4096;
 
     void set_encoder_max_capacity(uint32_t);
     void set_decoder_max_capacity(uint32_t);
-    std::vector<entry_t> parse_field_block(const ustring& field_block_fragment);
-    ustring generate_field_block(const std::vector<entry_t>& headers);
+    std::vector<entry_t> parse_field_block(const std::vector<uint8_t>& field_block_fragment);
+    std::vector<uint8_t> generate_field_block(const std::vector<entry_t>& headers);
 };
 
 }

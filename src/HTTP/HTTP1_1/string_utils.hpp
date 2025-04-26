@@ -149,7 +149,7 @@ struct http_header {
 
 struct http_frame {
     http_header header;
-    ustring body;
+    std::vector<uint8_t> body;
 };
 
 // A pretty timestamp for response headers
@@ -173,7 +173,7 @@ std::string make_server_name();
 
 [[nodiscard]] std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header);
 
-[[nodiscard]] ustring make_header(std::string status, std::unordered_map<std::string, std::string> header);
+[[nodiscard]] std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header);
 
 [[nodiscard]] std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_t, ssize_t>& range);
 

@@ -161,7 +161,7 @@ static void aes_gctr(roundkey aesk, aes_block cb, const uint8_t *x, size_t xlen,
     }
 }
 
-static aes_block aes_gcm_prepare_j0(const ustring& iv, const aes_block& H) {
+static aes_block aes_gcm_prepare_j0(const std::vector<uint8_t>& iv, const aes_block& H) {
     uint8_t len_buf[16];
     
     aes_block J0 {};
@@ -193,11 +193,11 @@ static void aes_gcm_gctr(roundkey aesk, const aes_block& J0, const uint8_t *in, 
 }
 
 
-static ustring aes_gcm_ghash(const aes_block& H, const ustring& aad,
+static std::vector<uint8_t> aes_gcm_ghash(const aes_block& H, const std::vector<uint8_t>& aad,
               const uint8_t *crypt, size_t crypt_len) {
     uint8_t len_buf[16];
     
-    ustring S {};
+    std::vector<uint8_t> S {};
     S.resize(16);
     ghash(H.data(), aad.data(), aad.size(), S.data());
     ghash(H.data(), crypt, crypt_len, S.data());
@@ -210,16 +210,16 @@ static ustring aes_gcm_ghash(const aes_block& H, const ustring& aad,
 
 // aes_gcm_ae - GCM-AE_K(IV, P, A)
 
-std::pair<ustring,ustring> aes_gcm_ae(const roundkey& rk, const ustring& iv,
-           const ustring& plain,
-           const ustring& aad) {
+std::pair<std::vector<uint8_t>,std::vector<uint8_t>> aes_gcm_ae(const roundkey& rk, const std::vector<uint8_t>& iv,
+           const std::vector<uint8_t>& plain,
+           const std::vector<uint8_t>& aad) {
     aes_block H {};
-    ustring tag;
+    std::vector<uint8_t> tag;
 
     H = aes_encrypt(H, rk);
 
     aes_block J0 = aes_gcm_prepare_j0(iv, H);
-    ustring crypt;
+    std::vector<uint8_t> crypt;
     crypt.resize(plain.size());
     aes_gcm_gctr(rk, J0, plain.data(), plain.size(), crypt.data());
     
@@ -235,19 +235,19 @@ std::pair<ustring,ustring> aes_gcm_ae(const roundkey& rk, const ustring& iv,
 
 // aes_gcm_ad - GCM-AD_K(IV, C, A, T)
 
-ustring aes_gcm_ad(roundkey rk, ustring iv,
-           const ustring& crypt,
-                   const ustring& aad, const ustring& tag) {
+std::vector<uint8_t> aes_gcm_ad(roundkey rk, std::vector<uint8_t> iv,
+           const std::vector<uint8_t>& crypt,
+                   const std::vector<uint8_t>& aad, const std::vector<uint8_t>& tag) {
     
     aes_block H {};
     aes_block T {};
-    ustring plain;
+    std::vector<uint8_t> plain;
     
     H = aes_encrypt(H, rk);
     aes_block J0 = aes_gcm_prepare_j0(iv, H);
     plain.resize(crypt.size());
     aes_gcm_gctr(rk, J0, crypt.data(), crypt.size(), plain.data());
-    ustring S = aes_gcm_ghash(H, aad, crypt.data(), crypt.size());
+    std::vector<uint8_t> S = aes_gcm_ghash(H, aad, crypt.data(), crypt.size());
     aes_gctr(rk, J0, S.data(), S.size(), &T[0]);
     if(!std::equal(tag.begin(), tag.end(), T.begin())) [[unlikely]] {
         throw ssl_error("bad tag", AlertLevel::fatal, AlertDescription::bad_record_mac);
@@ -255,14 +255,14 @@ ustring aes_gcm_ad(roundkey rk, ustring iv,
     return plain;
 }
 
-[[maybe_unused]] ustring aes_gmac(roundkey key, const ustring& iv,
-         const ustring& aad) {
+[[maybe_unused]] std::vector<uint8_t> aes_gmac(roundkey key, const std::vector<uint8_t>& iv,
+         const std::vector<uint8_t>& aad) {
     assert(false);
     auto [_, tag] = aes_gcm_ae(key, iv, {}, aad);
     return tag;
 }
 
-void AES_128_GCM_SHA256::set_key_material_12(ustring material) {
+void AES_128_GCM_SHA256::set_key_material_12(std::vector<uint8_t> material) {
 
     std::vector<uint8_t> client_write_key;
     client_write_key.resize(16);
@@ -286,7 +286,7 @@ void AES_128_GCM_SHA256::set_key_material_12(ustring material) {
     ctx.server_write_round_keys = aes_key_schedule(server_write_key);
 }
 
-void AES_GCM_SHA2_ctx::set_server_key(const ustring& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
+void AES_GCM_SHA2_ctx::set_server_key(const std::vector<uint8_t>& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
     seqno_server = 0;
     auto key = hkdf_expand_label(hash_ctor, traffic_key, "key", std::string(""), key_size);
     auto iv = hkdf_expand_label(hash_ctor, traffic_key, "iv", std::string(""), iv_size);
@@ -297,7 +297,7 @@ void AES_GCM_SHA2_ctx::set_server_key(const ustring& traffic_key, size_t key_siz
     std::copy(iv.begin(), iv.end(), server_implicit_write_IV.begin());
 }
 
-void AES_GCM_SHA2_ctx::set_client_key(const ustring& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
+void AES_GCM_SHA2_ctx::set_client_key(const std::vector<uint8_t>& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
     seqno_client = 0;
     auto key = hkdf_expand_label(hash_ctor, traffic_key, "key", std::string(""), key_size);
     auto iv = hkdf_expand_label(hash_ctor, traffic_key, "iv", std::string(""), iv_size);
@@ -308,19 +308,19 @@ void AES_GCM_SHA2_ctx::set_client_key(const ustring& traffic_key, size_t key_siz
     std::copy(iv.begin(), iv.end(), client_implicit_write_IV.begin());
 }
 
-void AES_128_GCM_SHA256_tls13::set_server_traffic_key(const ustring& traffic_key) {
+void AES_128_GCM_SHA256_tls13::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {
     ctx.set_server_key(traffic_key, KEY_SIZE, IV_SIZE, sha256());
 }
 
-void AES_128_GCM_SHA256_tls13::set_client_traffic_key(const ustring& traffic_key) {
+void AES_128_GCM_SHA256_tls13::set_client_traffic_key(const std::vector<uint8_t>& traffic_key) {
     ctx.set_client_key(traffic_key, KEY_SIZE, IV_SIZE, sha256());
 }
 
-void AES_256_GCM_SHA384::set_server_traffic_key(const ustring& traffic_key) {
+void AES_256_GCM_SHA384::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {
    ctx.set_server_key(traffic_key, KEY_SIZE, IV_SIZE, sha384());
 }
 
-void AES_256_GCM_SHA384::set_client_traffic_key(const ustring& traffic_key) {
+void AES_256_GCM_SHA384::set_client_traffic_key(const std::vector<uint8_t>& traffic_key) {
     ctx.set_client_key(traffic_key, KEY_SIZE, IV_SIZE, sha384());
 }
 
@@ -332,10 +332,10 @@ bool AES_128_GCM_SHA256_tls13::do_key_reset() {
     return ctx.seqno_client > (1ull << 32) or ctx.seqno_server > (1ull << 32);
 }
 
-ustring make_additional_12(const tls_record& record, uint64_t sequence_no, size_t tag_size) {
+std::vector<uint8_t> make_additional_12(const tls_record& record, uint64_t sequence_no, size_t tag_size) {
     assert(record.m_contents.size() >= tag_size);
     uint16_t msglen = htons(record.m_contents.size() - tag_size);
-    ustring additional_data(sizeof(uint64_t), 0);
+    std::vector<uint8_t> additional_data(sizeof(uint64_t), 0);
     checked_bigend_write(sequence_no, additional_data, 0, sizeof(uint64_t));
     additional_data.insert(additional_data.end(), {static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
@@ -344,13 +344,13 @@ ustring make_additional_12(const tls_record& record, uint64_t sequence_no, size_
 }
 
 tls_record AES_128_GCM_SHA256::protect(tls_record record) noexcept {
-    ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
-    ustring sequence_no;
+    std::vector<uint8_t> additional_data = make_additional_12(record, ctx.seqno_server, 0);
+    std::vector<uint8_t> sequence_no;
     sequence_no.resize(8);
     checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
     ctx.seqno_server++;
 
-    ustring iv = ctx.server_implicit_write_IV;
+    std::vector<uint8_t> iv = ctx.server_implicit_write_IV;
     iv.insert(iv.end(), sequence_no.begin(), sequence_no.end());
     auto [ciphertext, auth_tag] = aes_gcm_ae(ctx.server_write_round_keys, iv, record.m_contents, additional_data);
     assert(auth_tag.size() == TAG_SIZE);
@@ -363,13 +363,13 @@ tls_record AES_128_GCM_SHA256::protect(tls_record record) noexcept {
 
 tls_record AES_128_GCM_SHA256_tls13::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
-    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
-    ustring sequence_no;
+    std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, TAG_SIZE);
+    std::vector<uint8_t> sequence_no;
     sequence_no.resize(sizeof(uint64_t));
     checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
     ctx.seqno_server++;
 
-    ustring iv = ctx.server_implicit_write_IV;
+    std::vector<uint8_t> iv = ctx.server_implicit_write_IV;
     for (size_t i = 0; i < 8; ++i) {
         iv[i + IV_SIZE - sizeof(ctx.seqno_server)] ^= sequence_no[i];
     }
@@ -383,13 +383,13 @@ tls_record AES_128_GCM_SHA256_tls13::protect(tls_record record) noexcept {
 
 tls_record AES_256_GCM_SHA384::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
-    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
-    ustring sequence_no;
+    std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, TAG_SIZE);
+    std::vector<uint8_t> sequence_no;
     sequence_no.resize(sizeof(uint64_t));
     checked_bigend_write(ctx.seqno_server, sequence_no, 0, sizeof(uint64_t));
     ctx.seqno_server++;
 
-    ustring iv = ctx.server_implicit_write_IV;
+    std::vector<uint8_t> iv = ctx.server_implicit_write_IV;
     for (size_t i = 0; i < 8; ++i) {
         iv[i + IV_SIZE - sizeof(ctx.seqno_server)] ^= sequence_no[i];
     }
@@ -404,16 +404,16 @@ tls_record AES_128_GCM_SHA256::deprotect(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE + sizeof(uint64_t)) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    ustring explicit_IV(8, 0);
+    std::vector<uint8_t> explicit_IV(8, 0);
     checked_bigend_write(ctx.seqno_client, explicit_IV, 0, 8);
-    ustring ciphertext(record.m_contents.begin() + sizeof(uint64_t), record.m_contents.end() - TAG_SIZE);
-    ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
-    ustring additional_data = make_additional_12(record, ctx.seqno_client, 24);
+    std::vector<uint8_t> ciphertext(record.m_contents.begin() + sizeof(uint64_t), record.m_contents.end() - TAG_SIZE);
+    std::vector<uint8_t> auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
+    std::vector<uint8_t> additional_data = make_additional_12(record, ctx.seqno_client, 24);
     ctx.seqno_client++;
     assert(record.m_contents.size() >= auth_tag.size() + explicit_IV.size());
     auto iv = ctx.client_implicit_write_IV;
     iv.insert(iv.end(), explicit_IV.begin(), explicit_IV.end());
-    ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
+    std::vector<uint8_t> plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
     record.m_contents = plain;
     if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
@@ -425,17 +425,17 @@ tls_record AES_128_GCM_SHA256_tls13::deprotect(tls_record record) {
     if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    ustring iv(12, 0);
+    std::vector<uint8_t> iv(12, 0);
     checked_bigend_write(ctx.seqno_client, iv, 4, 8);
     for (size_t i = 0; i < 12; ++i) {
         iv[i] ^= ctx.client_implicit_write_IV[i];
     }
-    ustring ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
-    ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
-    ustring additional_data = make_additional_13(record.m_contents, 0);
+    std::vector<uint8_t> ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
+    std::vector<uint8_t> auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
+    std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, 0);
     ctx.seqno_client++;
     assert(record.m_contents.size() >= auth_tag.size() + 1);
-    ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
+    std::vector<uint8_t> plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
     record.m_contents = plain;
     if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);
@@ -448,17 +448,17 @@ tls_record AES_256_GCM_SHA384::deprotect(tls_record record) {
     if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
         throw ssl_error("record too short for tag and wrap", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    ustring iv(12, 0);
+    std::vector<uint8_t> iv(12, 0);
     checked_bigend_write(ctx.seqno_client, iv, 4, 8);
     for (size_t i = 0; i < 12; ++i) {
         iv[i] ^= ctx.client_implicit_write_IV[i];
     }
-    ustring ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
-    ustring auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
-    ustring additional_data = make_additional_13(record.m_contents, 0);
+    std::vector<uint8_t> ciphertext(record.m_contents.begin(), record.m_contents.end() - TAG_SIZE);
+    std::vector<uint8_t> auth_tag(record.m_contents.end() - TAG_SIZE, record.m_contents.end());
+    std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, 0);
     ctx.seqno_client++;
     assert(record.m_contents.size() >= auth_tag.size() + 1);
-    ustring plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
+    std::vector<uint8_t> plain = aes_gcm_ad(ctx.client_write_round_keys, iv, ciphertext, additional_data, auth_tag);
     record.m_contents = plain;
     if(record.m_contents.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
         throw ssl_error("decrypted record too large", AlertLevel::fatal, AlertDescription::record_overflow);

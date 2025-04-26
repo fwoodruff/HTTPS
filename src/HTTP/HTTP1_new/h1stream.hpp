@@ -30,7 +30,7 @@ public:
     std::vector<entry_t> get_headers() override;
     task<stream_result> write_headers(const std::vector<entry_t>& headers) override;
     task<stream_result> write_data(std::span<const uint8_t> data, bool end = false) override;
-    task<std::pair<stream_result, bool>> append_http_data(ustring& buffer) override;
+    task<std::pair<stream_result, bool>> append_http_data(std::vector<uint8_t>& buffer) override;
     bool is_done() override;
 
     std::function<task<bool>(http_ctx&)> m_application_handler;

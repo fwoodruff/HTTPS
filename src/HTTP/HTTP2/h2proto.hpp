@@ -56,10 +56,10 @@ private:
     void handle_frame(h2frame& frame);
     async_mutex m_async_mut;
     uint32_t last_coro_id = 0;
-    ustring m_read_buffer; // todo: use deque
+    std::vector<uint8_t> m_read_buffer; // todo: use deque
 };
 
-std::pair<std::unique_ptr<h2frame>, bool> extract_frame(ustring& buffer);
+std::pair<std::unique_ptr<h2frame>, bool> extract_frame(std::vector<uint8_t>& buffer);
 
 task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id);
 

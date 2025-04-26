@@ -35,7 +35,7 @@ private:
     };
     std::vector<der_headers> heads;
 public:
-    ustring m_contents;
+    std::vector<uint8_t> m_contents;
     
     inline ContentType get_type() const { return static_cast<ContentType>(m_type); }
     inline uint8_t get_major_version() const { return m_major_version; }
@@ -71,7 +71,7 @@ public:
     void write(const T& value) {
         m_contents.insert(m_contents.cend(), value.cbegin(), value.cend());
     }
-    inline void write(const ustring& value) {
+    inline void write(const std::vector<uint8_t>& value) {
         m_contents.insert(m_contents.cend(), value.cbegin(), value.cend());
     }
 
@@ -79,7 +79,7 @@ public:
     // append data and then figure out the header size
     inline void start_size_header(ssize_t bytes) {
         heads.push_back({static_cast<ssize_t>(m_contents.size()), bytes});
-        auto size = ustring(bytes, 0);
+        auto size = std::vector<uint8_t>(bytes, 0);
         m_contents.insert(m_contents.cend(), size.cbegin(), size.cend());
     }
 
@@ -89,9 +89,9 @@ public:
         checked_bigend_write(m_contents.size() - idx_start - num_bytes, m_contents, idx_start, num_bytes);
     }
     
-    inline ustring serialise() const {
+    inline std::vector<uint8_t> serialise() const {
         assert(m_contents.size() != 0);
-        ustring out;
+        std::vector<uint8_t> out;
         out.insert(out.end(), {static_cast<uint8_t>(m_type), m_major_version, m_minor_version, 0,0});
         checked_bigend_write(m_contents.size(), out, 3, 2);
         out.insert(out.end(), m_contents.cbegin(), m_contents.cend());
@@ -100,7 +100,7 @@ public:
 };
 
 void certificates_serial(tls_record& record, std::string domain, bool use_tls13);
-std::optional<tls_record> try_extract_record(ustring& input);
+std::optional<tls_record> try_extract_record(std::vector<uint8_t>& input);
 
 } // namespace
 

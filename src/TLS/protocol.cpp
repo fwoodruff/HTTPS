@@ -176,4 +176,19 @@ task<void> TLS::close_notify() {
     } while(false);
 }
 
+std::deque<uint8_t> buffer::write(const std::span<const uint8_t> data) {
+    m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+    if(m_buffer.size() >= BUFFER_SIZE) {
+        std::deque<uint8_t> out;
+        out.assign(m_buffer.begin(), m_buffer.begin() + BUFFER_SIZE);
+        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + BUFFER_SIZE);
+        return out;
+    }
+    return {};
+}
+
+std::deque<uint8_t> buffer::flush() {
+    return std::exchange(m_buffer, {});
+}
+    
 }// namespace fbw

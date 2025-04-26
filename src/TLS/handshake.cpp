@@ -151,7 +151,7 @@ std::string choose_alpn(const std::vector<std::string>& client_alpn) {
     // toggle
     if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
         // comment out to prioritise H2
-        return ALPN_H1;
+        //return ALPN_H1;
     }
     if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H2) != client_alpn.end()) {
         // comment out to disable H2

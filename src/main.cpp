@@ -65,6 +65,9 @@
 //      TLS Client
 //      Russian ciphers
 
+
+// Post and range request handling for http/2 (video?)
+
 // check std::span ownership soundness
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
@@ -76,17 +79,13 @@
 
 // write and use a 'safe add' function
 // rename stream_result enum to: ok, awaiting, timeout, fail
-// HTTP errors are getting thrown and not caught properly
 
 // better logic for deciding if a header should be indexed
-// after sending some data, we should yield to read some frames
 // test if our inbound hpack dynamic table is actually getting used
 
 // don't need multiple async layers for TLS + HTTP/2, combine
 
 // handle client sending HTTP request on HTTPS port
-
-// Post and range request handling for http/2 (video?)
 
 // check whether content-length is essential and debug accordingly
 

@@ -24,7 +24,6 @@ std::optional<std::string> find_header(const std::vector<entry_t>& request_heade
     return it->value;
 }
 
-
 task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message) {
     std::vector<entry_t> send_headers;
     std::string message = error_to_html(status_code, status_message);
@@ -71,23 +70,19 @@ std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool f
     return out;
 }
 
-task<stream_result> app_send_body_slice(http_ctx& conn, const std::filesystem::path& file_path, ssize_t begin, ssize_t end) {
-    std::ifstream t(file_path, std::ifstream::binary);
-    if(t.fail()) {
-        co_return stream_result::closed;
-    }
+task<stream_result> app_send_body_slice(http_ctx& conn, std::ifstream& file, ssize_t begin, ssize_t end, bool end_of_data = true) {
     std::vector<uint8_t> buffer;
-    t.seekg(begin);
-    while(t.tellg() != end && !t.eof()) {
-        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));
+    file.seekg(begin);
+    while(file.tellg() != end && !file.eof()) {
+        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - file.tellg()));
         buffer.resize(next_buffer_size);
-        t.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
-        const bool is_last_chunk = (t.tellg() >= end || t.eof());
+        file.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
+        const bool is_last_chunk = (file.tellg() >= end || file.eof()) and end_of_data;
         auto res = co_await conn.write_data(buffer, is_last_chunk);
         if(res != stream_result::ok) [[unlikely]] {
             co_return res;
         }
-        assert(t.tellg() <= end);
+        assert(file.tellg() <= end);
     }
     co_return stream_result::ok;
 }
@@ -121,7 +116,7 @@ std::pair<ssize_t, ssize_t> app_get_range_bounds(ssize_t file_size, std::pair<ss
     return {begin, end};
 }
 
-task<bool> send_ranged_response(http_ctx& conn, const std::filesystem::path& file_path, ssize_t file_size, std::string mime, std::pair<uint32_t, uint32_t> range,  bool send_body) {
+task<bool> send_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, std::pair<uint32_t, uint32_t> range,  bool send_body) {
     if(range.first >= range.second) {
         throw http_error(416,  "Range Not Satisfiable");
     }
@@ -133,12 +128,12 @@ task<bool> send_ranged_response(http_ctx& conn, const std::filesystem::path& fil
         co_return false;
     }
     if(send_body) {
-        co_await app_send_body_slice(conn, file_path, range.first, range.second);
+        co_await app_send_body_slice(conn, file, range.first, range.second);
     }
     co_return true;
 }
 
-task<void> send_multi_ranged_response(http_ctx& conn, const std::filesystem::path& file_path, ssize_t file_size, std::string mime, std::vector<std::pair<ssize_t, ssize_t>> ranges,  bool send_body) {
+task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, std::vector<std::pair<ssize_t, ssize_t>> ranges,  bool send_body) {
     std::array<uint8_t, 28> entropy;
     randomgen.randgen(entropy);
     std::string boundary_string;
@@ -178,7 +173,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, const std::filesystem::pat
                 co_return;
             }
             if(send_body) {
-                result = co_await app_send_body_slice(conn, file_path, begin, end);
+                result = co_await app_send_body_slice(conn, file, begin, end, false);
                 if(result != stream_result::ok) {
                     co_return;
                 }
@@ -190,12 +185,12 @@ task<void> send_multi_ranged_response(http_ctx& conn, const std::filesystem::pat
             }
         }
         auto sig_end_bound = to_unsigned(end_bound);
-        co_await conn.write_data(sig_end_bound);
+        co_await conn.write_data(sig_end_bound, true);
     }
     co_return;
 }
 
-task<void> send_full_response(http_ctx& conn, const std::filesystem::path& file_path, ssize_t file_size, std::string mime, bool send_body) {
+task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, bool send_body) {
     auto headers = headers_to_send(file_size, mime);
     if(file_size > RANGE_SUGGESTED_SIZE) {
         headers.push_back({"accept-ranges", "bytes"});
@@ -205,16 +200,17 @@ task<void> send_full_response(http_ctx& conn, const std::filesystem::path& file_
         co_return;
     }
     if(send_body) {
-        co_await app_send_body_slice(conn, file_path, 0, file_size);
+        co_await app_send_body_slice(conn, file, 0, file_size);
     }
     co_return;
 }
 
 task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_path, const std::vector<entry_t>& headers, bool send_body) {
-    ssize_t file_size = get_file_size(file_path);
-    if(file_size < 0) {
+    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
+    if(file.fail()) {
         throw http_error(404, "Not Found");
     }
+    ssize_t file_size = file.tellg();
     std::string mime = Mime_from_file(file_path);
     auto range_hdr = find_header(headers, "range");
     if (range_hdr) {
@@ -223,12 +219,12 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
             throw http_error(400, "Bad Request");
         }
         if(ranges.size() == 1) {
-            co_await send_ranged_response(conn, file_path, file_size, mime, ranges[0], send_body);
+            co_await send_ranged_response(conn, file, file_size, mime, ranges[0], send_body);
         } else {
-            co_await send_multi_ranged_response(conn, file_path, file_size, mime, ranges, send_body);
+            co_await send_multi_ranged_response(conn, file, file_size, mime, ranges, send_body);
         }
     } else {
-        co_await send_full_response(conn, file_path, file_size, mime, send_body);
+        co_await send_full_response(conn, file, file_size, mime, send_body);
     }
 }
 

@@ -61,7 +61,17 @@ private:
 
 tls_record server_key_update_record(KeyUpdateRequest req);
 
+class buffer {
+public:
+    std::deque<uint8_t> write(const std::span<const uint8_t> data);
+    std::deque<uint8_t> flush();
+private:
+    static constexpr size_t BUFFER_SIZE = 4096;
+    std::deque<uint8_t> m_buffer;
+};
+
 } // namespace
+
 
 
 #endif // tls_hpp

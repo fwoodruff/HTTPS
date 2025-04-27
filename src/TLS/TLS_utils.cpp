@@ -16,7 +16,7 @@ namespace fbw {
 
 void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
     record.start_size_header(3);
-    std::vector<ustring> certs;
+    std::vector<std::vector<uint8_t>> certs;
     try {
         certs = der_cert_for_domain(domain);
     } catch(std::exception& e) {
@@ -35,7 +35,7 @@ void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
     record.end_size_header();
 }
 
-std::optional<tls_record> try_extract_record(ustring& input) {
+std::optional<tls_record> try_extract_record(std::vector<uint8_t>& input) {
     if (input.size() < TLS_HEADER_SIZE) {
         return std::nullopt;
     }
@@ -48,8 +48,8 @@ std::optional<tls_record> try_extract_record(ustring& input) {
     if(input.size() < record_size + TLS_HEADER_SIZE) [[unlikely]] {
         return std::nullopt;
     }
-    out.m_contents = input.substr(TLS_HEADER_SIZE, record_size);
-    input = input.substr(TLS_HEADER_SIZE + record_size);
+    out.m_contents.assign(input.begin() + TLS_HEADER_SIZE, input.begin() + TLS_HEADER_SIZE + record_size);
+    input.erase(input.begin(), input.begin() + TLS_HEADER_SIZE + record_size);
     return out;
 }
 

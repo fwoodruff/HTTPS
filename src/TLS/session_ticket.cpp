@@ -9,9 +9,9 @@ namespace fbw {
 
 std::array<uint8_t, 16> session_ticket_master_secret {};
 
-ustring TLS13SessionTicket::serialise() {
+std::vector<uint8_t> TLS13SessionTicket::serialise() {
     constexpr int header_size = 23;
-    ustring out;
+    std::vector<uint8_t> out;
     out.reserve(header_size + resumption_secret.size() + sni.size() + alpn.size() + 2);
     out.resize(header_size);
     checked_bigend_write(version, out, 0, 2);
@@ -27,13 +27,13 @@ ustring TLS13SessionTicket::serialise() {
     checked_bigend_write(sni.size(), out, 21, 1);
     checked_bigend_write(alpn.size(), out, 22, 1);
 
-    out.append(resumption_secret.begin(), resumption_secret.end());
-    out.append(sni.begin(), sni.end());
-    out.append(alpn.begin(), alpn.end());
+    out.insert(out.end(), resumption_secret.begin(), resumption_secret.end());
+    out.insert(out.end(), sni.begin(), sni.end());
+    out.insert(out.end(), alpn.begin(), alpn.end());
     return out;
 }
 
-std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket) {
+std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(std::vector<uint8_t> ticket) {
     constexpr size_t header_size = 23;
 
     if(ticket.size() < header_size) {
@@ -62,7 +62,7 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(ustring ticket
     return out;
 }
 
-ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
+std::vector<uint8_t> encrypt_message(std::vector<uint8_t> plaintext, const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
     constexpr size_t number_once_size = 8;
     constexpr size_t mac_size = 16;
     std::array<uint8_t, number_once_size> number_once_bytes;
@@ -78,7 +78,7 @@ ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryp
         bytestream.squeeze(&c, 1);
         plaintext[i] ^= c;
     }
-    plaintext.append(number_once_bytes.begin(), number_once_bytes.end());
+    plaintext.insert(plaintext.end(), number_once_bytes.begin(), number_once_bytes.end());
 
     keccak_sponge macgen;
     macgen.absorb(encryption_key.data(), encryption_key.size());
@@ -89,7 +89,7 @@ ustring encrypt_message(ustring plaintext, const std::array<uint8_t, 16>& encryp
     return plaintext;
 }
 
-std::optional<std::pair<ustring, uint64_t>> decrypt_message(ustring ciphertext, const std::array<uint8_t, 16>& encryption_key) {
+std::optional<std::pair<std::vector<uint8_t>, uint64_t>> decrypt_message(std::vector<uint8_t> ciphertext, const std::array<uint8_t, 16>& encryption_key) {
     constexpr size_t number_once_size = 8;
     constexpr size_t mac_size = 16;
     if(ciphertext.size() < (number_once_size + mac_size)) {
@@ -123,12 +123,12 @@ std::optional<std::pair<ustring, uint64_t>> decrypt_message(ustring ciphertext, 
     return {{ std::move(ciphertext), number_once }};
 }
 
-ustring TLS13SessionTicket::encrypt_ticket(const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
+std::vector<uint8_t> TLS13SessionTicket::encrypt_ticket(const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
     auto plaintext = serialise();
     return encrypt_message(std::move(plaintext), encryption_key, number_once);
 }
 
-std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt_ticket(ustring ticket, const std::array<uint8_t, 16>& encryption_key) {
+std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt_ticket(std::vector<uint8_t> ticket, const std::array<uint8_t, 16>& encryption_key) {
     auto opt_ticket_bytes_number_once = decrypt_message(ticket, encryption_key);
     if(!opt_ticket_bytes_number_once) {
         return std::nullopt;
@@ -177,7 +177,7 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
     record.end_size_header();
 
     record.start_size_header(2);
-    ustring session_ticket_bytes = ticket.encrypt_ticket(encryption_key, number_once);
+    std::vector<uint8_t> session_ticket_bytes = ticket.encrypt_ticket(encryption_key, number_once);
     record.write(session_ticket_bytes);
     record.end_size_header();
 

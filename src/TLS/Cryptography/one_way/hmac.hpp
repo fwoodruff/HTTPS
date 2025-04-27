@@ -29,7 +29,7 @@ public:
     template<typename T> hmac(const hash_base& hasher, const T& key);
     std::unique_ptr<hash_base> clone() const override;
     hmac& update_impl(const uint8_t* key, size_t key_len) noexcept override;
-    [[nodiscard]] ustring hash() const override;
+    [[nodiscard]] std::vector<uint8_t> hash() const override;
     using hash_base::hash;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;
@@ -46,7 +46,7 @@ hmac::hmac(const hash_base& hasher, const T& key) :
 
 
 template<typename T, typename U>
-ustring do_hmac(const hash_base& hash_ctor, const T& key, const U& data) {
+std::vector<uint8_t> do_hmac(const hash_base& hash_ctor, const T& key, const U& data) {
     auto mac = hmac(hash_ctor, key);
     mac.update(data);
     return mac.hash();

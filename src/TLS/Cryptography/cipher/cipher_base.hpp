@@ -26,13 +26,13 @@ public:
 
 class cipher_base_tls12 : public cipher_base {
 public:
-    virtual void set_key_material_12(ustring material) = 0;
+    virtual void set_key_material_12(std::vector<uint8_t> material) = 0;
 };
 
 class cipher_base_tls13 : public cipher_base {
 public:
-    virtual void set_server_traffic_key(const ustring& key) = 0;
-    virtual void set_client_traffic_key(const ustring& key) = 0;
+    virtual void set_server_traffic_key(const std::vector<uint8_t>& key) = 0;
+    virtual void set_client_traffic_key(const std::vector<uint8_t>& key) = 0;
     virtual bool do_key_reset() { return false; }
 };
 
@@ -40,7 +40,7 @@ public:
 
 tls_record wrap13(tls_record record);
 tls_record unwrap13(tls_record record);
-ustring make_additional_13(const ustring& record, size_t tag_size);
+std::vector<uint8_t> make_additional_13(const std::vector<uint8_t>& record, size_t tag_size);
 
 } // namespace fbw
 

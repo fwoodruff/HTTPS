@@ -15,11 +15,12 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace fbw {
 
 class HTTP {
-    static std::optional<http_header> try_extract_header(ustring& m_buffer);
+    static std::optional<http_header> try_extract_header(std::deque<uint8_t>& m_buffer);
 
     [[nodiscard]] task<std::optional<http_frame>> try_read_http_request();
     [[nodiscard]] task<stream_result> respond(const std::filesystem::path& rootdirectory, http_frame http_request);
@@ -30,18 +31,22 @@ class HTTP {
    
     [[nodiscard]] task<stream_result> send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end);
 
-    void write_body(ustring request);
+
     [[nodiscard]] task<void> send_error(http_error e);
     
     std::string m_folder;
     bool m_redirect;
     std::unique_ptr<stream> m_stream;
-    ustring m_buffer;
+    std::deque<uint8_t> m_buffer;
     bool handled_request = false;
 public:
     [[nodiscard]] task<void> client();
     HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect);
 };
+
+ssize_t get_file_size(std::filesystem::path filename);
+
+void write_body(std::vector<uint8_t> frame);
 
 } // namespace fbw
  

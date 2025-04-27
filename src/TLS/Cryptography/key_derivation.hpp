@@ -22,37 +22,40 @@ namespace fbw {
 
 struct key_schedule {
 
-    ustring early_secret;
-    ustring resumption_binder_key;
-    ustring external_binder_key;
-    ustring client_early_traffic_secret;
-    ustring early_exporter_master_secret;
-    ustring early_derived_secret;
+    std::vector<uint8_t> early_secret;
+    std::vector<uint8_t> resumption_binder_key;
+    std::vector<uint8_t> external_binder_key;
+    std::vector<uint8_t> client_early_traffic_secret;
+    std::vector<uint8_t> early_exporter_master_secret;
+    std::vector<uint8_t> early_derived_secret;
 
-    ustring handshake_secret;
-    ustring client_handshake_traffic_secret;
-    ustring server_handshake_traffic_secret;
-    ustring handshake_derived_secret;
+    std::vector<uint8_t> handshake_secret;
+    std::vector<uint8_t> client_handshake_traffic_secret;
+    std::vector<uint8_t> server_handshake_traffic_secret;
+    std::vector<uint8_t> handshake_derived_secret;
 
-    ustring master_secret;
-    ustring client_application_traffic_secret;
-    ustring server_application_traffic_secret;
-    ustring exporter_master_secret;
-    ustring resumption_master_secret;
+    std::vector<uint8_t> master_secret;
+    std::vector<uint8_t> client_application_traffic_secret;
+    std::vector<uint8_t> server_application_traffic_secret;
+    std::vector<uint8_t> exporter_master_secret;
+    std::vector<uint8_t> resumption_master_secret;
 };
 
-ustring compute_binder(const hash_base& base, ustring resumption_psk, std::span<const uint8_t> hello_prefix);
-void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, ustring psk, ustring client_hello_hash);
-void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, ustring ecdh, ustring server_hello_hash);
-void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, ustring server_finished_hash);
-void tls13_resumption_key_calc(const hash_base& base, key_schedule& key_sch, ustring client_finished_hash);
+std::vector<uint8_t> compute_binder(const hash_base& base, std::vector<uint8_t> resumption_psk, std::span<const uint8_t> hello_prefix);
+void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> psk, std::vector<uint8_t> client_hello_hash);
+void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> ecdh, std::vector<uint8_t> server_hello_hash);
+void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> server_finished_hash);
+void tls13_resumption_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> client_finished_hash);
 
 template<typename T>
-ustring P_hash(const hash_base& hash_ctor, const T& secret, const ustring& seed, size_t len) {
-    ustring result;
-    ustring A = do_hmac(hash_ctor, secret, seed);
+std::vector<uint8_t> P_hash(const hash_base& hash_ctor, const T& secret, const std::vector<uint8_t>& seed, size_t len) {
+    std::vector<uint8_t> result;
+    std::vector<uint8_t> A = do_hmac(hash_ctor, secret, seed);
     while (result.size() < len) {
-        result.append(do_hmac(hash_ctor, secret, A + seed));
+        std::vector<uint8_t> A_seed = A;
+        A_seed.insert(A_seed.cend(), seed.cbegin(), seed.cend());
+        const auto hm = do_hmac(hash_ctor, secret, A_seed);
+        result.insert(result.cend(), hm.cbegin(), hm.cend());
         A = do_hmac(hash_ctor, secret, A);
     }
     result.resize(len);
@@ -61,15 +64,15 @@ ustring P_hash(const hash_base& hash_ctor, const T& secret, const ustring& seed,
 
 // TLS 1.2 PRF function
 template<typename T, typename U>
-ustring prf(const hash_base& hash_ctor, const T& secret, const std::string& label, const U& seed, size_t len) {
+std::vector<uint8_t> prf(const hash_base& hash_ctor, const T& secret, const std::string& label, const U& seed, size_t len) {
     // Concatenate label and seed
-    ustring label_seed(label.cbegin(), label.cend());
-    label_seed.append(seed.cbegin(), seed.cend());
+    std::vector<uint8_t> label_seed(label.cbegin(), label.cend());
+    label_seed.insert(label_seed.end(), seed.cbegin(), seed.cend());
     return P_hash(hash_ctor, secret, label_seed, len);
 }
 
 template<typename T, typename U>
-ustring hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, size_t length) {
+std::vector<uint8_t> hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, size_t length) {
     const size_t hash_len = hash_ctor.get_hash_size();
     const size_t N = (length + hash_len - 1) / hash_len;
 
@@ -77,10 +80,10 @@ ustring hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, siz
         assert(false);
     }
 
-    ustring okm;
+    std::vector<uint8_t> okm;
     okm.reserve(length); // check this
 
-    ustring previous_block;
+    std::vector<uint8_t> previous_block;
     for (size_t i = 0; i < N; ++i) {
         auto hmac_ctx = hmac(hash_ctor, prk);
         hmac_ctx.update(previous_block);
@@ -94,22 +97,22 @@ ustring hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, siz
 }
 
 template<typename T, typename U>
-ustring hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::string& label, const U& context, size_t length) {
+std::vector<uint8_t> hkdf_expand_label(const hash_base& hash_ctor, const T& prk, const std::string& label, const U& context, size_t length) {
     const std::string full_label = "tls13 " + label;
 
-    ustring info(3, 0);
+    std::vector<uint8_t> info(3, 0);
     checked_bigend_write(length, info, 0, 2);
     info[2] =  full_label.size();
-    info.append(full_label.begin(), full_label.end());
+    info.insert(info.end(), full_label.begin(), full_label.end());
 
     info.push_back(static_cast<uint8_t>(context.size()));
-    info.append(context.begin(), context.end());
+    info.insert(info.end(), context.begin(), context.end());
 
     return hkdf_expand(hash_ctor, prk, info, length);
 }
 
 template<typename T, typename U>
-ustring hkdf_extract(const hash_base& hash_ctor, const T& salt, const U& ikm) {
+std::vector<uint8_t> hkdf_extract(const hash_base& hash_ctor, const T& salt, const U& ikm) {
     return do_hmac(hash_ctor, salt, ikm);
 }
 

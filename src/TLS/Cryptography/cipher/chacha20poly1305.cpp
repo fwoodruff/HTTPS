@@ -245,28 +245,28 @@ chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t
     }
 
     size_t padcipher = ((text.size()+15)/16)*16 - text.size();
-    ustring mac_data;
-    mac_data.append(aad.begin(), aad.end());
-    mac_data.append(padaad, 0);
+    std::vector<uint8_t> mac_data;
+    mac_data.insert(mac_data.end(), aad.begin(), aad.end());
+    mac_data.insert(mac_data.end(), padaad, 0);
 
     if(do_encrypt) {
         chacha20_xorcrypt(key, 1, number_once, text);
         auto ciphertext = std::span<uint8_t>(text);
-        mac_data.append(ciphertext.begin(), ciphertext.end());
+        mac_data.insert(mac_data.end(), ciphertext.begin(), ciphertext.end());
     } else {
-        mac_data.append(text.begin(), text.end());
+        mac_data.insert(mac_data.end(), text.begin(), text.end());
         chacha20_xorcrypt(key, 1, number_once, text);
     }
     
-    mac_data.append(padcipher, 0);
-    mac_data.append(aad_size.begin(), aad_size.end());
-    mac_data.append(cip_size.begin(), cip_size.end());
+    mac_data.insert(mac_data.end(), padcipher, 0);
+    mac_data.insert(mac_data.end(), aad_size.begin(), aad_size.end());
+    mac_data.insert(mac_data.end(), cip_size.begin(), cip_size.end());
 
     auto tag = poly1305_mac(mac_data, otk);
     return tag;
 }
 
-void ChaCha20_Poly1305_tls13::set_server_traffic_key(const ustring& traffic_key) {
+void ChaCha20_Poly1305_tls13::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {
     auto key = hkdf_expand_label(sha256(), traffic_key, "key", std::string(""), KEY_SIZE);
     auto iv = hkdf_expand_label(sha256(), traffic_key, "iv", std::string(""), IV_SIZE);
     std::copy(key.begin(), key.end(), ctx.server_write_key.begin());
@@ -274,7 +274,7 @@ void ChaCha20_Poly1305_tls13::set_server_traffic_key(const ustring& traffic_key)
     ctx.seqno_server = 0;
 }
 
-void ChaCha20_Poly1305_tls13::set_client_traffic_key(const ustring& traffic_key) {
+void ChaCha20_Poly1305_tls13::set_client_traffic_key(const std::vector<uint8_t>& traffic_key) {
     auto key = hkdf_expand_label(sha256(), traffic_key, "key", std::string(""), KEY_SIZE);
     auto iv = hkdf_expand_label(sha256(), traffic_key, "iv", std::string(""), IV_SIZE);
     std::copy(key.begin(), key.end(), ctx.client_write_key.begin());
@@ -282,7 +282,7 @@ void ChaCha20_Poly1305_tls13::set_client_traffic_key(const ustring& traffic_key)
     ctx.seqno_client = 0;
 }
 
-void ChaCha20_Poly1305_tls12::set_key_material_12(ustring material) {
+void ChaCha20_Poly1305_tls12::set_key_material_12(std::vector<uint8_t> material) {
     
     auto it = material.begin();
     std::copy_n(it, ctx.client_write_key.size(), ctx.client_write_key.begin());
@@ -295,12 +295,12 @@ void ChaCha20_Poly1305_tls12::set_key_material_12(ustring material) {
     it += ctx.server_implicit_write_IV.size();
 }
 
-ustring make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_size) {
+std::vector<uint8_t> make_additional_12(tls_record& record, uint64_t sequence_no, size_t tag_size) {
     assert(record.m_contents.size() >= tag_size);
     uint16_t msglen = htons(record.m_contents.size() - tag_size);
-    ustring additional_data(8, 0);
+    std::vector<uint8_t> additional_data(8, 0);
     checked_bigend_write(sequence_no, additional_data, 0, 8);
-    additional_data.append({static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
+    additional_data.insert(additional_data.end(), {static_cast<uint8_t>(record.get_type()), record.get_major_version(), record.get_minor_version()});
     additional_data.resize(13);
     std::memcpy(&additional_data[11], &msglen, 2);
     return additional_data;
@@ -315,17 +315,17 @@ std::array<uint8_t, IV_SIZE> make_number_once(std::array<uint8_t, IV_SIZE> IV, u
     return IV;
 }
 
-ustring ChaCha20_Poly1305_ctx::encrypt(const std::span<uint8_t> text, const ustring& additional_data) {
+std::vector<uint8_t> ChaCha20_Poly1305_ctx::encrypt(const std::span<uint8_t> text, const std::vector<uint8_t>& additional_data) {
     auto number_once = make_number_once(server_implicit_write_IV, seqno_server);
     seqno_server++;
     auto tag = chacha20_aead_crypt(additional_data, server_write_key, number_once, text, true);
-    ustring ciphertext;
-    ciphertext.append(text.begin(), text.end());
-    ciphertext.append(tag.begin(), tag.end());
+    std::vector<uint8_t> ciphertext;
+    ciphertext.insert(ciphertext.end(), text.begin(), text.end());
+    ciphertext.insert(ciphertext.end(), tag.begin(), tag.end());
     return ciphertext;
 }
 
-ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, const ustring& additional_data) {
+std::vector<uint8_t> ChaCha20_Poly1305_ctx::decrypt(std::vector<uint8_t> ciphertext, const std::vector<uint8_t>& additional_data) {
     assert(ciphertext.size() >= TAG_SIZE);
     std::array<uint8_t, TAG_SIZE> tag;
     std::copy(ciphertext.end() - TAG_SIZE, ciphertext.end(), tag.begin());
@@ -344,13 +344,13 @@ ustring ChaCha20_Poly1305_ctx::decrypt(ustring ciphertext, const ustring& additi
 
 tls_record ChaCha20_Poly1305_tls13::protect(tls_record record) noexcept {
     record = wrap13(std::move(record));
-    ustring additional_data = make_additional_13(record.m_contents, TAG_SIZE);
+    std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, TAG_SIZE);
     record.m_contents = ctx.encrypt(record.m_contents, additional_data);
     return record;
 }
 
 tls_record ChaCha20_Poly1305_tls12::protect(tls_record record) noexcept {
-    ustring additional_data = make_additional_12(record, ctx.seqno_server, 0);
+    std::vector<uint8_t> additional_data = make_additional_12(record, ctx.seqno_server, 0);
     record.m_contents = ctx.encrypt(record.m_contents, additional_data);
     return record;
 }
@@ -359,7 +359,7 @@ tls_record ChaCha20_Poly1305_tls13::deprotect(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    ustring additional_data = make_additional_13(record.m_contents, 0);
+    std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, 0);
     record.m_contents = ctx.decrypt(std::move(record.m_contents), additional_data);
     record = unwrap13(std::move(record));
     return record;
@@ -369,7 +369,7 @@ tls_record ChaCha20_Poly1305_tls12::deprotect(tls_record record) {
     if(record.m_contents.size() < TAG_SIZE) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
-    ustring additional_data = make_additional_12(record, ctx.seqno_client, TAG_SIZE);
+    std::vector<uint8_t> additional_data = make_additional_12(record, ctx.seqno_client, TAG_SIZE);
     record.m_contents = ctx.decrypt(record.m_contents, additional_data);
     return record;
 }

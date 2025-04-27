@@ -13,6 +13,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <deque>
 
 #include "../global.hpp"
 #include "stream_base.hpp"
@@ -34,10 +35,9 @@ public:
     tcp_stream(tcp_stream&& other);
     tcp_stream& operator=(tcp_stream&& other);
     
-    [[nodiscard]] task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) override;
-    [[nodiscard]] task<stream_result> write(ustring, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
-    [[nodiscard]] task<stream_result> flush() override;
 
     std::string m_ip;
     uint16_t m_port;

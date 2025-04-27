@@ -32,9 +32,9 @@ HTTP::HTTP(std::unique_ptr<stream> stream, std::string folder, bool redirect) :
 
 // to extract a full HTTP request we first need to extract the request's header but
 // the full header may not be in the buffer yet
-std::optional<http_header> HTTP::try_extract_header(ustring& m_buffer) {
+std::optional<http_header> HTTP::try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
-        throw http_error("413 Payload Too Large");
+        throw http_error(413, "Payload Too Large");
     }
     auto header_bytes = extract(m_buffer, "\r\n\r\n");
     if(header_bytes.empty()) {
@@ -47,17 +47,17 @@ ssize_t http_stoll(std::string number) {
     try {
         return std::stoll(number);
     } catch(std::exception& e) {
-        throw http_error("400 Bad Request");
+        throw http_error(400, "Bad Request");
     }
 }
 
 bool is_body_required(const http_header& header) {
     if(header.protocol != "HTTP/1.1" and header.protocol != "HTTP/1.0" and header.protocol != "HTTP/0.9") {
-        throw http_error("400 Bad Request");
+        throw http_error(400, "Bad Request");
     }
     if (header.verb == "PUT" or header.verb == "DELETE" or header.verb == "CONNECT" or header.verb == "PATCH"
         or header.verb == "TRACE" or header.verb == "OPTIONS") {
-        throw http_error("405 Method Not Allowed");
+        throw http_error(405, "Method Not Allowed");
     }
     if( header.verb == "POST") {
         bool is_transfer_encoded = false;
@@ -66,30 +66,31 @@ bool is_body_required(const http_header& header) {
         }
         bool has_length = header.headers.contains("content-length");
         if(is_transfer_encoded) {
-            throw http_error("400 Bad Request");
+            throw http_error(400, "Bad Request");
         }
         if(!has_length) {
-            throw http_error("411 Length Required");
+            throw http_error(411, "Length Required");
         }
         return true;
     }
     if(header.headers.contains("content-length")) {
-        throw http_error("400 Bad Request");
+        throw http_error(400, "Bad Request");
     }
     return false;
 }
 
 // we may receive a partial HTTP request, in which case we want to leave it in a buffer
 // extracting an HTTP request is required to generate a response
-std::optional<ustring> try_extract_body(ustring& m_buffer, const http_header& header) {
+std::optional<std::vector<uint8_t>> try_extract_body(std::deque<uint8_t>& m_buffer, const http_header& header) {
     auto len = header.headers.at("content-length");
     auto size = http_stoll(len);
     if(size > MAX_BODY_SIZE) {
-        throw http_error("413 Payload Too Large");
+        throw http_error(413, "Payload Too Large");
     }
-    ustring body;
+    std::vector<uint8_t> body;
     if(size != 0) {
-        body += extract(m_buffer, size);
+        auto ext = extract(m_buffer, size);
+        body.insert(body.end(), ext.begin(), ext.end());
         if(body.empty()) {
             return std::nullopt;
         }
@@ -101,7 +102,7 @@ std::optional<ustring> try_extract_body(ustring& m_buffer, const http_header& he
 // leaves the input buffer intact and ready to consume further HTTP requests
 task<std::optional<http_frame>> HTTP::try_read_http_request() {
     std::optional<http_header> header;
-    std::optional<ustring> body;
+    std::optional<std::vector<uint8_t>> body;
     for(;;) {
         header = try_extract_header(m_buffer);
         if(header) {
@@ -151,17 +152,24 @@ task<std::optional<http_frame>> HTTP::try_read_http_request() {
 }
 
 task<void> HTTP::send_error(http_error http_err) {
-    auto error_message = std::string(http_err.what());
-    auto error_html = error_to_html(error_message);
+    std::string error_message = http_err.what();
+
+    std::string code_message;
+    auto it = http_code_map.find(http_err.m_http_code);
+    if(it != http_code_map.end()) {
+        code_message = it->second;
+    }
+    error_message = std::to_string(http_err.m_http_code) + " " + code_message;
+    auto error_html = error_to_html(http_err.m_http_code, code_message);
     std::ostringstream oss;
-    oss << "HTTP/1.1 " << error_message << "\r\n"
+    oss << "HTTP/1.1 " << http_err.m_http_code << " " << code_message << "\r\n"
     << "Connection: close\r\n"
     << "Content-Type: text/html; charset=UTF-8\r\n"
     << "Content-Length: " << error_html.size() << "\r\n"
     << "Server: FredPi/0.1 (Unix) (Raspbian/Linux)\r\n"
     << "\r\n"
     << error_html;
-    ustring output = to_unsigned(oss.str());
+    std::vector<uint8_t> output = to_unsigned(oss.str());
     assert(m_stream);
     auto res = co_await m_stream->write(output, project_options.session_timeout);
     if(res == stream_result::ok) {
@@ -185,11 +193,6 @@ task<void> HTTP::client() {
                 co_return;
             } else {
                 auto res = co_await respond(m_folder, std::move(*http_request));
-                if (res != stream_result::ok) {
-                    co_return;
-                }
-                assert(m_stream);
-                res = co_await m_stream->flush();
                 if (res != stream_result::ok) {
                     co_return;
                 }
@@ -217,7 +220,7 @@ ERROR:
 task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, http_frame http_request) {
     const std::filesystem::path& filename = http_request.header.resource;
     if(http_request.header.protocol != "HTTP/1.0" and http_request.header.protocol != "HTTP/1.1" and http_request.header.protocol != "HTTP/0.9") {
-        throw http_error("505 HTTP Version Not Supported");
+        throw http_error(505, "HTTP Version Not Supported");
     }
     std::string subfolder = project_options.default_subfolder;
     if(auto it = http_request.header.headers.find("host"); it != http_request.header.headers.end()) {
@@ -234,7 +237,7 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
         auto range_str = http_request.header.headers.at("range");
         auto ranges = parse_range_header(range_str);
         if(ranges.empty()) {
-            throw http_error("400 Bad Request");
+            throw http_error(400, "Bad Request");
         }
         if(ranges.size() == 1) {
             co_return co_await send_range(rootdirectory, subfolder, filename, ranges[0], (http_request.header.verb == "GET"));
@@ -244,7 +247,7 @@ task<stream_result> HTTP::respond(const std::filesystem::path& rootdirectory, ht
         write_body(std::move( http_request.body));
         co_return co_await send_file(rootdirectory, subfolder, filename, true);
     } else {
-        throw http_error("405 Method Not Allowed\r\n");
+        throw http_error(405, "Method Not Allowed\r\n");
     }
 }
 
@@ -259,9 +262,9 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 
 // POST requests need some server-dependent program logic
 // Here we just sanitise and write the application/x-www-form-urlencoded data to final.html
-void HTTP::write_body(ustring frame) {
+void write_body(std::vector<uint8_t> frame) {
     auto body = to_signed(std::move(frame));
-    std::ofstream fout(project_options.webpage_folder/"final.html", std::ios_base::app);
+    std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
     body = replace_all(std::move(body), "username=", "username: ");
     body = replace_all(std::move(body), "&password=", ", password: ");
     body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
@@ -275,7 +278,7 @@ void HTTP::write_body(ustring frame) {
 ssize_t get_file_size(std::filesystem::path filename) {
     std::ifstream t(filename, std::ifstream::ate | std::ifstream::binary);
     if(t.fail()) {
-        throw http_error("404 Not Found");
+        throw http_error(404, "Not Found");
     }
     return t.tellg();
 }
@@ -283,7 +286,7 @@ ssize_t get_file_size(std::filesystem::path filename) {
 std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string domain) {
     auto time = std::time(0);
     if(static_cast<std::time_t>(-1) == time) {
-        throw http_error("500 Internal Server Error");
+        throw http_error(500, "Internal Server Error");
     }
     constexpr time_t day = 24*60*60;
     std::unordered_map<std::string, std::string> headers {
@@ -314,7 +317,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
         headers.insert({"Accept-Ranges", "bytes"});
     }
     auto status_code = (file_size != 0)? "200 OK": "206 No Content";
-    ustring header_str = make_header(status_code, headers);
+    std::vector<uint8_t> header_str = make_header(status_code, headers);
     assert(m_stream);
     
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
@@ -326,9 +329,7 @@ task<stream_result> HTTP::send_file(const std::filesystem::path& rootdir, const 
         if(res != stream_result::ok) {
             co_return res;
         }
-        co_return co_await m_stream->flush();
     }
-
     co_return stream_result::ok;
 }
 
@@ -348,7 +349,7 @@ task<stream_result> HTTP::send_range(const std::filesystem::path& rootdirectory,
     headers.insert({"Accept-Ranges", "bytes"});
     headers.insert({"Content-Range", "bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size)});
 
-    ustring header_str = make_header("206 Partial Content", headers);
+    std::vector<uint8_t> header_str = make_header("206 Partial Content", headers);
     assert(m_stream);
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
     if(res != stream_result::ok) {
@@ -393,7 +394,7 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
     auto headers = prepare_headers(content_size, MIME, file_path);
     headers["Content-Type"] = "multipart/byteranges; boundary=" + boundary_string;
     
-    ustring header_str = make_header("206 Partial Content", headers);
+    std::vector<uint8_t> header_str = make_header("206 Partial Content", headers);
     assert(m_stream);
 
     auto res = co_await m_stream->write(header_str, project_options.session_timeout);
@@ -424,9 +425,9 @@ task<stream_result> HTTP::send_multi_ranges(const std::filesystem::path& rootdir
 task<stream_result> HTTP::send_body_slice(const std::filesystem::path& file_path, ssize_t begin, ssize_t end) {
     std::ifstream t(file_path, std::ifstream::binary);
     if(t.fail()) {
-        throw http_error("404 Not Found");
+        throw http_error(404, "Not Found");
     }
-    ustring buffer;
+    std::vector<uint8_t> buffer;
     t.seekg(begin);
     while(t.tellg() != end && !t.eof()) {
         auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - t.tellg()));

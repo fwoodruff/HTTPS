@@ -49,17 +49,16 @@ std::string tls_engine::alpn() {
     return handshake.alpn;
 }
 
-HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, ustring& application_data, const ustring& bio_input, std::optional<milliseconds> app_timeout) {
-    std::optional<ssl_error> error_ssl {};
+HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, std::deque<uint8_t>& application_data, const std::deque<uint8_t>& bio_input, std::optional<milliseconds> app_timeout) {
     try {
         if(m_expected_read_record == HandshakeStage::application_data or m_expected_read_record == HandshakeStage::client_early_data) {
             std::scoped_lock lk { m_write_queue_mut };
-            flush_update_sync(network_output);
+            update_sync(network_output);
         }
         if(m_expected_read_record == HandshakeStage::application_closed) {
             return m_expected_read_record;
         }
-        m_buffer.append(bio_input);
+        m_buffer.insert(m_buffer.end(), bio_input.begin(), bio_input.end() );
         while(auto opt_record = pop_record_from_buffer()) {
             
             assert(opt_record);
@@ -77,8 +76,8 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                     break;
                 case Application:
                     if(m_expected_read_record == HandshakeStage::application_data) {
-                        application_data.append(std::move(record.m_contents));
-                        return m_expected_read_record;
+                        application_data.insert(application_data.end(), record.m_contents.begin(), record.m_contents.end());
+                        continue;
                     }
                     if(m_expected_read_record == HandshakeStage::client_early_data or m_expected_read_record == HandshakeStage::client_handshake_finished) {
                         early_data_received += record.m_contents.size();
@@ -88,7 +87,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                         if(!handshake.zero_rtt) {
                             break;
                         }
-                        application_data.append(std::move(record.m_contents));
+                        application_data.insert(application_data.end(), record.m_contents.begin(), record.m_contents.end());
                         break;
                     }
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
@@ -107,10 +106,10 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                 [[unlikely]] default:
                     throw ssl_error("nonexistent record type", AlertLevel::fatal, AlertDescription::decode_error);
             }
-        }        
+        }
     } catch(const ssl_error& e) {
         std::scoped_lock lk { m_write_queue_mut };
-        server_alert_sync(network_output, error_ssl->m_l, error_ssl->m_d);
+        server_alert_sync(network_output, e.m_l, e.m_d);
         return m_expected_read_record;
     } catch(const std::exception& e) {
         std::scoped_lock lk { m_write_queue_mut };
@@ -120,8 +119,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
     return m_expected_read_record;;
 }
 
-void tls_engine::flush_update_sync(std::queue<packet_timed>& output) {
-    flush_sync_internal(output);
+void tls_engine::update_sync(std::queue<packet_timed>& output) {
     if(auto* ctx = dynamic_cast<cipher_base_tls13*>(cipher_context.get())) {
         if(ctx->do_key_reset()) {
             server_key_update_sync(output);
@@ -137,7 +135,7 @@ bool squeeze_last_chunk(ssize_t additional_data_len) {
             size_t(additional_data_len) * 3 < WRITE_RECORD_SIZE * 2;
 }
 
-stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, ustring data, std::optional<milliseconds> timeout) {
+stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     std::scoped_lock lk { m_write_queue_mut }; // todo: finer-grained locking
     assert(server_cipher_spec);
@@ -147,20 +145,11 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, us
     try {
         size_t idx = 0;
         while(idx < data.size()) {
-            if(write_buffer.empty()) {
-                write_buffer.emplace_back(Application);
-            }
-            auto& active_record = write_buffer.back();
-            size_t write_size = std::min(WRITE_RECORD_SIZE - active_record.m_contents.size(), data.size() - idx);
-            write_buffer.back().m_contents.append( data.begin() + idx, data.begin() + idx + write_size);
+            tls_record record(Application);
+            size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
+            record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
             idx += write_size;
-            if (active_record.m_contents.size() == WRITE_RECORD_SIZE) {
-                write_buffer.emplace_back(Application);
-                if(write_buffer.size() > 2) {
-                    write_record_sync(output, std::move(write_buffer.front()), timeout);
-                    write_buffer.pop_front();
-                }
-            }
+            write_record_sync(output, std::move(record), timeout);
         }
     } catch(const ssl_error& e) {
         error_ssl = e;
@@ -169,34 +158,6 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, us
         server_alert_sync(output, AlertLevel::fatal, AlertDescription::decode_error);
     }
     return stream_result::ok;
-}
-
-stream_result tls_engine::process_net_flush(std::queue<packet_timed>& output) {
-    std::scoped_lock lk { m_write_queue_mut };
-    if(write_connection_done) {
-        return stream_result::closed;
-    }
-    flush_sync_internal(output);
-    return stream_result::ok;
-}
-
-void tls_engine::flush_sync_internal(std::queue<packet_timed>& output) {
-    if(write_buffer.size() >= 2) {
-        if(squeeze_last_chunk(write_buffer.back().m_contents.size())) {
-            auto back = std::move(write_buffer.back());
-            write_buffer.pop_back();
-            write_buffer.back().m_contents.append(back.m_contents);
-        }
-    }
-    while(!write_buffer.empty()) {
-        auto& record = write_buffer.front();
-        if(record.m_contents.empty()) {
-            write_buffer.pop_front();
-            continue;
-        }
-        write_record_sync(output, std::move(record), project_options.session_timeout);
-        write_buffer.pop_front();
-    }
 }
 
 // When the server encounters an error, it sends that error here
@@ -275,9 +236,9 @@ void tls_engine::write_record_sync(std::queue<packet_timed>& output, tls_record 
     output.push({record.serialise(), timeout});
 }
 
-std::vector<ustring> extract_handshake_messages(tls_record handshake_record, ustring& fragment) {
-    std::vector<ustring> messages;
-    fragment.append(handshake_record.m_contents.begin(), handshake_record.m_contents.end());
+std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshake_record, std::vector<uint8_t>& fragment) {
+    std::vector<std::vector<uint8_t>> messages;
+    fragment.insert(fragment.end(), handshake_record.m_contents.begin(), handshake_record.m_contents.end());
 
     size_t offset = 0;
     while(offset + 4 <= fragment.size()) {
@@ -302,7 +263,7 @@ void tls_engine::client_handshake_record_sync(std::queue<packet_timed>& output, 
     }
 }
 
-void tls_engine::client_handshake_message_sync(std::queue<packet_timed>& output, const ustring& handshake_message) {
+void tls_engine::client_handshake_message_sync(std::queue<packet_timed>& output, const std::vector<uint8_t>& handshake_message) {
     switch (static_cast<HandshakeType>(handshake_message.at(0))) {
         [[unlikely]] case HandshakeType::hello_request:
             throw ssl_error("client should not send hello request", AlertLevel::fatal, AlertDescription::unexpected_message);
@@ -343,7 +304,7 @@ void tls_engine::client_handshake_message_sync(std::queue<packet_timed>& output,
     return;
 }
 
-void tls_engine::client_hello(const ustring& handshake_message) {
+void tls_engine::client_hello(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_hello) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -389,7 +350,7 @@ void tls_engine::server_response_to_hello_sync(std::queue<packet_timed>& output)
     return;
 }
 
-KeyUpdateRequest tls_engine::client_key_update_received(const ustring& handshake_message) {
+KeyUpdateRequest tls_engine::client_key_update_received(const std::vector<uint8_t>& handshake_message) {
     if(tls_protocol_version != TLS13) {
         throw ssl_error("key updates supported for TLS 1.3 only", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -463,7 +424,7 @@ void tls_engine::server_handshake_finished13(std::queue<packet_timed>& output) {
     tls13_context.set_server_traffic_key(handshake.tls13_key_schedule.server_application_traffic_secret);
 }
 
-void tls_engine::client_handshake_finished13(const ustring& handshake_message) {
+void tls_engine::client_handshake_finished13(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -478,7 +439,7 @@ static std::atomic<uint64_t> global_number_once = 1;
 
 void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
     const auto number_once = global_number_once.fetch_add(1, std::memory_order_relaxed);
-    ustring number_once_bytes(8, 0);
+    std::vector<uint8_t> number_once_bytes(8, 0);
     checked_bigend_write(number_once, number_once_bytes, 0, 8);
     assert(handshake.hash_ctor != nullptr);
     const auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", number_once_bytes, handshake.hash_ctor->get_hash_size());
@@ -520,7 +481,7 @@ void tls_engine::server_hello_done(std::queue<packet_timed>& output) {
     write_record_sync(output, record, project_options.handshake_timeout);
 }
 
-void tls_engine::client_key_exchange(ustring handshake_message) {
+void tls_engine::client_key_exchange(std::vector<uint8_t> handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_key_exchange) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -531,7 +492,7 @@ void tls_engine::client_key_exchange(ustring handshake_message) {
     m_expected_read_record = HandshakeStage::client_change_cipher_spec;
 }
 
-void tls_engine::client_end_of_early_data(ustring handshake_message) {
+void tls_engine::client_end_of_early_data(std::vector<uint8_t> handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_early_data) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -560,7 +521,7 @@ void tls_engine::client_change_cipher_spec( tls_record record) {
     m_expected_read_record = HandshakeStage::client_handshake_finished;
 }
 
-void tls_engine::client_handshake_finished12(const ustring& handshake_message) {
+void tls_engine::client_handshake_finished12(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -586,7 +547,7 @@ void tls_engine::server_handshake_finished12(std::queue<packet_timed>& output) {
     auto handshake_hash = handshake.handshake_hasher->hash();
     assert(handshake_hash.size() == 32);
     
-    ustring server_finished = prf(*handshake.hash_ctor, handshake.tls12_master_secret, "server finished", handshake_hash, 12);
+    std::vector<uint8_t> server_finished = prf(*handshake.hash_ctor, handshake.tls12_master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
     out.end_size_header();
@@ -642,11 +603,14 @@ std::pair<bool, tls_record> tls_engine::client_heartbeat_record(tls_record recor
         return { true, {}};
     }
 
-    auto length_and_payload = heartbeat_message.substr(1, payload_length + 2);
+    std::vector<uint8_t> length_and_payload(heartbeat_message.begin() + 1,
+                                            heartbeat_message.begin() + 3 + payload_length);
+
+    
 
     tls_record heartbeat_record( Heartbeat);
     heartbeat_record.m_contents = { 0x02 };
-    heartbeat_record.m_contents.append( length_and_payload );
+    heartbeat_record.m_contents.insert(heartbeat_record.m_contents.end(), length_and_payload.begin(), length_and_payload.end());
     return {false, heartbeat_record} ;
 }
 
@@ -674,12 +638,11 @@ void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
 // applications call this when graceful not abrupt closing of a connection is desired
 void tls_engine::process_close_notify(std::queue<packet_timed>& output) {
     std::scoped_lock lk { m_write_queue_mut };
-    flush_sync_internal(output);
     server_alert_sync(output, AlertLevel::warning, AlertDescription::close_notify);
 }
 
-stream_result tls_engine::close_notify_finish(const ustring& bio_input) {
-    m_buffer.append(bio_input);
+stream_result tls_engine::close_notify_finish(const std::deque<uint8_t>& bio_input) {
+    m_buffer.insert(m_buffer.end(), bio_input.begin(), bio_input.end());
     auto opt_record = pop_record_from_buffer();
     if(!opt_record) {
         return stream_result::awaiting;

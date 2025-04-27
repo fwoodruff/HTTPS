@@ -21,7 +21,6 @@
 
 namespace fbw {
 
-using ustring = std::basic_string<uint8_t>;
 
 constexpr size_t TLS_RECORD_SIZE = (1u << 14);
 constexpr size_t TLS_EXPANSION_MAX = 2048;
@@ -93,13 +92,13 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     }
 }
 
-[[nodiscard("returns unsigned string")]] inline ustring to_unsigned(std::string s) {
-    ustring out;
-    out.append(s.cbegin(), s.cend());
+[[nodiscard("returns unsigned string")]] inline std::vector<uint8_t> to_unsigned(std::string s) {
+    std::vector<uint8_t> out;
+    out.assign(s.cbegin(), s.cend());
     return out;
 }
 
-[[nodiscard("returns signed string")]] inline std::string to_signed(ustring s) {
+[[nodiscard("returns signed string")]] inline std::string to_signed(std::vector<uint8_t> s) {
     std::string out;
     out.append(s.cbegin(), s.cend());
     return out;

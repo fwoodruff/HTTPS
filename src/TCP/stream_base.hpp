@@ -15,7 +15,7 @@
 #include "../Runtime/task.hpp"
 #include <chrono>
 #include <optional>
-
+#include <deque>
 
 
 namespace fbw {
@@ -43,9 +43,8 @@ class stream {
 public:
     stream() = default;
     // returns true if stream is still open on read
-    [[nodiscard]] virtual task<stream_result> read_append(ustring&, std::optional<milliseconds> timeout) = 0;
-    [[nodiscard]] virtual task<stream_result> write(ustring, std::optional<milliseconds> timeout) = 0;
-    [[nodiscard]] virtual task<stream_result> flush() = 0;
+    [[nodiscard]] virtual task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) = 0;
+    [[nodiscard]] virtual task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) = 0;
 
     [[nodiscard]] virtual task<void> close_notify() = 0;
     virtual ~stream() noexcept = default;

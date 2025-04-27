@@ -4,19 +4,15 @@
 #include "TCP/listener.hpp"
 #include "HTTP/HTTP1_1/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
-#include "HTTP/HTTP1_1/HTTP.hpp"
-#include "HTTP/HTTP2/h2proto.hpp"
 #include "global.hpp"
 #include "HTTP/HTTP1_1/mimemap.hpp"
-#include "HTTP/HTTP1_1/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
-#include "HTTP/HTTP1_1/string_utils.hpp"
 #include "HTTP/HTTP1_1/string_utils.hpp"
 #include "limiter.hpp"
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
-#include "TLS/session_ticket.hpp"
-#include "TLS/Cryptography/one_way/keccak.hpp"
+#include "HTTP/HTTP1_new/h1stream.hpp"
+#include "Application/http_handler.hpp"
 
 #include <memory>
 #include <fstream>
@@ -29,16 +25,20 @@
 // Wishlist:
 
 // Features:
-//      HTTP/2
 //      HTTP webroot for ACME
 //      HRR cookies
+//      HTTP/2 timeouts
+//      HTTP/2 error handling
+//      HTTP/1.1 move to shared interface
 
 // Correctness:
 //      Check that poly1305 is constant-time
 //      Points at infinity?
-//      ustring is not UB but can be
+//      std::vector<uint8_t> is not UB but can be
 //      Check ALPN in session tickets
 //      g++-14-arm-linux-gnueabihf is only on trixie
+//      use std::exchange instead of std::move
+//      confirm no reference cycles that keep h2 connections alive
 
 // Syntax:
 //      Add 'explict' to constructors
@@ -65,14 +65,56 @@
 //      TLS Client
 //      Russian ciphers
 
+
+// Post and range request handling for http/2 (video?)
+// something going wrong with HPACK for range requests
+// something maybe going wrong with 'new' HTTP/1.1 POST requests
+
+// the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
+// and send the server settings straight after the client preface (which isn't a frame)
+
+// tls record serialisation could be simpler
+
+// check multithreading still works
+// check all ciphers still work
+// check if key rotation still works
+
+// for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
+// go through RFC 9113 ensuring correct handling of everything
+
+// write and use a 'safe add' function
+// rename stream_result enum to: ok, awaiting, timeout, fail
+
+// better logic for deciding if a header should be indexed
+
+// implement http/2 graceful server shutdown
+
+// don't need multiple async layers for TLS + HTTP/2, combine
+
+// handle client sending HTTP request on HTTPS port
+
+// check whether content-length is essential and debug accordingly
+
+// pass everything by span
+
+// HTTP 406 content negotiation
+
+// request_headers struct rather than a vector.
+
+// buffered writes
+
+// POST request handling
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
     try {
         if(alpn == "http/1.1") {
             fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
             co_await http_handler.client();
+            // todo: move across to this so that HTTP/2 and HTTP/1.1 share an interface
+            // auto http_handler = std::make_shared<fbw::HTTP1>( std::move(client_stream), fbw::application_handler);
+            // co_await http_handler->client();
         } if(alpn == "h2") {
-            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), fbw::project_options.webpage_folder );
+            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), fbw::application_handler);
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {

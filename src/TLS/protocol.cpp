@@ -37,12 +37,12 @@ using enum ContentType;
 
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
-task<stream_result> TLS::read_append_common(ustring& data, std::optional<milliseconds> timeout, bool return_early) {
+task<stream_result> TLS::read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early) {
     guard g { &m_async_read_mut };
     co_await m_async_read_mut.lock();
     auto initial_size = data.size();
     if(!early_data_buffer.empty()) {
-        data.append(std::move(early_data_buffer));
+        data.insert(data.end(), early_data_buffer.begin(), early_data_buffer.end());
         early_data_buffer.clear();
     }
     for(;;) {
@@ -52,7 +52,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return stream_result::closed;
         }
-        ustring input_data;
+        std::deque<uint8_t> input_data;
         auto read_timeout = std::optional(project_options.handshake_timeout);
         if(m_engine.m_expected_read_record == HandshakeStage::application_data) {
             read_timeout = timeout;
@@ -60,13 +60,7 @@ task<stream_result> TLS::read_append_common(ustring& data, std::optional<millise
         if(m_engine.m_expected_read_record > HandshakeStage::client_early_data and return_early) {
             read_timeout = timeout;
         }
-        if(alpn() == "h2") {
-            std::cout << "TCP read" << std::endl;
-        }
         auto read_res = co_await m_client->read_append(input_data, read_timeout);
-        if(alpn() == "h2") {
-            std::cout << "TCP read done" << std::endl;
-        }
         if(read_res != stream_result::ok) {
             co_return read_res;
         }
@@ -88,7 +82,7 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
         if(m_engine.m_expected_read_record > stage) {
             co_return stream_result::ok;
         }
-        ustring input_data;
+        std::deque<uint8_t> input_data;
         auto read_res = co_await m_client->read_append(input_data, project_options.handshake_timeout);
         if(read_res != stream_result::ok) {
             co_return read_res;
@@ -101,11 +95,11 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
     }
 }
 
-task<stream_result> TLS::read_append(ustring& data, std::optional<milliseconds> timeout) {
+task<stream_result> TLS::read_append(std::deque<uint8_t>& data, std::optional<milliseconds> timeout) {
     return read_append_common(data, timeout, false);
 }
 
-task<stream_result> TLS::read_append_early_data(ustring& data, std::optional<milliseconds> timeout) {
+task<stream_result> TLS::read_append_early_data(std::deque<uint8_t>& data, std::optional<milliseconds> timeout) {
     return read_append_common(data, timeout, true);
 }
 
@@ -122,9 +116,8 @@ std::string TLS::alpn() {
 }
 
 // application code calls this to send data to the client
-task<stream_result> TLS::write(ustring data, std::optional<milliseconds> timeout) {
+task<stream_result> TLS::write(std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
     m_engine.process_net_write(output, data, timeout);
-    m_engine.process_net_flush(output); // remove this
     co_return co_await net_write_all();
 }
 
@@ -152,12 +145,6 @@ task<stream_result> TLS::net_write_all() {
     co_return stream_result::ok;
 }
 
-// application data is sent on a buffered stream so the pattern of record sizes reveals much less
-task<stream_result> TLS::flush() {
-    m_engine.process_net_flush(output);
-    co_return co_await net_write_all();
-}
-
 // applications call this when graceful not abrupt closing of a connection is desired
 task<void> TLS::close_notify() {
     m_engine.process_close_notify(output);
@@ -168,7 +155,7 @@ task<void> TLS::close_notify() {
     guard g { &m_async_read_mut };
     co_await m_async_read_mut.lock();
     do {
-        ustring input_data;
+        std::deque<uint8_t> input_data;
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return;
         }
@@ -189,4 +176,19 @@ task<void> TLS::close_notify() {
     } while(false);
 }
 
+std::deque<uint8_t> buffer::write(const std::span<const uint8_t> data) {
+    m_buffer.insert(m_buffer.end(), data.begin(), data.end());
+    if(m_buffer.size() >= BUFFER_SIZE) {
+        std::deque<uint8_t> out;
+        out.assign(m_buffer.begin(), m_buffer.begin() + BUFFER_SIZE);
+        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + BUFFER_SIZE);
+        return out;
+    }
+    return {};
+}
+
+std::deque<uint8_t> buffer::flush() {
+    return std::exchange(m_buffer, {});
+}
+    
 }// namespace fbw

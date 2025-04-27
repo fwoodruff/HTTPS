@@ -109,7 +109,7 @@ enum class CertChainType : uint8_t {
     pkipath = 1
 };
 struct URLAndHash{
-    ustring url;
+    std::vector<uint8_t> url;
     // uint8_t padding;
     std::array<uint8_t, 20> SHA1Hash;
 };
@@ -160,8 +160,8 @@ enum class IdentifierType : uint8_t {
 };
 
 struct OCSPStatusRequest {
-    std::vector<ustring> responderID;
-    ustring extensions;
+    std::vector<std::vector<uint8_t>> responderID;
+    std::vector<uint8_t> extensions;
 };
 
 enum class CertificateStatusType : uint8_t {
@@ -175,7 +175,7 @@ struct CertificateStatusRequest {
 
 struct CertificateStatus {
     CertificateStatusType status_type;
-    ustring response;
+    std::vector<uint8_t> response;
 };
 
 enum class AlertDescription : uint8_t {

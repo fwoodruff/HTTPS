@@ -22,12 +22,12 @@ namespace fbw::aes {
 struct AES_GCM_SHA2_ctx {
     roundkey client_write_round_keys;
     roundkey server_write_round_keys;
-    ustring client_implicit_write_IV;
-    ustring server_implicit_write_IV;
+    std::vector<uint8_t> client_implicit_write_IV;
+    std::vector<uint8_t> server_implicit_write_IV;
     uint64_t seqno_server = 0;
     uint64_t seqno_client = 0;
-    void set_server_key(const ustring& key, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
-    void set_client_key(const ustring& key, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
+    void set_server_key(const std::vector<uint8_t>& key, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
+    void set_client_key(const std::vector<uint8_t>& key, size_t key_size, size_t iv_size, const hash_base& hash_ctor);
 };
 
 class AES_128_GCM_SHA256 : public cipher_base_tls12 {
@@ -37,7 +37,7 @@ class AES_128_GCM_SHA256 : public cipher_base_tls12 {
     AES_GCM_SHA2_ctx ctx;
 public:
     AES_128_GCM_SHA256() = default;
-    void set_key_material_12(ustring material) override;
+    void set_key_material_12(std::vector<uint8_t> material) override;
     tls_record protect(tls_record record) noexcept override;
     tls_record deprotect(tls_record record) override;
 };
@@ -49,8 +49,8 @@ class AES_128_GCM_SHA256_tls13 : public cipher_base_tls13 {
     AES_GCM_SHA2_ctx ctx;
 public:
     AES_128_GCM_SHA256_tls13() = default;
-    void set_server_traffic_key(const ustring& key) override;
-    void set_client_traffic_key(const ustring& key) override;
+    void set_server_traffic_key(const std::vector<uint8_t>& key) override;
+    void set_client_traffic_key(const std::vector<uint8_t>& key) override;
     bool do_key_reset() override;
     tls_record protect(tls_record record) noexcept override;
     tls_record deprotect(tls_record record) override;
@@ -63,8 +63,8 @@ class AES_256_GCM_SHA384 : public cipher_base_tls13 {
     AES_GCM_SHA2_ctx ctx;
 public:
     AES_256_GCM_SHA384() = default;
-    void set_server_traffic_key(const ustring& key) override;
-    void set_client_traffic_key(const ustring& key) override;
+    void set_server_traffic_key(const std::vector<uint8_t>& key) override;
+    void set_client_traffic_key(const std::vector<uint8_t>& key) override;
     bool do_key_reset() override;
     tls_record protect(tls_record record) noexcept override;
     tls_record deprotect(tls_record record) override;

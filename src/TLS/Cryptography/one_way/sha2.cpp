@@ -136,9 +136,9 @@ void sha2_transform(std::array<RADIX, 8 >& state, const std::array<uint8_t, BLOC
 }
 
 template<typename RADIX, size_t BLOCK_SIZE, size_t HASH_SIZE, size_t COUNTER_SIZE, size_t INTERNAL_STATE_SIZE>
-ustring hash_impl(std::array<uint8_t, BLOCK_SIZE> data, std::array<RADIX, 8> state, uint64_t bitlen, size_t datalen) {
+std::vector<uint8_t> hash_impl(std::array<uint8_t, BLOCK_SIZE> data, std::array<RADIX, 8> state, uint64_t bitlen, size_t datalen) {
     bitlen += datalen * CHAR_BIT;
-    ustring hash;
+    std::vector<uint8_t> hash;
     hash.resize(HASH_SIZE);
     data[datalen] = 0x80;
     datalen++;
@@ -254,11 +254,11 @@ sha256::sha256() noexcept  : datalen(0),  bitlen(0), m_data() {
     state = state0;
 }
 
-ustring sha384::hash() const {
+std::vector<uint8_t> sha384::hash() const {
     return hash_impl<uint64_t, 128, 48, 16, 80>(m_data, state, bitlen, datalen);
 }
 
-ustring sha256::hash() const {
+std::vector<uint8_t> sha256::hash() const {
     return hash_impl<uint32_t, 64, 32, 8, 64>(m_data, state, bitlen, datalen);
 }
 

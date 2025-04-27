@@ -22,36 +22,33 @@
 
 namespace fbw {
 
-struct setting_values {
-    uint32_t header_table_size = SETTINGS_HEADER_TABLE_SIZE;
-    uint32_t max_concurrent_streams = INITIAL_MAX_CONCURRENT_STREAMS;
-    uint32_t initial_window_size = INITIAL_WINDOW_SIZE;
-    uint32_t max_frame_size = MINIMUM_MAX_FRAME_SIZE;
-    uint32_t max_header_size = HEADER_LIST_SIZE;
-    bool push_promise_enabled = false;
-};
-
-enum stream_frame_state {
-    headers_expected,
-    headers_cont_expected,
-    data_expected,
-    trailer_expected,
-    trailer_cont_expected,
-    done,
-};
 
 struct stream_ctx {
     // connect these buffers to the application layer
     std::deque<uint8_t> inbox; // data for reading
     std::deque<uint8_t> outbox; // data for writing
-    stream_frame_state client_sent_headers = headers_expected;
-    bool server_data_done = false;
+    bool application_server_data_done = false;
+    std::vector<uint8_t> header_block;
     std::vector<entry_t> m_received_headers;
     std::vector<entry_t> m_received_trailers;
     uint32_t m_stream_id;
     int32_t stream_current_window_remaining; // how much data we can send
     int32_t stream_current_receive_window_remaining; // how much data we can receive
+    int32_t bytes_consumed_since_last_stream_window_update = 0;
+    bool sent_rst = false;
     stream_state strm_state = stream_state::idle;
+};
+
+enum class wake_action {
+    new_stream,
+    wake_read,
+    wake_write,
+    wake_any
+};
+
+struct id_new {
+    uint32_t stream_id;
+    wake_action m_action;
 };
 
 class h2_context {
@@ -64,16 +61,11 @@ public:
     // enqueues errors and acks to outbox
     // returns the stream that can now make progress, and whether it is new
     // returns 0 for change at connection level
-    std::optional<uint32_t> receive_peer_frame(const h2frame& frame);
+    std::vector<id_new> receive_peer_frame(const h2frame& frame);
 
-    // receive data from stream (application)
-    // write full amount to stream buffer
-    // assesses windowing allowances
-    // updates internal state
-    // enqueues sendable to outbox
-    // returns true if WINDOW_FRAME receipt required to continue
-    bool buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
-    bool buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id);
+    // todo: nonblocking write that only writes the allowed amount.
+    stream_result buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
+    bool buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id, bool end = false);
 
     // read data into the supplied span
     // return std::nullopt if we need to block
@@ -82,32 +74,33 @@ public:
     std::optional<std::pair<size_t, bool>> read_data(const std::span<uint8_t> app_data, uint32_t stream_id);
     std::vector<entry_t> get_headers(uint32_t stream_id);
 
-    // todo: remove need for these functions?
-    bool can_resume(uint32_t stream_id, bool as_reader);
-    stream_result is_closed(uint32_t stream_id);
+    stream_result stream_status(uint32_t stream_id);
 
     void close_connection();
+    void send_initial_settings();
     
     // returns bytes to send and whether that's the end of data 
-    std::pair<ustring, bool> extract_outbox(); 
-    
+    std::pair<std::deque<std::vector<uint8_t>>, bool> extract_outbox();
+
 private:
-    std::optional<uint32_t> receive_data_frame(const h2_data& frame);
-    std::optional<uint32_t> receive_headers_frame(const h2_headers& frame);
-    std::optional<uint32_t> receive_continuation_frame(const h2_continuation& frame);
-    uint32_t receive_rst_stream(const h2_rst_stream& frame);
-    void receive_peer_settings(const h2_settings& frame);
-    std::optional<uint32_t> receive_window_frame(const h2_window_update& frame);
+    std::vector<id_new> receive_data_frame(const h2_data& frame);
+    std::vector<id_new> receive_headers_frame(const h2_headers& frame);
+    std::vector<id_new> receive_continuation_frame(const h2_continuation& frame);
+    std::vector<id_new> receive_rst_stream(const h2_rst_stream& frame);
+    std::vector<id_new> receive_peer_settings(const h2_settings& frame);
+    std::vector<id_new> receive_window_frame(const h2_window_update& frame);
     void raise_stream_error(h2_code, uint32_t stream_id);
     void enqueue_goaway(h2_code code, std::string message);
-    bool stage_buffer(stream_ctx& stream); // returns suspend
+    stream_result stage_buffer(stream_ctx& stream); // returns suspend
+
+    static constexpr int32_t WINDOW_UPDATE_INCREMENT_THRESHOLD = 32768;
 
     // todo:
     // after stage_buffer we always check if the stream needs to be deleted.
     // receiving a connection window frame we need to run a lot of stage buffer calls
 
     hpack m_hpack;
-    std::deque<uint8_t> outbox; // send to network
+    std::deque<std::vector<uint8_t>> outbox; // send to network
     std::unordered_map<uint32_t, stream_ctx> stream_ctx_map; // processed by streams
     uint32_t last_server_stream_id;
     uint32_t last_client_stream_id;
@@ -120,6 +113,10 @@ private:
     bool go_away_sent = false;
     bool go_away_received = false; // if true, don't open new streams in inbox
     bool initial_settings_done = false;
+
+    uint32_t headers_partially_sent_stream_id = 0;
+
+    uint32_t bytes_consumed_since_last_connection_window_update = 0;
 };
 
 }

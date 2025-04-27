@@ -14,6 +14,14 @@ h2_stream::h2_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) :
     m_connection(connection), m_stream_id(stream_id)
 {}
 
+bool h2_stream::is_done() {
+    auto conn = m_connection.lock();
+    if(!conn) {
+        return true;
+    }
+    return conn->h2_ctx.stream_status(m_stream_id) == stream_result::closed;
+}
+
 task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers) {
     auto conn = m_connection.lock();
     if(!conn) {
@@ -32,27 +40,31 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
         co_return stream_result::closed;
     }
     assert(conn);
-    auto suspend = conn->h2_ctx.buffer_data(data, m_stream_id, end);
+    if(conn->h2_ctx.stream_status(m_stream_id) == stream_result::closed) {
+        co_return stream_result::closed;
+    }
+    auto stream_resu = conn->h2_ctx.buffer_data(data, m_stream_id, end);
     auto res = co_await conn->send_outbox();
     if(res != stream_result::ok) {
         co_return res;
     }
-    if(suspend) {
+    if(stream_resu == stream_result::awaiting) {
         auto connection_alive = co_await h2writeable(m_connection, m_stream_id);
-        if(connection_alive != stream_result::ok) {
-            co_return connection_alive;
-        }
+        co_return connection_alive;
+    } else if (stream_resu == stream_result::ok) {
+        auto connection_alive = co_await unless_blocking_read(m_connection);
+        co_return connection_alive;
     }
-    co_return stream_result::ok;
+    co_return stream_resu;
 }
 
-task<std::pair<stream_result, bool>> h2_stream::append_http_data(ustring& buffer) {
+task<std::pair<stream_result, bool>> h2_stream::append_http_data(std::deque<uint8_t>& buffer) {
     std::array<uint8_t, 4096> subbuffer{};
     auto [bytes, data_done] = co_await h2readable(m_connection, m_stream_id, subbuffer);
     if(bytes == 0) {
         co_return {stream_result::closed, false};
     }
-    buffer.append(subbuffer.begin(), subbuffer.begin() + bytes);
+    buffer.insert(buffer.end(), subbuffer.begin(), subbuffer.begin() + bytes);
 
     // push window updates
     auto conn = m_connection.lock();
@@ -72,7 +84,9 @@ std::vector<entry_t> h2_stream::get_headers() {
         return {};
     }
     auto& cx = connection->h2_ctx;
-    return cx.get_headers(m_stream_id);
+    auto headers = cx.get_headers(m_stream_id);
+    headers.push_back({":protocol", "h2"}); // todo: use a request headers struct
+    return headers;
 }
 
 }

@@ -101,8 +101,7 @@ std::string get_MIME(std::string extension) {
     try {
         return MIMEmap.at(extension);
     } catch(const std::logic_error& e) {
-
-        throw http_error("415 Unsupported Media Type");
+        throw http_error(415, "Unsupported Media Type");
     } catch(...) {
         assert(false);
     }
@@ -111,10 +110,15 @@ std::string get_MIME(std::string extension) {
 // that icon at the top of the browser tab has media type image/webp
 // otherwise we look up the MIME type
 std::string Mime_from_file(const std::filesystem::path &filename) {
-    if(filename == "/favicon.ico") {
+    if(filename.filename() == "favicon.ico") {
         return "image/webp";
     } else {
-        return get_MIME(extension_from_path(filename));
+        auto ext = extension_from_path(filename);
+        if(ext == "jpeg") {
+            return "image/jpeg";
+        }
+        auto ret = get_MIME(ext);
+        return ret;
     }
 }
 

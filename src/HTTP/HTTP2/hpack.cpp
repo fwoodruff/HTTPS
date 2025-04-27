@@ -9,25 +9,27 @@
 #include "h2frame.hpp"
 #include "h2proto.hpp"
 
+#include "../HTTP1_1/string_utils.hpp"
+
 namespace fbw {
 
 extern const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode;
 
-uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits);
-ustring encode_integer(uint32_t value, uint8_t prefix_bits);
+uint32_t decode_integer(const std::vector<uint8_t>& encoded, size_t& offset, uint8_t prefix_bits);
+std::vector<uint8_t> encode_integer(uint32_t value, uint8_t prefix_bits);
 
 std::string decode_huffman(std::span<const uint8_t> encoded_str);
-ustring encode_string_literal(std::string str);
-ustring encode_string_efficient(std::string str);
+std::vector<uint8_t> encode_string_literal(std::string str);
+std::vector<uint8_t> encode_string_efficient(std::string str);
 
-ustring indexed_field(uint32_t idx);
-ustring indexed_name_new_value(uint32_t idx, std::string value);
-ustring new_name_new_value(std::string name, std::string value);
-ustring indexed_name_new_value_without_dynamic(uint32_t idx, std::string value);
-ustring new_name_new_value_without_dynamic(std::string name, std::string value);
-ustring indexed_name_new_value_never_dynamic(uint32_t idx, std::string value);
-ustring new_name_new_value_never_dynamic(std::string name, std::string value);
-ustring dynamic_table_size_update(size_t size);
+std::vector<uint8_t> indexed_field(uint32_t idx);
+std::vector<uint8_t> indexed_name_new_value(uint32_t idx, std::string value);
+std::vector<uint8_t> new_name_new_value(std::string name, std::string value);
+std::vector<uint8_t> indexed_name_new_value_without_dynamic(uint32_t idx, std::string value);
+std::vector<uint8_t> new_name_new_value_without_dynamic(std::string name, std::string value);
+std::vector<uint8_t> indexed_name_new_value_never_dynamic(uint32_t idx, std::string value);
+std::vector<uint8_t> new_name_new_value_never_dynamic(std::string name, std::string value);
+std::vector<uint8_t> dynamic_table_size_update(size_t size);
 
 constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
     hpack_huffman_bit_pattern{0x1ff8, 13},  {0x7fffd8, 23}, {0xfffffe2, 28}, {0xfffffe3, 28},
@@ -96,60 +98,84 @@ constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
     {0x7ffffee, 27}, {0x7ffffef, 27}, {0x7fffff0, 27}, {0x3ffffee, 26} // , {3fffffff, 30} implicit
 };
 
-ustring hpack::generate_field_block_fragment(const std::vector<entry_t>& headers) {
-    ustring encoded_fragment;
+std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& headers) {
+    std::vector<uint8_t> encoded_block;
 
     if(encoder_max_capacity != m_encode_table.m_capacity) {
         auto update = dynamic_table_size_update(encoder_max_capacity);
-        encoded_fragment.append(update);
+        encoded_block.insert(encoded_block.end(), update.begin(), update.end());
         m_encode_table.set_capacity(encoder_max_capacity);
     }
-    for (const auto& header : headers) {
+    for (auto header : headers) {
+        header.do_index = do_indexing::without; // todo: overly pessimistic
+        header.name = to_lower(header.name);
         auto index = m_encode_table.index(header);
         if (index != 0) {
-            encoded_fragment.append(indexed_field(index));
+            auto field = indexed_field(index);
+            encoded_block.insert(encoded_block.end(), field.begin(), field.end());
         } else {
-            auto name_index = m_encode_table.index({header.name, ""});
+            auto name_index = m_encode_table.name_index(header.name);
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
-                    encoded_fragment.append(indexed_name_new_value_never_dynamic(name_index, header.value));
+                    auto field = indexed_name_new_value_never_dynamic(name_index, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else if (header.do_index == do_indexing::without) {
-                    encoded_fragment.append(indexed_name_new_value_without_dynamic(name_index, header.value));
+                    auto field = indexed_name_new_value_without_dynamic(name_index, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else {
-                    encoded_fragment.append(indexed_name_new_value(name_index, header.value));
+                    auto field = indexed_name_new_value(name_index, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                     m_encode_table.add_entry({header.name, header.value});
                 }
             } else {
                 if(header.do_index == do_indexing::never) {
-                    encoded_fragment.append(new_name_new_value_never_dynamic(header.name, header.value));
+                    auto field = new_name_new_value_never_dynamic(header.name, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else if (header.do_index == do_indexing::without) {
-                    encoded_fragment.append(new_name_new_value_without_dynamic(header.name, header.value));
+                    auto field = new_name_new_value_without_dynamic(header.name, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                 } else {
-                    encoded_fragment.append(new_name_new_value(header.name, header.value));
+                    auto field = new_name_new_value(header.name, header.value);
+                    encoded_block.insert(encoded_block.end(), field.begin(), field.end());
                     m_encode_table.add_entry({header.name, header.value});
                 }
             }
         }
     }
-    return encoded_fragment;
+    return encoded_block;
 }
 
-table::table() : next_idx(static_entries) {}
+table::table() : next_idx(static_entries + 1) {}
 
-size_t table::index(const entry_t& entry) {
+size_t table::index(entry_t entry) {
     for(size_t i = 0; i < s_static_table.size(); i++) {
         auto& ent = s_static_table[i];
         if(ent.name == entry.name and ent.value == entry.value) {
             return i + 1;
         }
     }
-    auto it = lookup_idx.find(entry);
-    if(it == lookup_idx.end()) {
-        return 0;
+    for(size_t i = 0; i < entries_ordered.size(); i++) { // todo: optimise
+        auto& ent = entries_ordered[i].entry;
+        if(ent.name == entry.name and ent.value == entry.value) {
+            return entries_ordered[i].idx;
+        }
     }
-    auto deque_entry = it->second;
-    assert(deque_entry != entries_ordered.end());
-    return deque_entry->idx;
+    return 0;
+}
+
+size_t table::name_index(const std::string& name) {
+    for(size_t i = 0; i < s_static_table.size(); i++) {
+        auto& ent = s_static_table[i];
+        if(ent.name == name) {
+            return i + 1;
+        }
+    }
+    for(size_t i = 0; i < entries_ordered.size(); i++) { // todo: optimise
+        if(entries_ordered[i].entry.name == name) {
+            return entries_ordered[i].idx;
+        }
+    }
+    return 0;
 }
 
 std::optional<entry_t> table::field(size_t key) {
@@ -157,28 +183,25 @@ std::optional<entry_t> table::field(size_t key) {
     if(key <= s_static_table.size()) {
         return s_static_table[ key - 1 ];
     }
-    auto it = lookup_field.find(key);
-    if(it == lookup_field.end()) {
-        return std::nullopt;
+    for(int i = 0; i < entries_ordered.size(); i++) {
+        if(entries_ordered[i].idx == key) {
+            return entries_ordered[i].entry;
+        }
     }
-    return it->second->entry;
+    return std::nullopt;
 }
 
 void table::pop_entry() {
     auto old_entry = entries_ordered.front();
     m_size -= old_entry.size;
-    lookup_idx.erase(old_entry.entry);
-    lookup_field.erase(old_entry.idx);
     entries_ordered.pop_front();
 }
 
 void table::add_entry(const entry_t& entry) {
+    assert(entry.do_index == do_indexing::incremental);
     auto size = entry.name.size() + entry.value.size() + 32;
     m_size += size;
     entries_ordered.push_back({entry, next_idx, size});
-    auto it = entries_ordered.end()-1;
-    lookup_idx.insert({entry, it});
-    lookup_field.insert({next_idx, it});
     while(m_size > m_capacity && !entries_ordered.empty()) {
         pop_entry();
     }
@@ -200,7 +223,7 @@ void hpack::set_decoder_max_capacity(uint32_t capacity) {
     decoder_max_capacity = capacity;
 }
 
-std::string decode_string(const ustring& encoded, size_t& offset) {
+std::string decode_string(const std::vector<uint8_t>& encoded, size_t& offset) {
     bool is_huffman = (encoded[offset] & 0x80) != 0;
     uint32_t size = decode_integer(encoded, offset, 7);
     if(is_huffman) {
@@ -243,7 +266,7 @@ std::string decode_huffman(std::span<const uint8_t> encoded_str) {
     return result;
 }
 
-std::vector<entry_t> hpack::parse_field_block_fragment(const ustring& field_block_fragment) {
+std::vector<entry_t> hpack::parse_field_block(const std::vector<uint8_t>& field_block_fragment) {
     size_t offset = 0;
     std::vector<entry_t> entries;
     while(offset < field_block_fragment.size()) {
@@ -259,8 +282,8 @@ std::vector<entry_t> hpack::parse_field_block_fragment(const ustring& field_bloc
     return entries;
 }
 
-ustring encode_huffman(std::string str_literal) {
-    ustring out;
+std::vector<uint8_t> encode_huffman(std::string str_literal) {
+    std::vector<uint8_t> out;
     uint8_t bit_idx = 0;
     uint8_t current_byte = 0;
 
@@ -292,40 +315,46 @@ ustring encode_huffman(std::string str_literal) {
     return out;
 }
 
-ustring encode_integer(uint32_t value, uint8_t prefix_bits) {
+std::vector<uint8_t> encode_integer(uint32_t value, uint8_t prefix_bits) {
     assert(prefix_bits <= 8);
-    ustring encoded;
-    uint32_t prefix = (1 << prefix_bits) - 1;
+    std::vector<uint8_t> encoded;
+    uint64_t prefix = (1 << prefix_bits) - 1;
     if(value < prefix) {
         encoded.push_back(value);
         return encoded;
     }
-    value -= prefix;
+    encoded.push_back(static_cast<uint8_t>(prefix));
+    uint64_t remainder = static_cast<uint64_t>(value) - prefix;
     do {
-        uint8_t byte = value & 0x7F;
-        value >>= 7;
-        if (value != 0) {
+        uint8_t byte = remainder & 0x7F;
+        remainder >>= 7;
+        if (remainder != 0) {
             byte |= 0x80;
         }
         encoded.push_back(byte);
-    } while (value != 0);
+    } while (remainder != 0);
     return encoded;
 }
 
-uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_bits) {
-    uint64_t value = 0;
+uint32_t decode_integer(const std::vector<uint8_t>& encoded, size_t& offset, uint8_t prefix_bits) {
+    // todo: if an encoding has leading zeros, it might not be the most efficient encoding
+    // and we should throw in this case
     uint32_t prefix = (1 << prefix_bits) - 1;
     if(offset >= encoded.size()) {
         throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);
     }
-    if((encoded[offset] & prefix) != prefix) {
-        auto ret = encoded[offset] & prefix;
+    const uint32_t value_pre = encoded[offset] & prefix;
+    if(value_pre != prefix) {
         offset++;
-        return ret;
+        return value_pre;
     }
-    for(size_t i = 1; i < encoded.size() - offset; i++) {
+    uint64_t value = 0;
+    for(size_t i = 1; i < std::max<size_t>(7, (encoded.size() - offset)); i++) {
         uint8_t byte = encoded[offset + i];
-        value |= (byte & 0x7F);
+
+        const uint64_t seven_bits = (byte & 0x7F);
+        value += (seven_bits << (7*(i-1)));
+
         if (value > ((1ull << 31) - prefix)) {
             throw h2_error("encoded integer is too large", h2_code::COMPRESSION_ERROR);
         }
@@ -334,85 +363,93 @@ uint32_t decode_integer(const ustring& encoded, size_t& offset, uint8_t prefix_b
             offset += (i + 1);
             return value;
         }
-        value <<= 7;
     }
     throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
 }
 
-ustring encode_string_literal(std::string str) {
+std::vector<uint8_t> encode_string_literal(std::string str) {
     auto lit = encode_integer(str.size(), 7);
-    lit.append(str.begin(), str.end());
+    lit.insert(lit.end(), str.begin(), str.end());
     return lit;
 }
 
-ustring encode_string_efficient(std::string str) {
-    ustring hstr = encode_huffman(str);
+std::vector<uint8_t> encode_string_efficient(std::string str) {
+    std::vector<uint8_t> hstr = encode_huffman(str);
     if(hstr.size() < str.size()) {
         auto lit = encode_integer(hstr.size(), 7);
         lit[0] |= 0x80;
-        lit.append(hstr);
+        lit.insert(lit.end(), hstr.begin(), hstr.end());
         return lit;
     } else {
         auto lit = encode_integer(str.size(), 7);
-        lit.append(str.begin(), str.end());
+        lit.insert(lit.end(), str.begin(), str.end());
         return lit;
     }
 }
 
-ustring indexed_field(uint32_t idx) {
-    ustring rep = encode_integer(idx, 7);
+std::vector<uint8_t> indexed_field(uint32_t idx) {
+    std::vector<uint8_t> rep = encode_integer(idx, 7);
     rep[0] |= 0x80;
     return rep;
 }
 
-ustring indexed_name_new_value(uint32_t idx, std::string value) {
-    ustring rep = encode_integer(idx, 6);
+std::vector<uint8_t> indexed_name_new_value(uint32_t idx, std::string value) {
+    std::vector<uint8_t> rep = encode_integer(idx, 6);
     rep[0] |= 0x40;
-    rep.append(encode_string_efficient(value));
+    const auto string_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), string_encoded.begin(), string_encoded.end());
     return rep;
 }
 
-ustring new_name_new_value(std::string name, std::string value) {
-    ustring rep {0x40};
-    rep.append(encode_string_efficient(name));
-    rep.append(encode_string_efficient(value));
+std::vector<uint8_t> new_name_new_value(std::string name, std::string value) {
+    std::vector<uint8_t> rep {0x40};
+    const auto name_encoded = encode_string_efficient(name);
+    const auto value_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
-ustring indexed_name_new_value_without_dynamic(uint32_t idx, std::string value) {
-    ustring rep = encode_integer(idx, 4);
-    rep.append(encode_string_efficient(value));
+std::vector<uint8_t> indexed_name_new_value_without_dynamic(uint32_t idx, std::string value) {
+    std::vector<uint8_t> rep = encode_integer(idx, 4);
+    const auto value_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
-ustring new_name_new_value_without_dynamic(std::string name, std::string value) {
-    ustring rep {0};
-    rep.append(encode_string_efficient(name));
-    rep.append(encode_string_efficient(value));
+std::vector<uint8_t> new_name_new_value_without_dynamic(std::string name, std::string value) {
+    std::vector<uint8_t> rep {0};
+    const auto name_encoded = encode_string_efficient(name);
+    const auto value_encoded = encode_string_efficient(value);
+    rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
-ustring indexed_name_new_value_never_dynamic(uint32_t idx, std::string value) {
-    ustring rep = encode_integer(idx, 4);
-    rep.append(encode_string_literal(value));
+std::vector<uint8_t> indexed_name_new_value_never_dynamic(uint32_t idx, std::string value) {
+    std::vector<uint8_t> rep = encode_integer(idx, 4);
+    const auto value_encoded = encode_string_literal(value);
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     rep[0] |= 0x10;
     return rep;
 }
 
-ustring new_name_new_value_never_dynamic(std::string name, std::string value) {
-    ustring rep {0x10};
-    rep.append(encode_string_literal(name));
-    rep.append(encode_string_literal(value));
+std::vector<uint8_t> new_name_new_value_never_dynamic(std::string name, std::string value) {
+    std::vector<uint8_t> rep {0x10};
+    const auto name_encoded = encode_string_literal(name);
+    const auto value_encoded = encode_string_literal(value);
+    rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
+    rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
-ustring dynamic_table_size_update(size_t size) {
-    ustring rep = encode_integer(size, 5);
+std::vector<uint8_t> dynamic_table_size_update(size_t size) {
+    std::vector<uint8_t> rep = encode_integer(size, 5);
     rep[0] |= 0x20;
     return rep;
 }
 
-entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const ustring& encoded, size_t& offset) {
+entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const std::vector<uint8_t>& encoded, size_t& offset) {
     if(idx == 0) {
         // new name new value
         auto name = decode_string(encoded, offset);
@@ -429,7 +466,7 @@ entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const ustring& en
     }
 }
 
-std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t& offset) {
+std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& encoded, size_t& offset) {
     assert(offset < encoded.size());
     uint8_t byte = encoded[offset];
     if((byte & 0x80) == 0x80) { // indexed
@@ -457,7 +494,8 @@ std::optional<entry_t> hpack::decode_hpack_string(const ustring& encoded, size_t
         } else {
             do_idx = do_indexing::without;
         }
-        return extract_entry(idx, do_idx, encoded, offset);
+        auto res =  extract_entry(idx, do_idx, encoded, offset);
+        return res;
     }
     if((byte & 0xe0) == 0x20) {
         auto capacity = decode_integer(encoded, offset, 5);

@@ -11,16 +11,16 @@ namespace fbw {
 
 struct extension {
     ExtensionType type;
-    ustring data;
+    std::vector<uint8_t> data;
 };
 
 struct key_share {
     NamedGroup key_type;
-    ustring key;
+    std::vector<uint8_t> key;
 };
 
 struct pre_shared_key_entry {
-    ustring m_key;
+    std::vector<uint8_t> m_key;
     uint32_t m_obfuscated_age;
 };
 
@@ -28,7 +28,7 @@ struct preshared_key_ext {
     std::ptrdiff_t idxbinders_ext = 0;
     std::ptrdiff_t idxbinders = 0;
     std::vector<pre_shared_key_entry> m_keys;
-    std::vector<ustring> m_psk_binder_entries;
+    std::vector<std::vector<uint8_t>> m_psk_binder_entries;
 };
 
 struct hello_record_data {
@@ -36,7 +36,7 @@ struct hello_record_data {
 
     uint16_t legacy_client_version = 0;
     std::array<uint8_t, 32> m_client_random {};
-    ustring client_session_id {};
+    std::vector<uint8_t> client_session_id {};
     std::vector<cipher_suites> cipher_su{};
     std::vector<uint8_t> compression_types{};
 
@@ -64,7 +64,7 @@ struct hello_record_data {
     bool truncated_hmac = false;
 };
 
-hello_record_data parse_client_hello(const ustring& hello_contents);
+hello_record_data parse_client_hello(const std::vector<uint8_t>& hello_contents);
 
 // server hello extensions
 void write_alpn_extension(tls_record& record, std::string alpn);
@@ -77,9 +77,9 @@ void write_cookie(tls_record& record);
 void write_pre_shared_key_extension(tls_record& record, uint16_t key_id);
 void write_early_data_encrypted_ext(tls_record& record);
 
-ustring get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
+std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
 std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype);
-ustring make_hello_random(uint16_t version, bool requires_hello_retry);
+std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_retry);
 
 }
 

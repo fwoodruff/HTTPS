@@ -39,8 +39,8 @@ tls_record unwrap13(tls_record record) {
     return record;
 }
 
-ustring make_additional_13(const ustring& message, size_t tag_size) {
-    ustring additional_data { 0x17, 0x03, 0x03, 0, 0};
+std::vector<uint8_t> make_additional_13(const std::vector<uint8_t>& message, size_t tag_size) {
+    std::vector<uint8_t> additional_data { 0x17, 0x03, 0x03, 0, 0};
     auto size = message.size();
     size += tag_size;
     checked_bigend_write(size, additional_data, 3, 2);

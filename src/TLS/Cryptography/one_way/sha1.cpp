@@ -99,7 +99,7 @@ sha1& sha1::update_impl(const uint8_t* const data, size_t size) noexcept {
     return *this;
 }
 
-ustring sha1::hash() const {
+std::vector<uint8_t> sha1::hash() const {
     auto o_data = m_data;
     auto o_state = m_state;
 
@@ -110,7 +110,7 @@ ustring sha1::hash() const {
     }
     checked_bigend_write(datalen * 8, o_data, 56, 8);
     sha1_transform(o_state, o_data);
-    ustring hash;
+    std::vector<uint8_t> hash;
     hash.resize(20);
     for(int i = 0; i < 5; i ++) {
         checked_bigend_write(o_state[i], hash, i*4, 4);

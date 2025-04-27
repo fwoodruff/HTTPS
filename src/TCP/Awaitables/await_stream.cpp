@@ -36,6 +36,10 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
     }
     if(succ < 0) {
         if(errno == EWOULDBLOCK or errno == EAGAIN) {
+            if(m_millis == 0ms) {
+                m_res = stream_result::read_timeout;
+                return false;
+            }
             auto& exec = executor_singleton();
             exec.m_reactor.add_task(m_fd, continuation, IO_direction::Read, m_millis);
             m_res = stream_result::awaiting;
@@ -87,15 +91,15 @@ bool writeable::await_ready() const noexcept {
 
 bool writeable::await_suspend(std::coroutine_handle<> continuation) {
     // process a few records before moving onto the next client
-    static std::atomic<size_t> fail_sometimes = 1;
-    size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
-    local_value %= 10;
-    if(local_value == 0) {
-        m_res = stream_result::awaiting;
-        auto& exec = executor_singleton();
-        exec.m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
-        return true;
-    }
+    //static std::atomic<size_t> fail_sometimes = 1;
+    //size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
+    //local_value %= 10;
+    //if(local_value == 0) {
+    //    m_res = stream_result::awaiting;
+    //    auto& exec = executor_singleton();
+    //    exec.m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
+    //    return true;
+    //}
     assert(m_fd != -1);
     assert(m_buffer);
     ssize_t succ = ::send(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);

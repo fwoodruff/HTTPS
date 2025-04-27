@@ -143,17 +143,24 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
 }
 
 std::string choose_alpn(const std::vector<std::string>& client_alpn) {
+    constexpr const char* ALPN_H1 = "http/1.1";
+    constexpr const char* ALPN_H2 = "h2";
     if(client_alpn.empty()) {
-        return "http/1.1";
+        return ALPN_H1;
     }
-    if(std::find(client_alpn.begin(), client_alpn.end(), "h2") != client_alpn.end()) {
-        // todo: toggle
-        // return "h2";
+    // toggle
+    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
+        // comment out to prioritise H2
+        return ALPN_H1;
     }
-    if(std::find(client_alpn.begin(), client_alpn.end(), "http/1.1") == client_alpn.end()) {
-        throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
+    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H2) != client_alpn.end()) {
+        // comment out to disable H2
+        return ALPN_H2;
     }
-    return "http/1.1";
+    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
+        return ALPN_H1;
+    }
+    throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
 }
 
 std::string choose_server_name(const std::vector<std::string>& server_names) {
@@ -207,7 +214,7 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
     throw ssl_error("named group mismatch", AlertLevel::fatal, AlertDescription::handshake_failure);
 }
 
-tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& client_hello) {
+tls_record synthetic_message_hash(const hash_base& hash_ctor, const std::vector<uint8_t>& client_hello) {
     tls_record record(ContentType::Handshake);
     record.write1(HandshakeType::message_hash);
     record.start_size_header(3);
@@ -218,10 +225,10 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const ustring& cli
     return record;
 }
 
-std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_psk(const ustring& prefix_hash) const {
+std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> handshake_ctx::get_resumption_psk(const std::vector<uint8_t>& prefix_hash) const {
     auto key = client_hello.pre_shared_key;
     assert(hash_ctor != nullptr);
-    auto null_psk = ustring(hash_ctor->get_hash_size(), 0);
+    auto null_psk = std::vector<uint8_t>(hash_ctor->get_hash_size(), 0);
     if(!key) {
         return {null_psk, std::nullopt, false};
     }
@@ -267,7 +274,7 @@ std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_p
             break;
         }
         auto received_binder = client_hello.pre_shared_key->m_psk_binder_entries[i];
-        ustring computed_binder = compute_binder(*hash_ctor, ticket->resumption_secret, prefix_hash);
+        std::vector<uint8_t> computed_binder = compute_binder(*hash_ctor, ticket->resumption_secret, prefix_hash);
         if(received_binder != computed_binder ) {
             continue;
         }
@@ -283,7 +290,7 @@ std::tuple<ustring, std::optional<size_t>, bool> handshake_ctx::get_resumption_p
     return {null_psk, std::nullopt, false};
 }
 
-void handshake_ctx::client_hello_record(const ustring& handshake_message) {
+void handshake_ctx::client_hello_record(const std::vector<uint8_t>& handshake_message) {
     client_hello = parse_client_hello(handshake_message);
     if(server_hello_type != ServerHelloType::hello_retry) {
         auto cipher_id = choose_cipher(client_hello);
@@ -295,7 +302,7 @@ void handshake_ctx::client_hello_record(const ustring& handshake_message) {
 
     alpn = choose_alpn(client_hello.application_layer_protocols);
     
-    ustring psk = ustring(hash_ctor->get_hash_size(), 0);
+    std::vector<uint8_t> psk = std::vector<uint8_t>(hash_ctor->get_hash_size(), 0);
     if(*p_tls_version == TLS13) {
         if(!client_hello.parsed_extensions.contains(ExtensionType::supported_groups)) {
             throw ssl_error("supported groups are required for TLS 1.3", AlertLevel::fatal, AlertDescription::illegal_parameter);
@@ -421,9 +428,9 @@ tls_record handshake_ctx::server_hello_record() {
     handshake_hasher->update(hello_record.m_contents);
 
     if(*p_tls_version == TLS13 and server_hello_type != ServerHelloType::hello_retry) {
-        ustring shared_secret;
+        std::vector<uint8_t> shared_secret;
         if(server_hello_type == ServerHelloType::preshared_key) {
-            shared_secret = ustring();
+            shared_secret = std::vector<uint8_t>();
         } else {
             shared_secret = get_shared_secret(server_private_key_ephem, client_public_key);
         }
@@ -468,9 +475,9 @@ tls_record handshake_ctx::server_certificate_record() {
     auto hash_verify_context = handshake_hasher->hash();
 
     sha256 ctx;
-    ctx.update(ustring(64, 0x20));
+    ctx.update(std::vector<uint8_t>(64, 0x20));
     ctx.update(to_unsigned("TLS 1.3, server CertificateVerify"));
-    ctx.update(ustring{0});
+    ctx.update(std::vector<uint8_t>{0});
     ctx.update(hash_verify_context);
     auto hash_out = ctx.hash();
 
@@ -478,7 +485,7 @@ tls_record handshake_ctx::server_certificate_record() {
     std::copy(hash_out.begin(), hash_out.end(), signature_digest.begin());
     std::array<uint8_t, 32> csrn;
     randomgen.randgen(csrn);
-    ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
+    std::vector<uint8_t> signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
 
     tls_record record(ContentType::Handshake);
     record.write1(HandshakeType::certificate_verify);
@@ -508,16 +515,17 @@ tls_record handshake_ctx::server_handshake_finished13_record() {
     return record;
 }
 
-void handshake_ctx::client_end_of_early_data_record(const ustring& handshake_message) {
+void handshake_ctx::client_end_of_early_data_record(const std::vector<uint8_t>& handshake_message) {
     handshake_hasher->update(handshake_message);
 }
 
-void handshake_ctx::client_handshake_finished13_record(const ustring& handshake_message) {
+void handshake_ctx::client_handshake_finished13_record(const std::vector<uint8_t>& handshake_message) {
     auto server_finished_hash = handshake_hasher->hash();
     auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
     auto verify_data = do_hmac(*hash_ctor, client_finished_key, server_finished_hash);
 
-    if(verify_data != handshake_message.substr(4)){
+    if (handshake_message.size() < 4 + verify_data.size() or 
+        ! std::equal(verify_data.begin(), verify_data.end(), handshake_message.begin() + 4)) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     handshake_hasher->update(handshake_message);
@@ -542,10 +550,10 @@ tls_record handshake_ctx::server_key_exchange_record() {
     checked_bigend_write(static_cast<size_t>(NamedGroup::x25519), curve_info, 1, 2);
     
     // Public Key
-    ustring signed_empheral_key;
-    signed_empheral_key.append(curve_info.cbegin(), curve_info.cend());
-    signed_empheral_key.append({static_cast<uint8_t>(pubkey_ephem.size())});
-    signed_empheral_key.append(pubkey_ephem.cbegin(), pubkey_ephem.cend());
+    std::vector<uint8_t> signed_empheral_key;
+    signed_empheral_key.insert(signed_empheral_key.end(), curve_info.cbegin(), curve_info.cend());
+    signed_empheral_key.insert(signed_empheral_key.end(), {static_cast<uint8_t>(pubkey_ephem.size())});
+    signed_empheral_key.insert(signed_empheral_key.end(), pubkey_ephem.cbegin(), pubkey_ephem.cend());
 
     assert(hash_ctor != nullptr);
     auto hashctx = hash_ctor->clone();
@@ -564,8 +572,8 @@ tls_record handshake_ctx::server_key_exchange_record() {
     // Signature
     std::array<uint8_t, 32> csrn;
     randomgen.randgen(csrn);
-    ustring signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
-    ustring sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
+    std::vector<uint8_t> signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
+    std::vector<uint8_t> sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
         static_cast<uint8_t>(SignatureAlgorithm::ecdsa)});
     
     record.write(signed_empheral_key);
@@ -599,7 +607,7 @@ tls_record handshake_ctx::server_handshake_finished12_record() {
     auto handshake_hash = handshake_hasher->hash();
     assert(handshake_hash.size() == 32);
     
-    ustring server_finished = prf(*hash_ctor, tls12_master_secret, "server finished", handshake_hash, 12);
+    std::vector<uint8_t> server_finished = prf(*hash_ctor, tls12_master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
     out.end_size_header();
@@ -652,7 +660,7 @@ void handshake_ctx::hello_extensions(tls_record& record) {
 }
 
 
-ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) {
+std::vector<uint8_t> handshake_ctx::client_key_exchange_receipt(const std::vector<uint8_t>& key_exchange) {
     
     static_cast<void>(key_exchange.at(0));
     assert(key_exchange[0] == static_cast<uint8_t>(HandshakeType::client_key_exchange));
@@ -672,22 +680,30 @@ ustring handshake_ctx::client_key_exchange_receipt(const ustring& key_exchange) 
     std::array<uint8_t, 32> client_pub{};
     std::copy_n(client_public_key.key.begin(), 32, client_pub.begin());
     auto premaster_secret = fbw::curve25519::multiply(server_private_key_ephem, client_pub);
-    ustring client_hello_str(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
-    tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", client_hello_str + m_server_random, 48);
+    std::vector<uint8_t> combined_random(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
+    combined_random.insert(combined_random.end(), m_server_random.begin(), m_server_random.end());
+    tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", combined_random, 48);
 
     assert(handshake_hasher);
     handshake_hasher->update(key_exchange);
 
+    std::vector<uint8_t> combined_random_flipped(m_server_random.begin(), m_server_random.end());
+    combined_random_flipped.insert(combined_random_flipped.end(), client_hello.m_client_random.begin(), client_hello.m_client_random.end());
+
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes
-    auto key_material = prf(*hash_ctor,  tls12_master_secret, "key expansion", m_server_random + client_hello_str, 128);
+    auto key_material = prf(*hash_ctor,  tls12_master_secret, "key expansion", combined_random_flipped, 128);
     return key_material;
 }
 
-void handshake_ctx::client_handshake_finished12_record(const ustring& handshake_message) {
+void handshake_ctx::client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message) {
     
     static_cast<void>(handshake_message.at(0));
     if(handshake_message[0] != static_cast<uint8_t>(HandshakeType::finished)) [[unlikely]] {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::unexpected_message);
+    }
+
+    if (handshake_message.size() < 4) {
+        throw ssl_error("message too short", AlertLevel::fatal, AlertDescription::decode_error);
     }
     
     const size_t len = try_bigend_read(handshake_message, 1, 3);
@@ -695,11 +711,14 @@ void handshake_ctx::client_handshake_finished12_record(const ustring& handshake_
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 
-    auto finish = handshake_message.substr(4);
-    auto handshake_hash = handshake_hasher->hash();
-    ustring expected_finished = prf(*hash_ctor, tls12_master_secret, "client finished", handshake_hash, 12);
+    if (handshake_message.size() < 4 + len) {
+        throw ssl_error("message too short for finished data", AlertLevel::fatal, AlertDescription::decode_error);
+    }
 
-    if(expected_finished != finish) [[unlikely]] {
+    auto handshake_hash = handshake_hasher->hash();
+    std::vector<uint8_t> expected_finished = prf(*hash_ctor, tls12_master_secret, "client finished", handshake_hash, 12);
+
+    if (!std::equal(expected_finished.begin(), expected_finished.end(), handshake_message.begin() + 4)) [[unlikely]] {
         throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     handshake_hasher->update(handshake_message);

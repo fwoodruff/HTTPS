@@ -51,8 +51,6 @@ struct logged_entry {
 
 class table { // todo consider structure
     using cont_t = std::deque<logged_entry>;
-    std::unordered_map<entry_t, cont_t::iterator> lookup_idx;
-    std::unordered_map<size_t, cont_t::iterator> lookup_field;
     cont_t entries_ordered;
     
     size_t m_size = 0;
@@ -63,7 +61,8 @@ public:
     table();
     size_t m_capacity = 4096;
     void set_capacity(size_t capacity);
-    size_t index(const entry_t& entry);
+    size_t index(entry_t entry);
+    size_t name_index(const std::string& entry);
     std::optional<entry_t> field(size_t entry);
     void add_entry(const entry_t& entry);
 };

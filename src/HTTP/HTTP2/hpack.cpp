@@ -114,7 +114,7 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
             auto field = indexed_field(index);
             encoded_block.insert(encoded_block.end(), field.begin(), field.end());
         } else {
-            auto name_index = m_encode_table.index({header.name, ""});
+            auto name_index = m_encode_table.name_index(header.name);
             if (name_index != 0) {
                 if(header.do_index == do_indexing::never) {
                     auto field = indexed_name_new_value_never_dynamic(name_index, header.value);
@@ -147,20 +147,35 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
 
 table::table() : next_idx(static_entries + 1) {}
 
-size_t table::index(const entry_t& entry) {
+size_t table::index(entry_t entry) {
     for(size_t i = 0; i < s_static_table.size(); i++) {
         auto& ent = s_static_table[i];
         if(ent.name == entry.name and ent.value == entry.value) {
             return i + 1;
         }
     }
-    auto it = lookup_idx.find(entry);
-    if(it == lookup_idx.end()) {
-        return 0;
+    for(size_t i = 0; i < entries_ordered.size(); i++) { // todo: optimise
+        auto& ent = entries_ordered[i].entry;
+        if(ent.name == entry.name and ent.value == entry.value) {
+            return entries_ordered[i].idx;
+        }
     }
-    auto deque_entry = it->second;
-    assert(deque_entry != entries_ordered.end());
-    return deque_entry->idx;
+    return 0;
+}
+
+size_t table::name_index(const std::string& name) {
+    for(size_t i = 0; i < s_static_table.size(); i++) {
+        auto& ent = s_static_table[i];
+        if(ent.name == name) {
+            return i + 1;
+        }
+    }
+    for(size_t i = 0; i < entries_ordered.size(); i++) { // todo: optimise
+        if(entries_ordered[i].entry.name == name) {
+            return entries_ordered[i].idx;
+        }
+    }
+    return 0;
 }
 
 std::optional<entry_t> table::field(size_t key) {
@@ -168,28 +183,25 @@ std::optional<entry_t> table::field(size_t key) {
     if(key <= s_static_table.size()) {
         return s_static_table[ key - 1 ];
     }
-    auto it = lookup_field.find(key);
-    if(it == lookup_field.end()) {
-        return std::nullopt;
+    for(int i = 0; i < entries_ordered.size(); i++) {
+        if(entries_ordered[i].idx == key) {
+            return entries_ordered[i].entry;
+        }
     }
-    return it->second->entry;
+    return std::nullopt;
 }
 
 void table::pop_entry() {
     auto old_entry = entries_ordered.front();
     m_size -= old_entry.size;
-    lookup_idx.erase(old_entry.entry);
-    lookup_field.erase(old_entry.idx);
     entries_ordered.pop_front();
 }
 
 void table::add_entry(const entry_t& entry) {
+    assert(entry.do_index == do_indexing::incremental);
     auto size = entry.name.size() + entry.value.size() + 32;
     m_size += size;
     entries_ordered.push_back({entry, next_idx, size});
-    auto it = entries_ordered.end()-1;
-    lookup_idx.insert({entry, it});
-    lookup_field.insert({next_idx, it});
     while(m_size > m_capacity && !entries_ordered.empty()) {
         pop_entry();
     }
@@ -482,7 +494,8 @@ std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& en
         } else {
             do_idx = do_indexing::without;
         }
-        return extract_entry(idx, do_idx, encoded, offset);
+        auto res =  extract_entry(idx, do_idx, encoded, offset);
+        return res;
     }
     if((byte & 0xe0) == 0x20) {
         auto capacity = decode_integer(encoded, offset, 5);

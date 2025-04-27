@@ -288,6 +288,79 @@ std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& r
     return out;
 }
 
+std::vector<std::pair<size_t, size_t>> parse_range_header_2(const std::string& range_header, size_t file_size) {
+    std::string prefix = "bytes=";
+    if(range_header.substr(0, prefix.size()) != prefix) {
+        throw http_error(416, "Range Not Satisfiable");
+    }
+    size_t pos = prefix.size();
+    std::vector<std::pair<size_t, size_t>> out;
+    while(true) {
+        size_t end = range_header.find(',', pos);
+        std::string range = range_header.substr(pos, end - pos);
+        std::erase_if(range, [](unsigned char c){ return std::isspace(c); });
+        size_t mid = range.find("-");
+        if(mid == std::string::npos) {
+            throw http_error(416, "Range Not Satisfiable");
+        }
+        const auto first = range.substr(0, mid);
+        const auto second = range.substr(mid + 1);
+        if(first.empty() and second.empty()) {
+            throw http_error(416, "Range Not Satisfiable");
+        }
+        try {
+            size_t first_i;
+            size_t second_i;
+            if(first.empty()) {
+                size_t idx = 0;
+                second_i = std::stoul(second, &idx);
+                if (idx != second.size()) {
+                    throw http_error(416,  "Range Not Satisfiable");
+                }
+                if(second_i > file_size) {
+                    second_i = file_size;
+                }
+                first_i = file_size - second_i;
+                second_i = file_size - 1;
+            } else {
+                size_t idx = 0;
+                first_i = std::stoul(first, &idx);
+                if (idx != first.size()) {
+                    
+                    throw http_error(416,  "Range Not Satisfiable");
+                }
+                if(first_i >= file_size) {
+                    throw http_error(416,  "Range Not Satisfiable");
+                }
+                if(second.empty()) {
+                    second_i = file_size - 1;
+                } else {
+                    idx = 0;
+                    second_i = std::stoul(second, &idx);
+                    if (idx != second.size()) {
+                        throw http_error(416,  "Range Not Satisfiable");
+                    }
+                }
+                if(first_i > second_i) {
+                    throw http_error(416,  "Range Not Satisfiable");
+                }
+            }
+            out.push_back({first_i, second_i});
+        } catch(const std::invalid_argument& e) {
+            throw http_error(416, "Range Not Satisfiable");
+        } catch(const std::out_of_range& e) {
+            throw http_error(416, "Range Not Satisfiable");
+        }
+        if(end == std::string::npos) {
+            break;
+        }
+        pos = end + 1;
+    }
+    return out;
+}
+
+
+
 std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header) {
     std::ostringstream oss;
     oss << "HTTP/1.1 " << status << "\r\n";

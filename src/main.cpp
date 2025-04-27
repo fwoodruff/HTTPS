@@ -67,8 +67,9 @@
 
 
 // Post and range request handling for http/2 (video?)
+// something going wrong with HPACK for range requests
+// something maybe going wrong with 'new' HTTP/1.1 POST requests
 
-// check std::span ownership soundness
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
@@ -85,7 +86,8 @@
 // rename stream_result enum to: ok, awaiting, timeout, fail
 
 // better logic for deciding if a header should be indexed
-// test if our inbound hpack dynamic table is actually getting used
+
+// implement http/2 graceful server shutdown
 
 // don't need multiple async layers for TLS + HTTP/2, combine
 

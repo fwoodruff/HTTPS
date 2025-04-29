@@ -107,7 +107,6 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
         m_encode_table.set_capacity(encoder_max_capacity);
     }
     for (auto header : headers) {
-        header.do_index = do_indexing::without; // todo: overly pessimistic
         header.name = to_lower(header.name);
         auto index = m_encode_table.index(header);
         if (index != 0) {
@@ -125,7 +124,7 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
                 } else {
                     auto field = indexed_name_new_value(name_index, header.value);
                     encoded_block.insert(encoded_block.end(), field.begin(), field.end());
-                    m_encode_table.add_entry({header.name, header.value});
+                    m_encode_table.add_entry(header.name, header.value);
                 }
             } else {
                 if(header.do_index == do_indexing::never) {
@@ -137,7 +136,7 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
                 } else {
                     auto field = new_name_new_value(header.name, header.value);
                     encoded_block.insert(encoded_block.end(), field.begin(), field.end());
-                    m_encode_table.add_entry({header.name, header.value});
+                    m_encode_table.add_entry(header.name, header.value);
                 }
             }
         }
@@ -145,7 +144,7 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
     return encoded_block;
 }
 
-table::table() : next_idx(static_entries + 1) {}
+table::table() : next_idx(first_dynamic_idx) {}
 
 size_t table::index(entry_t entry) {
     for(size_t i = 0; i < s_static_table.size(); i++) {
@@ -155,9 +154,9 @@ size_t table::index(entry_t entry) {
         }
     }
     for(size_t i = 0; i < entries_ordered.size(); i++) { // todo: optimise
-        auto& ent = entries_ordered[i].entry;
+        auto& ent = entries_ordered[i];
         if(ent.name == entry.name and ent.value == entry.value) {
-            return entries_ordered[i].idx;
+            return i + first_dynamic_idx;
         }
     }
     return 0;
@@ -171,37 +170,48 @@ size_t table::name_index(const std::string& name) {
         }
     }
     for(size_t i = 0; i < entries_ordered.size(); i++) { // todo: optimise
-        if(entries_ordered[i].entry.name == name) {
-            return entries_ordered[i].idx;
+        if(entries_ordered[i].name == name) {
+            return i + first_dynamic_idx;
         }
     }
     return 0;
 }
 
-std::optional<entry_t> table::field(size_t key) {
+std::string table::field_name(size_t key) {
     assert(key != 0);
     if(key <= s_static_table.size()) {
-        return s_static_table[ key - 1 ];
+        return s_static_table[ key - 1 ].name;
     }
-    for(int i = 0; i < entries_ordered.size(); i++) {
-        if(entries_ordered[i].idx == key) {
-            return entries_ordered[i].entry;
-        }
+    if(key - first_dynamic_idx >= entries_ordered.size()) {
+        throw h2_error("decoding indexed name but index not found", h2_code::COMPRESSION_ERROR);
     }
-    return std::nullopt;
+    return entries_ordered[key - first_dynamic_idx].name;
 }
+
+std::string table::field_value(size_t key) {
+    assert(key != 0);
+    if(key <= s_static_table.size()) {
+        return s_static_table[ key - 1 ].value;
+    }
+    if(key - first_dynamic_idx >= entries_ordered.size()) {
+        throw h2_error("decoding indexed value but index not found", h2_code::COMPRESSION_ERROR);
+    }
+    return entries_ordered[key - first_dynamic_idx].value;
+}
+
+constexpr size_t entry_overhead = 32;
 
 void table::pop_entry() {
-    auto old_entry = entries_ordered.front();
-    m_size -= old_entry.size;
-    entries_ordered.pop_front();
+    auto old_entry = entries_ordered.back();
+    const auto old_size = old_entry.name.size() + old_entry.value.size() + entry_overhead;
+    m_size -= old_size;
+    entries_ordered.pop_back();
 }
 
-void table::add_entry(const entry_t& entry) {
-    assert(entry.do_index == do_indexing::incremental);
-    auto size = entry.name.size() + entry.value.size() + 32;
+void table::add_entry(const std::string& name, const std::string& value) {
+    auto size = name.size() + value.size() + entry_overhead;
     m_size += size;
-    entries_ordered.push_back({entry, next_idx, size});
+    entries_ordered.push_front({name, value});
     while(m_size > m_capacity && !entries_ordered.empty()) {
         pop_entry();
     }
@@ -307,8 +317,8 @@ std::vector<uint8_t> encode_huffman(std::string str_literal) {
     }
 
     if (bit_idx > 0) { // EOS
-        current_byte |=  (0xff >> bit_idx);
-        //current_byte |= ((1 << (8 - bit_idx)) - 1);
+        //current_byte |=  (0xff >> bit_idx);
+        current_byte |= ((1 << (8 - bit_idx)) - 1);
         out.push_back(current_byte);
     }
 
@@ -449,63 +459,73 @@ std::vector<uint8_t> dynamic_table_size_update(size_t size) {
     return rep;
 }
 
-entry_t hpack::extract_entry(size_t idx, do_indexing indexing, const std::vector<uint8_t>& encoded, size_t& offset) {
-    if(idx == 0) {
-        // new name new value
-        auto name = decode_string(encoded, offset);
-        auto value = decode_string(encoded, offset);
-        return {name, value, indexing};
+std::pair<hpack::prefix_type, uint32_t> hpack::decode_prefix(const std::vector<uint8_t>& encoded, size_t& offset) {
+    assert(offset < encoded.size());
+    uint8_t byte = encoded[offset];
+    int prefix_bytes = 0;
+    prefix_type type;
+    using enum prefix_type;
+    if(byte & 0x80) {
+        prefix_bytes = 7;
+        type = indexed_header;
+    } else if(byte & 0x40) {
+        prefix_bytes = 6;
+        type = literal_header_incremental_indexing;
+    } else if(byte & 0x20) {
+        prefix_bytes = 5;
+        type = table_size_update;
+    } else if(byte & 0x10) {
+        prefix_bytes = 4;
+        type = literal_header_never_indexing;
     } else {
-        // indexed name new value
-        auto entry = m_decode_table.field(idx);
-        if(!entry) {
-            throw h2_error("index not found in table", h2_code::COMPRESSION_ERROR);
-        }
-        entry->value = decode_string(encoded, offset);
-        return {entry->name, entry->value, indexing};
+        prefix_bytes = 4;
+        type = literal_header_without_indexing;
     }
+    auto idx = decode_integer(encoded, offset, prefix_bytes);
+    return {type, idx};
 }
 
 std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& encoded, size_t& offset) {
     assert(offset < encoded.size());
-    uint8_t byte = encoded[offset];
-    if((byte & 0x80) == 0x80) { // indexed
-        auto idx = decode_integer(encoded, offset, 7);
-        if(idx == 0) {
-            throw h2_error("index 0 requested", h2_code::COMPRESSION_ERROR);
+    auto [type, idx] = decode_prefix(encoded, offset);
+    using enum prefix_type;
+
+    auto decode_name = [this, &encoded, &offset](uint32_t index) -> std::string {
+        if (index == 0) {
+            return decode_string(encoded, offset);
         }
-        auto entry = m_decode_table.field(idx);
-        if(!entry) {
-            throw h2_error("decoding indexed value but index not found", h2_code::COMPRESSION_ERROR);
+        return m_decode_table.field_name(index);
+    };
+
+    switch(type) {
+        case indexed_header: {
+            auto name = m_decode_table.field_name(idx);
+            auto value = m_decode_table.field_value(idx);
+            return {{name, value, do_indexing::incremental}};
         }
-        return *entry;
-    }
-    if((byte & 0xc0) == 0x40) { // named indexed, do index value
-        auto idx = decode_integer(encoded, offset, 6);
-        auto entry = extract_entry(idx, do_indexing::incremental, encoded, offset);
-        m_decode_table.add_entry(entry);
-        return entry;
-    }
-    if((byte & 0xe0) == 0x00) { // name indexed, don't index value
-        auto idx = decode_integer(encoded, offset, 4);
-        do_indexing do_idx;
-        if((byte & 0xf0) == 0x10) {
-            do_idx = do_indexing::never;
-        } else {
-            do_idx = do_indexing::without;
+        case literal_header_incremental_indexing: {
+            auto name = decode_name(idx);
+            auto value = decode_string(encoded, offset);
+            m_decode_table.add_entry(name, value);
+            return {{name, value, do_indexing::incremental}};
         }
-        auto res =  extract_entry(idx, do_idx, encoded, offset);
-        return res;
-    }
-    if((byte & 0xe0) == 0x20) {
-        auto capacity = decode_integer(encoded, offset, 5);
-        if(capacity > decoder_max_capacity) {
-            throw h2_error("could not update decoder", h2_code::COMPRESSION_ERROR);
+        case literal_header_never_indexing: {
+            auto name = decode_name(idx);
+            auto value = decode_string(encoded, offset);
+            return {{name, value, do_indexing::never}};
         }
-        m_decode_table.set_capacity(capacity);
-        return std::nullopt;
+        case literal_header_without_indexing: {
+            auto name = decode_name(idx);
+            auto value = decode_string(encoded, offset);
+            return {{name, value, do_indexing::without}};
+        }
+        case table_size_update:
+            if(idx > decoder_max_capacity) {
+                throw h2_error("could not update decoder", h2_code::COMPRESSION_ERROR);
+            }
+            m_decode_table.set_capacity(idx);
+            return std::nullopt;
     }
-    throw h2_error("bad decode", h2_code::COMPRESSION_ERROR);
 }
 
 // todo: this could be a (collisionless) hash map

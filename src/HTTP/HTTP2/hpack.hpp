@@ -29,7 +29,7 @@ struct hpack_huffman_bit_pattern {
 
 struct setting_values;
 constexpr size_t static_entries = 61;
-
+constexpr size_t first_dynamic_idx = static_entries + 1;
 }
 
 template<>
@@ -44,9 +44,8 @@ struct std::hash<fbw::hpack_huffman_bit_pattern> {
 namespace fbw {
 
 struct logged_entry {
-    entry_t entry;
-    uint32_t idx;
-    size_t size;
+    std::string name;
+    std::string value;
 };
 
 class table { // todo consider structure
@@ -54,7 +53,7 @@ class table { // todo consider structure
     cont_t entries_ordered;
     
     size_t m_size = 0;
-    uint32_t next_idx = static_entries + 1;
+    uint32_t next_idx = first_dynamic_idx;
     void pop_entry();
 public:
     static const std::array<entry_t, static_entries> s_static_table;
@@ -63,8 +62,9 @@ public:
     void set_capacity(size_t capacity);
     size_t index(entry_t entry);
     size_t name_index(const std::string& entry);
-    std::optional<entry_t> field(size_t entry);
-    void add_entry(const entry_t& entry);
+    std::string field_name(size_t entry);
+    std::string field_value(size_t entry);
+    void add_entry(const std::string& name, const std::string& value);
 };
 
 class hpack {
@@ -73,8 +73,16 @@ private:
     table m_encode_table;
     table m_decode_table;
 
+    enum class prefix_type {
+        indexed_header,
+        literal_header_incremental_indexing,
+        table_size_update,
+        literal_header_without_indexing,
+        literal_header_never_indexing,
+    };
+
     std::optional<entry_t> decode_hpack_string(const std::vector<uint8_t>& data, size_t& offset);
-    entry_t extract_entry(size_t idx, do_indexing do_index, const std::vector<uint8_t>& encoded, size_t& offset);
+    std::pair<hpack::prefix_type, uint32_t> decode_prefix(const std::vector<uint8_t>& encoded, size_t& offset);
 public:
     size_t encoder_max_capacity = 4096;
     size_t decoder_max_capacity = 4096;

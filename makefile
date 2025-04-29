@@ -1,7 +1,7 @@
 # Compiler and flags
 CXX := g++
 #CXX := arm-linux-gnueabihf-g++
-CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP #-O2 # -march=native
+CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2 # -march=native
 LDFLAGS :=
 
 ifeq ($(shell uname -s),Linux)

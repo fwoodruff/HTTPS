@@ -53,7 +53,6 @@ private:
     std::queue<packet_timed> output;
     std::deque<uint8_t> early_data_buffer;
 
-    
     task<stream_result> read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early);
     task<stream_result> net_write_all();
     task<stream_result> await_message(HandshakeStage stage);

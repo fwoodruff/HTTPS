@@ -53,8 +53,18 @@ task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end) {
 }
 
 task<std::pair<stream_result, bool>> HTTP1::append_http_data(std::deque<uint8_t>& buffer) {
+    if(!m_read_buffer.empty()) {
+        buffer.insert(buffer.end(), m_read_buffer.begin(), m_read_buffer.end());
+        content_length_to_read -= m_read_buffer.size();
+        m_read_buffer.clear();
+        co_return {stream_result::ok, content_length_to_read <= 0 };
+    }
+
     auto size_before = buffer.size();
-    auto res = m_stream->read_append(buffer, project_options.session_timeout);
+    auto res = co_await m_stream->read_append(buffer, project_options.session_timeout);
+    if(res != stream_result::ok) {
+        co_return {res, true};
+    }
     auto size_after = buffer.size();
     content_length_to_read -= (size_after - size_before);
     co_return {stream_result::ok, content_length_to_read <= 0 };

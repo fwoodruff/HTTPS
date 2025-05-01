@@ -347,8 +347,6 @@ std::vector<uint8_t> encode_integer(uint32_t value, uint8_t prefix_bits) {
 }
 
 uint32_t decode_integer(const std::vector<uint8_t>& encoded, size_t& offset, uint8_t prefix_bits) {
-    // todo: if an encoding has leading zeros, it might not be the most efficient encoding
-    // and we should throw in this case
     uint32_t prefix = (1 << prefix_bits) - 1;
     if(offset >= encoded.size()) {
         throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);
@@ -359,13 +357,17 @@ uint32_t decode_integer(const std::vector<uint8_t>& encoded, size_t& offset, uin
         return value_pre;
     }
     uint64_t value = 0;
-    for(size_t i = 1; i < std::max<size_t>(7, (encoded.size() - offset)); i++) {
+
+    for(size_t i = 1; i < 7; i++) {
+        if(offset + i >= encoded.size()) [[unlikely]] { 
+            throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
+        }
         uint8_t byte = encoded[offset + i];
 
         const uint64_t seven_bits = (byte & 0x7F);
         value += (seven_bits << (7*(i-1)));
 
-        if (value > ((1ull << 31) - prefix)) {
+        if (value > ((1ull << 31) - prefix)) [[unlikely]] {
             throw h2_error("encoded integer is too large", h2_code::COMPRESSION_ERROR);
         }
         if ((byte & 0x80) == 0) {
@@ -528,7 +530,6 @@ std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& en
     }
 }
 
-// todo: this could be a (collisionless) hash map
 const std::array<entry_t, static_entries> table::s_static_table = {
     entry_t{":authority", ""},
     {":method", "GET"},
@@ -593,7 +594,6 @@ const std::array<entry_t, static_entries> table::s_static_table = {
     {"www-authenticate", ""}
 };
 
-// todo: use a perfect hash
 const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode = [](){
     std::unordered_map<hpack_huffman_bit_pattern, uint8_t> out;
     for(size_t i = 0; i < huffman_table.size(); i++) {

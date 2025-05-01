@@ -18,6 +18,7 @@
 #include <memory>
 #include <utility>
 #include <thread>
+#include <deque>
 
 #include <queue>
 
@@ -176,19 +177,67 @@ task<void> TLS::close_notify() {
     } while(false);
 }
 
-std::deque<uint8_t> buffer::write(const std::span<const uint8_t> data) {
-    m_buffer.insert(m_buffer.end(), data.begin(), data.end());
-    if(m_buffer.size() >= BUFFER_SIZE) {
-        std::deque<uint8_t> out;
-        out.assign(m_buffer.begin(), m_buffer.begin() + BUFFER_SIZE);
-        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + BUFFER_SIZE);
-        return out;
+task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t>& buffer, std::optional<std::chrono::milliseconds> timeout) {
+    auto tls_stream = dynamic_cast<TLS*>(p_stream);
+    if(tls_stream) {
+        return tls_stream->read_append_early_data(buffer, timeout);
+    } else {
+        return p_stream->read_append(buffer, timeout);
     }
-    return {};
 }
 
-std::deque<uint8_t> buffer::flush() {
-    return std::exchange(m_buffer, {});
+buffer::buffer(size_t size): buffer_size(size){}
+
+std::deque<std::vector<uint8_t>> buffer::write(const std::span<const uint8_t> data, bool do_flush) {
+    std::deque<std::vector<uint8_t>> out;
+    size_t offset = 0;
+    const size_t total = data.size();
+    while (offset < total) {
+        if (m_buffer.empty()) {
+            m_buffer.reserve(buffer_size);
+        }
+        const size_t take = std::min(buffer_size - m_buffer.size(), total - offset);
+        m_buffer.insert(m_buffer.end(), data.begin() + offset, data.begin() + offset + take);
+        offset += take;
+        if (m_buffer.size() == buffer_size) {
+            out.push_back(std::exchange(m_buffer, {}));
+        }
+    }
+    if (do_flush and !m_buffer.empty()) {
+        out.push_back(std::exchange(m_buffer, {}));
+    }
+    return out;
+}
+
+store_buffer::store_buffer(size_t size) : buffer_size(size) {}
+
+void store_buffer::push_back(const std::span<const uint8_t> data) {
+    
+    size_t offset = 0;
+    const size_t total = data.size();
+    while (offset < total) {
+        if (current.empty()) {
+            current.reserve(buffer_size);
+        }
+        const size_t take = std::min(buffer_size - current.size(), total - offset);
+        current.insert(current.end(), data.begin() + offset, data.begin() + offset + take);
+        offset += take;
+        if (current.size() == buffer_size) {
+            m_buffer.push_back(std::exchange(current, {}));
+        }
+    }
+}
+
+std::deque<std::vector<uint8_t>> store_buffer::get(bool do_flush) {
+    auto out = std::exchange(m_buffer, {});
+    if(do_flush) {
+        out.push_back(std::exchange(current, {}));
+    }
+    return out;
+}
+
+ssize_t store_buffer::remaining() {
+    return buffer_size - current.size();
 }
     
-}// namespace fbw
+} // namespace fbw

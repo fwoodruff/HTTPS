@@ -7,6 +7,7 @@
 
 #include "h2stream.hpp"
 #include "h2proto.hpp"
+#include "../../TLS/protocol.hpp"
 
 namespace fbw {
 
@@ -34,7 +35,7 @@ task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers
     co_return co_await conn->send_outbox();
 }
 
-task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool end) {
+task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool end, bool do_flush) {
     auto conn = m_connection.lock();
     if(!conn) {
         co_return stream_result::closed;
@@ -44,18 +45,18 @@ task<stream_result> h2_stream::write_data(std::span<const uint8_t> data, bool en
         co_return stream_result::closed;
     }
     auto stream_resu = conn->h2_ctx.buffer_data(data, m_stream_id, end);
-    auto res = co_await conn->send_outbox();
+    auto res = co_await conn->send_outbox(end or do_flush);
     if(res != stream_result::ok) {
         co_return res;
     }
     if(stream_resu == stream_result::awaiting) {
         auto connection_alive = co_await h2writeable(m_connection, m_stream_id);
         co_return connection_alive;
-    } else if (stream_resu == stream_result::ok) {
-        auto connection_alive = co_await unless_blocking_read(m_connection);
-        co_return connection_alive;
     }
-    co_return stream_resu;
+    if (stream_resu != stream_result::ok) {
+        co_return stream_resu;
+    }
+    co_return co_await unless_blocking_read(m_connection);
 }
 
 task<std::pair<stream_result, bool>> h2_stream::append_http_data(std::deque<uint8_t>& buffer) {
@@ -74,6 +75,14 @@ task<std::pair<stream_result, bool>> h2_stream::append_http_data(std::deque<uint
     auto res = co_await conn->send_outbox();
     if(res != stream_result::ok) {
         co_return {res, false};
+    }
+    // since we are allowing early data
+    auto tls_stream = dynamic_cast<TLS*>(conn->m_stream.get());
+    if(tls_stream) {
+        auto res2 = co_await tls_stream->await_handshake_finished();
+        if(res2 != stream_result::ok) {
+            co_return {res2, false};
+        }
     }
     co_return {stream_result::ok, data_done };
 }

@@ -29,7 +29,8 @@
 //      HRR cookies
 //      HTTP/2 timeouts
 //      HTTP/2 error handling
-//      HTTP/1.1 move to shared interface
+//      HTTP/2 graceful server shutdown
+//      memory bounded TLS layer 
 
 // Correctness:
 //      Check that poly1305 is constant-time
@@ -65,56 +66,36 @@
 //      TLS Client
 //      Russian ciphers
 
+// redirect callback
 
-// Post and range request handling for http/2 (video?)
-// something going wrong with HPACK for range requests
-// something maybe going wrong with 'new' HTTP/1.1 POST requests
+// delete old HTTP/1.1 layer
+// reorganise code in the HTTP section - functions in wrong places
+// organise webroots by language, then read the Accept-Languages header, refactor application code to be more 'router'-like
 
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
-
 // tls record serialisation could be simpler
-
-// check multithreading still works
-// check all ciphers still work
-// check if key rotation still works
 
 // for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 // go through RFC 9113 ensuring correct handling of everything
 
 // write and use a 'safe add' function
-// rename stream_result enum to: ok, awaiting, timeout, fail
-
-// better logic for deciding if a header should be indexed
-
-// implement http/2 graceful server shutdown
-
 // don't need multiple async layers for TLS + HTTP/2, combine
-
 // handle client sending HTTP request on HTTPS port
-
-// check whether content-length is essential and debug accordingly
-
-// pass everything by span
-
-// HTTP 406 content negotiation
-
 // request_headers struct rather than a vector.
-
-// buffered writes
 
 // POST request handling
 // after a connection is accepted, this is the per-client entry point
-task<void> http_client(std::unique_ptr<fbw::stream> client_stream, bool redirect, connection_token ip_connections, std::string alpn) {
+task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {
         if(alpn == "http/1.1") {
-            fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
-            co_await http_handler.client();
+            //fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
+            //co_await http_handler.client();
             // todo: move across to this so that HTTP/2 and HTTP/1.1 share an interface
-            // auto http_handler = std::make_shared<fbw::HTTP1>( std::move(client_stream), fbw::application_handler);
-            // co_await http_handler->client();
+            auto http_handler = std::make_shared<fbw::HTTP1>( std::move(client_stream), handler);
+            co_await http_handler->client();
         } if(alpn == "h2") {
-            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), fbw::application_handler);
+            auto http_handler = std::make_shared<fbw::HTTP2>( std::move(client_stream), handler);
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {
@@ -132,7 +113,7 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
     if(alpn.empty()) {
         co_return;
     }
-    co_await http_client(std::move(client_stream), false, std::move(ip_connections), alpn);
+    co_await http_client(std::move(client_stream), std::move(ip_connections), alpn, fbw::application_handler);
 }
 
 // accepts connections and spins up per-client asynchronous tasks
@@ -173,7 +154,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
                     continue;
                 }
                 auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
-                async_spawn(http_client(std::move(client_tcp_stream), true, std::move(*conn), "http/1.1"));
+                async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
             }
         }
     } catch(const std::exception& e ) {

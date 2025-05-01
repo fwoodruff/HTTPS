@@ -12,6 +12,7 @@
 #include "../TCP/stream_base.hpp"
 #include <vector>
 #include <span>
+#include <functional>
 
 #include "../Runtime/task.hpp"
 
@@ -49,10 +50,12 @@ public:
     virtual task<std::pair<stream_result, bool>> append_http_data(std::deque<uint8_t>& buffer) = 0; // bool end
     virtual task<stream_result> write_headers(const std::vector<entry_t>& headers) = 0;
     //virtual task<stream_result> write_push_promise(std::vector<entry_t>& headers) = 0;
-    virtual task<stream_result> write_data(std::span<const uint8_t> data, bool end = false) = 0;
+    virtual task<stream_result> write_data(std::span<const uint8_t> data, bool end = false, bool do_flush = false) = 0;
     virtual bool is_done() = 0;
     virtual ~http_ctx() = default;
 };
+
+using callback = std::function< task<bool>(http_ctx&) >;
 
 }
 

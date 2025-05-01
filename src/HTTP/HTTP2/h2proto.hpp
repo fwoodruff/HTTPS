@@ -37,7 +37,7 @@ class HTTP2 : public std::enable_shared_from_this<HTTP2> {
 
 public:
     [[nodiscard]] task<void> client();
-    HTTP2(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx& )> handler);
+    HTTP2(std::unique_ptr<stream> stream, callback handler);
     ~HTTP2();
     HTTP2(const HTTP2&) = delete;
     HTTP2& operator=(const HTTP2&) = delete;
@@ -49,11 +49,13 @@ public:
 
     std::unique_ptr<stream> m_stream;
     friend class h2_stream;
-    std::function<task<bool>(http_ctx&)> m_handler;
+    callback m_handler;
     bool is_blocking_read = false; // todo: friend awaitable?
 private:
+    task<void> client_inner();
+    void client_cleanup();
     [[nodiscard]] task<bool> connection_startup();
-    [[nodiscard]] task<stream_result> send_outbox();
+    [[nodiscard]] task<stream_result> send_outbox(bool flush = true);
     bool extract_and_handle();
     void handle_frame(h2frame& frame);
     bool resume_back_pressure();

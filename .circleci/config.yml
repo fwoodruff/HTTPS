@@ -20,8 +20,11 @@ jobs:
           command: |
             sleep 0.01 # wait for server
             curl -kv https://localhost:8443
-            curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost:8443
             curl http://localhost:8080
+            curl -kv --tlsv1.3 --http2 https://localhost:8443
+            curl -kv --http2-prior-knowledge https://localhost:8443/final.html
+            curl -kv --http1.1 https://localhost:8443/
+            curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost:8443
       - run:
           name: Test session tickets
           command: |

@@ -10,6 +10,7 @@
 namespace fbw {
 
 h2_context::h2_context() :
+    outbox(WRITE_RECORD_SIZE),
     last_server_stream_id(0),
     last_client_stream_id(0),
     awaiting_settings_ack(false),
@@ -84,9 +85,9 @@ void h2_context::close_connection() {
     stream_ctx_map.clear();
 }
 
-std::pair<std::deque<std::vector<uint8_t>>, bool> h2_context::extract_outbox() {
+std::pair<std::deque<std::vector<uint8_t>>, bool> h2_context::extract_outbox(bool flush) {
     std::scoped_lock lk { m_mut };
-    std::deque<std::vector<uint8_t>> data_contiguous = std::exchange(outbox, {});
+    std::deque<std::vector<uint8_t>> data_contiguous = outbox.get(flush);
     bool closing = go_away_sent and stream_ctx_map.empty();
     return { data_contiguous, closing };
 }
@@ -353,7 +354,12 @@ stream_result h2_context::stage_buffer(stream_ctx& stream) {
             return stream_result::awaiting;
         }
 
-        auto frame_size = std::min<int32_t>({connection_current_window_remaining, stream.stream_current_window_remaining, int32_t(client_settings.max_frame_size), int32_t(stream.outbox.size())});
+        int32_t desired_size = outbox.remaining() - H2_FRAME_HEADER_SIZE;
+        if(desired_size <= 0) {
+            desired_size += WRITE_RECORD_SIZE;
+        }
+
+        auto frame_size = std::min<int32_t>({connection_current_window_remaining, stream.stream_current_window_remaining, int32_t(client_settings.max_frame_size), int32_t(stream.outbox.size()), desired_size});
         connection_current_window_remaining -= frame_size;
         stream.stream_current_window_remaining -= frame_size;
         
@@ -369,7 +375,8 @@ stream_result h2_context::stage_buffer(stream_ctx& stream) {
                 stream.strm_state = stream_state::closed;
             }
         }
-        outbox.push_back(frame.serialise());
+        auto frame_serial = frame.serialise();
+        outbox.push_back(frame_serial);
         if(stream.outbox.empty()) {
             return stream_result::ok;
         }

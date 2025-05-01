@@ -15,23 +15,29 @@
 #include "h2awaitable.hpp"
 #include "../../global.hpp"
 #include "h2stream.hpp"
+#include "../../TLS/protocol.hpp"
 
 namespace fbw {
 
 const std::string connection_init = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 task<void> HTTP2::client() {
+    co_await client_inner();
+    client_cleanup();
+}
+
+task<void> HTTP2::client_inner() {
     if(!co_await connection_startup()) {
         co_return;
     }
     h2_ctx.send_initial_settings();
     for(;;) {
         for(;;) {
-            auto resa = co_await send_outbox();
+            auto resa = co_await send_outbox(false);
             if(resa != stream_result::ok) {
                 co_return;
             }
-            auto res = co_await m_stream->read_append(m_read_buffer, 0ms);
+            auto res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, 0ms);
             if(res == stream_result::closed) {
                 co_return;
             }
@@ -42,26 +48,35 @@ task<void> HTTP2::client() {
                 break;
             }
         }
-        
-        auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
+        if(stream_result::ok != co_await send_outbox(true)) { // flush
+            co_return;
+        }
+        auto res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
         if(res != stream_result::ok) {
-            std::unordered_map<uint32_t, rw_handle> m_coros_local;
-            h2_ctx.close_connection();
-            {
-                std::scoped_lock lk(m_coro_mut);
-                is_blocking_read = false;
-                m_coros_local = std::exchange(m_coros, {});
-            }
-            co_await send_outbox();
-            for(auto c : m_coros_local) {
-                c.second.handle.resume();
-            }
             co_return;
         }
         std::scoped_lock lk(m_coro_mut);
         is_blocking_read = false;
     }
 }
+
+void HTTP2::client_cleanup() {
+    std::unordered_map<uint32_t, rw_handle> m_coros_local;
+    std::deque<std::coroutine_handle<void>> m_writers_local;
+    h2_ctx.close_connection();
+    {
+        std::scoped_lock lk(m_coro_mut);
+        m_coros_local = std::exchange(m_coros, {});
+        m_writers_local = std::exchange(m_writers, {});
+    }
+    for(auto c : m_coros_local) {
+        c.second.handle.resume();
+    }
+    for(auto handle : m_writers_local) {
+        handle.resume();
+    }
+}
+
 
 bool HTTP2::extract_and_handle() {
     auto [frame, did_extract] = extract_frame(m_read_buffer);
@@ -108,10 +123,10 @@ void HTTP2::handle_frame(h2frame& frame) {
     return;
 }
 
-task<stream_result> HTTP2::send_outbox() {
+task<stream_result> HTTP2::send_outbox(bool flush) {
     guard g(&m_async_mut);
     co_await m_async_mut.lock();
-    auto [data_contiguous, closing] = h2_ctx.extract_outbox();
+    auto [data_contiguous, closing] = h2_ctx.extract_outbox(flush);
     while(!data_contiguous.empty()) {
         auto packet = std::move(data_contiguous.front());
         data_contiguous.pop_front();
@@ -130,8 +145,7 @@ task<stream_result> HTTP2::send_outbox() {
 task<bool> HTTP2::connection_startup() {
     assert(m_stream);
     while (m_read_buffer.size() < connection_init.size()) {
-        auto res = co_await m_stream->read_append(m_read_buffer,
-                                                 project_options.keep_alive);
+        stream_result res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
         if (res == stream_result::closed) {
             co_return false;
         }
@@ -197,10 +211,11 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     co_return;
 }
 
-HTTP2::HTTP2(std::unique_ptr<stream> stream, std::function<task<bool>(http_ctx&)> handler) :
+HTTP2::HTTP2(std::unique_ptr<stream> stream, callback handler) :
     m_stream(std::move(stream)), m_handler(handler) {}
 
 HTTP2::~HTTP2() {
+    assert(m_writers.empty());
     assert (m_coros.empty());
 }
 

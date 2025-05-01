@@ -22,7 +22,7 @@ class HTTP1 : public http_ctx {
 
 public:
     [[nodiscard]] task<void> client();
-    HTTP1(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx&) > handler);
+    HTTP1(std::unique_ptr<stream> stream, callback handler);
     HTTP1(const HTTP1&) = delete;
     HTTP1& operator=(const HTTP1&) = delete;
 
@@ -34,7 +34,7 @@ public:
     task<std::pair<stream_result, bool>> append_http_data(std::deque<uint8_t>& buffer) override;
     bool is_done() override;
 
-    std::function<task<bool>(http_ctx&)> m_application_handler;
+    callback m_application_handler;
 private:
     buffer m_buffered_writer;
     ssize_t content_length_to_read = 0;

@@ -81,7 +81,7 @@ std::vector<entry_t> HTTP1::get_headers() {
     return headers;
 }
 
-HTTP1::HTTP1(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx&) > handler) : m_stream(std::move(stream)), m_application_handler(handler), m_buffered_writer(WRITE_RECORD_SIZE) {}
+HTTP1::HTTP1(std::unique_ptr<stream> stream, callback handler) : m_stream(std::move(stream)), m_application_handler(handler), m_buffered_writer(WRITE_RECORD_SIZE) {}
 
 std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {

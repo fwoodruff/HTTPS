@@ -316,11 +316,76 @@ task<bool> handle_request(http_ctx& connection) {
     co_return true;
 }
 
+task<bool> handle_redirect(http_ctx& connection) {
+    const std::vector<entry_t> request_headers = connection.get_headers();
+    auto method = find_header(request_headers, ":method");
+    auto path = find_header(request_headers, ":path");
+    auto authority = find_header(request_headers, ":authority");
+    auto scheme = find_header(request_headers, ":scheme");
+
+    if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
+        throw http_error(400, "Bad Request");
+    }
+    if(!authority or authority->starts_with("localhost")) {
+        authority = project_options.default_subfolder;
+    }
+
+    std::string body = moved_301();
+
+    std::string filename = fix_filename(*path);
+    std::string MIME = Mime_from_file(filename);
+
+    std::string a_path = *path;
+    
+    std::string https_port = project_options.server_port;
+    std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
+
+    std::string location_resource = a_path == "/" ? "" : a_path;
+    std::vector<entry_t> out;
+
+    std::string domain = project_options.default_subfolder;
+    std::string location = "https://" + domain + optional_port + location_resource;
+    
+    out.push_back({":status", "301"});
+    out.push_back({"location", location});
+    auto content_type = MIME + (MIME.substr(0, 4) == "text" ? "; charset=UTF-8" : "");
+    out.push_back({"content-type", content_type});
+    out.push_back({"server", make_server_name()});
+    out.push_back({"content-length", std::to_string(body.size())});
+    out.push_back({"server", make_server_name()});
+
+    stream_result res = co_await connection.write_headers(out);
+    if(res != stream_result::ok) {
+        co_return false;
+    }
+
+    auto sbody = to_unsigned(body);
+    std::span<uint8_t> d { sbody.begin(), sbody.end() };
+    co_await connection.write_data(d, true);
+    co_return false;
+}
+
 // handle stream starts when headers have been received
 task<bool> application_handler(http_ctx& connection) {
     std::optional<http_error> err;
     try {
         co_return co_await handle_request(connection);
+    } catch(const http_error& e) {
+        err = e;
+        goto END;
+    }
+    co_return false;
+END:
+    assert(err != std::nullopt);
+    co_await send_error(connection, err->m_http_code, err->what());
+    co_return false;
+}
+
+// handle stream starts when headers have been received
+task<bool> redirect_handler(http_ctx& connection) {
+    std::optional<http_error> err;
+    try {
+        co_return co_await handle_redirect(connection);
     } catch(const http_error& e) {
         err = e;
         goto END;

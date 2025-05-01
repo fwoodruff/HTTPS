@@ -211,7 +211,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     co_return;
 }
 
-HTTP2::HTTP2(std::unique_ptr<stream> stream, std::function<task<bool>(http_ctx&)> handler) :
+HTTP2::HTTP2(std::unique_ptr<stream> stream, callback handler) :
     m_stream(std::move(stream)), m_handler(handler) {}
 
 HTTP2::~HTTP2() {

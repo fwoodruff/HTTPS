@@ -47,6 +47,7 @@ public:
 ssize_t get_file_size(std::filesystem::path filename);
 
 void write_body(std::vector<uint8_t> frame);
+std::string moved_301();
 
 } // namespace fbw
  

@@ -12,6 +12,7 @@
 #include "../TCP/stream_base.hpp"
 #include <vector>
 #include <span>
+#include <functional>
 
 #include "../Runtime/task.hpp"
 
@@ -53,6 +54,8 @@ public:
     virtual bool is_done() = 0;
     virtual ~http_ctx() = default;
 };
+
+using callback = std::function< task<bool>(http_ctx&) >;
 
 }
 

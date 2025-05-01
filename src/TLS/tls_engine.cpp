@@ -294,7 +294,7 @@ void tls_engine::client_handshake_message_sync(std::queue<packet_timed>& output,
         {
             auto update_request = client_key_update_received(std::move(handshake_message));
             if(update_request == KeyUpdateRequest::update_requested) {
-                server_key_update_respond(output);
+                server_key_update_sync(output);
             }
             break;
         }
@@ -374,14 +374,7 @@ KeyUpdateRequest tls_engine::client_key_update_received(const std::vector<uint8_
     return update_request;
 }
 
-void tls_engine::server_key_update_respond(std::queue<packet_timed>& output) {
-    auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
-    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
-    auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
-    tls13_context.set_server_traffic_key(srv_key);
-    tls_record keyupdate = server_key_update_record(KeyUpdateRequest::update_not_requested);
-    write_record_sync(output, std::move(keyupdate), project_options.handshake_timeout);
-}
+
 
 void tls_engine::server_hello_sync(std::queue<packet_timed>& output) {
     auto hello_record = handshake.server_hello_record();
@@ -624,15 +617,13 @@ tls_record server_key_update_record(KeyUpdateRequest req) {
 }
 
 void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
-    // todo: check this still works
     assert(tls_protocol_version == TLS13);
     auto keyupdate = server_key_update_record(KeyUpdateRequest::update_requested);
-    auto& srv_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
-    auto* tls13_context = dynamic_cast<cipher_base_tls13*>(cipher_context.get());
-    assert(tls13_context != nullptr);
-    tls13_context->set_server_traffic_key(srv_key);
     write_record_sync(output, std::move(keyupdate), project_options.session_timeout);
+    auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
+    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+    auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
+    tls13_context.set_server_traffic_key(srv_key);
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired

@@ -23,6 +23,8 @@
 #include <optional>
 #include <atomic>
 #include <queue>
+#include <deque>
+#include <vector>
 
 namespace fbw {
 
@@ -60,15 +62,28 @@ private:
 
 tls_record server_key_update_record(KeyUpdateRequest req);
 
-// todo: writes to the TLS context should be buffered
-// flush if waiting for a WINDOW_UPDATE or about to block on read
+task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t>& buffer, std::optional<std::chrono::milliseconds> timeout);
+
 class buffer {
 public:
-    std::deque<uint8_t> write(const std::span<const uint8_t> data);
-    std::deque<uint8_t> flush();
+    buffer(size_t size);
+    std::deque<std::vector<uint8_t>> write(const std::span<const uint8_t> data, bool do_flush);
 private:
-    static constexpr size_t BUFFER_SIZE = 4096;
-    std::deque<uint8_t> m_buffer;
+    size_t buffer_size;
+    std::vector<uint8_t> m_buffer;
+};
+
+
+class store_buffer { // todo: 'channels'
+public:
+    store_buffer(size_t size);
+    void push_back(const std::span<const uint8_t> data);
+    std::deque<std::vector<uint8_t>> get(bool flush);
+    ssize_t remaining();
+private:
+    size_t buffer_size;
+    std::vector<uint8_t> current;
+    std::deque<std::vector<uint8_t>> m_buffer;
 };
 
 } // namespace

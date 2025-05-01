@@ -12,6 +12,7 @@
 #include "../../global.hpp"
 #include "../../Runtime/task.hpp"
 #include "../../Runtime/concurrent_queue.hpp"
+#include "../../TLS/protocol.hpp"
 #include "hpack.hpp"
 #include "h2awaitable.hpp"
 #include "h2frame.hpp"
@@ -80,7 +81,7 @@ public:
     void send_initial_settings();
     
     // returns bytes to send and whether that's the end of data 
-    std::pair<std::deque<std::vector<uint8_t>>, bool> extract_outbox();
+    std::pair<std::deque<std::vector<uint8_t>>, bool> extract_outbox(bool flush);
 
 private:
     std::vector<id_new> receive_data_frame(const h2_data& frame);
@@ -95,12 +96,11 @@ private:
 
     static constexpr int32_t WINDOW_UPDATE_INCREMENT_THRESHOLD = 32768;
 
-    // todo:
-    // after stage_buffer we always check if the stream needs to be deleted.
-    // receiving a connection window frame we need to run a lot of stage buffer calls
 
     hpack m_hpack;
-    std::deque<std::vector<uint8_t>> outbox; // send to network
+    store_buffer outbox; // send to network
+    
+
     std::unordered_map<uint32_t, stream_ctx> stream_ctx_map; // processed by streams
     uint32_t last_server_stream_id;
     uint32_t last_client_stream_id;

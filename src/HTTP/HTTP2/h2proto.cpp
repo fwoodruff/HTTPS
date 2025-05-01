@@ -15,6 +15,7 @@
 #include "h2awaitable.hpp"
 #include "../../global.hpp"
 #include "h2stream.hpp"
+#include "../../TLS/protocol.hpp"
 
 namespace fbw {
 
@@ -27,11 +28,11 @@ task<void> HTTP2::client() {
     h2_ctx.send_initial_settings();
     for(;;) {
         for(;;) {
-            auto resa = co_await send_outbox();
+            auto resa = co_await send_outbox(false);
             if(resa != stream_result::ok) {
                 co_return;
             }
-            auto res = co_await m_stream->read_append(m_read_buffer, 0ms);
+            auto res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, 0ms);
             if(res == stream_result::closed) {
                 co_return;
             }
@@ -42,8 +43,10 @@ task<void> HTTP2::client() {
                 break;
             }
         }
-        
-        auto res = co_await m_stream->read_append(m_read_buffer, project_options.session_timeout);
+        if(stream_result::ok != co_await send_outbox(true)) { // flush
+            co_return;
+        }
+        auto res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
         if(res != stream_result::ok) {
             std::unordered_map<uint32_t, rw_handle> m_coros_local;
             h2_ctx.close_connection();
@@ -108,10 +111,10 @@ void HTTP2::handle_frame(h2frame& frame) {
     return;
 }
 
-task<stream_result> HTTP2::send_outbox() {
+task<stream_result> HTTP2::send_outbox(bool flush) {
     guard g(&m_async_mut);
     co_await m_async_mut.lock();
-    auto [data_contiguous, closing] = h2_ctx.extract_outbox();
+    auto [data_contiguous, closing] = h2_ctx.extract_outbox(flush);
     while(!data_contiguous.empty()) {
         auto packet = std::move(data_contiguous.front());
         data_contiguous.pop_front();
@@ -130,8 +133,7 @@ task<stream_result> HTTP2::send_outbox() {
 task<bool> HTTP2::connection_startup() {
     assert(m_stream);
     while (m_read_buffer.size() < connection_init.size()) {
-        auto res = co_await m_stream->read_append(m_read_buffer,
-                                                 project_options.keep_alive);
+        stream_result res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
         if (res == stream_result::closed) {
             co_return false;
         }

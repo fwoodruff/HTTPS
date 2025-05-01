@@ -46,10 +46,17 @@ task<stream_result> HTTP1::write_headers(const std::vector<entry_t>& headers) {
     co_return res;
 }
 
-task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end) {
-    std::vector<uint8_t> dat(data.begin(), data.end());
-    auto res = co_await m_stream->write(dat, project_options.session_timeout);
-    co_return res;
+task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end, bool do_flush) {
+    auto send_data = m_buffered_writer.write(data, end or do_flush);
+    while(!send_data.empty()) {
+        auto& packet = send_data.front();
+        auto res = co_await m_stream->write(std::move(packet), project_options.session_timeout);
+        if(res != stream_result::ok) {
+            co_return res;
+        }
+        send_data.pop_front();
+    }
+    co_return stream_result::ok;
 }
 
 task<std::pair<stream_result, bool>> HTTP1::append_http_data(std::deque<uint8_t>& buffer) {
@@ -74,7 +81,7 @@ std::vector<entry_t> HTTP1::get_headers() {
     return headers;
 }
 
-HTTP1::HTTP1(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx&) > handler) : m_stream(std::move(stream)), m_application_handler(handler) {}
+HTTP1::HTTP1(std::unique_ptr<stream> stream, std::function< task<bool>(http_ctx&) > handler) : m_stream(std::move(stream)), m_application_handler(handler), m_buffered_writer(WRITE_RECORD_SIZE) {}
 
 std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
@@ -131,7 +138,15 @@ task<void> HTTP1::client() {
                 }
             }
             bool keep_alive = co_await m_application_handler(*this);
-            
+            auto send_data = m_buffered_writer.write({}, true);
+            while(!send_data.empty()) {
+                auto& packet = send_data.front();
+                auto res = co_await m_stream->write(std::move(packet), project_options.session_timeout);
+                if(res != stream_result::ok) {
+                    co_return;
+                }
+                send_data.pop_front();
+            }
             if(!keep_alive) {
                 co_return;
             }

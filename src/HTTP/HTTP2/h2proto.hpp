@@ -53,7 +53,7 @@ public:
     bool is_blocking_read = false; // todo: friend awaitable?
 private:
     [[nodiscard]] task<bool> connection_startup();
-    [[nodiscard]] task<stream_result> send_outbox();
+    [[nodiscard]] task<stream_result> send_outbox(bool flush = true);
     bool extract_and_handle();
     void handle_frame(h2frame& frame);
     bool resume_back_pressure();

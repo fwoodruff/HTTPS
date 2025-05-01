@@ -219,10 +219,10 @@ void store_buffer::push_back(const std::span<const uint8_t> data) {
         if (current.empty()) {
             current.reserve(buffer_size);
         }
-        const size_t take = std::min(buffer_size - m_buffer.size(), total - offset);
+        const size_t take = std::min(buffer_size - current.size(), total - offset);
         current.insert(current.end(), data.begin() + offset, data.begin() + offset + take);
         offset += take;
-        if (m_buffer.size() == buffer_size) {
+        if (current.size() == buffer_size) {
             m_buffer.push_back(std::exchange(current, {}));
         }
     }

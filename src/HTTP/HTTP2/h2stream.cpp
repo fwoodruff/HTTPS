@@ -12,7 +12,7 @@
 namespace fbw {
 
 h2_stream::h2_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) :
-    m_buffered_writer(WRITE_RECORD_SIZE - H2_FRAME_HEADER_SIZE), m_connection(connection), m_stream_id(stream_id)
+    m_connection(connection), m_stream_id(stream_id)
 {}
 
 bool h2_stream::is_done() {

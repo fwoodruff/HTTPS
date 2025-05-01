@@ -53,7 +53,7 @@ task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end, b
         auto res = co_await m_stream->write(std::move(packet), project_options.session_timeout);
         if(res != stream_result::ok) {
             co_return res;
-        }
+       }
         send_data.pop_front();
     }
     co_return stream_result::ok;
@@ -115,9 +115,8 @@ task<void> HTTP1::client() {
             auto timeout = did_handle_connection ? project_options.keep_alive : project_options.session_timeout;
             auto res = co_await m_stream->read_append(m_read_buffer, timeout);
             if(res != stream_result::ok) {
-                co_return;
+                break;
             }
-            
             headers = app_try_extract_header(m_read_buffer);
             if(headers.empty()) {
                 continue;
@@ -138,17 +137,18 @@ task<void> HTTP1::client() {
                 }
             }
             bool keep_alive = co_await m_application_handler(*this);
-            auto send_data = m_buffered_writer.write({}, true);
+            std::vector<uint8_t> none {};
+            auto send_data = m_buffered_writer.write(none, true);
             while(!send_data.empty()) {
                 auto& packet = send_data.front();
                 auto res = co_await m_stream->write(std::move(packet), project_options.session_timeout);
                 if(res != stream_result::ok) {
-                    co_return;
+                    break;
                 }
                 send_data.pop_front();
             }
             if(!keep_alive) {
-                co_return;
+                break;
             }
         } catch(const http_error& e) {
             err = e;
@@ -159,9 +159,11 @@ task<void> HTTP1::client() {
         content_length_to_read = 0;
         did_handle_connection = true;
     }
+    co_await m_stream->close_notify();
     co_return;
     END:
-    co_await send_error(*this, err->m_http_code, err->what() ) ;
+    co_await send_error(*this, err->m_http_code, err->what() );
+    co_await m_stream->close_notify();
 }
 
 }

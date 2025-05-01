@@ -527,6 +527,8 @@ std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& en
             }
             m_decode_table.set_capacity(idx);
             return std::nullopt;
+        default:
+            return std::nullopt;
     }
 }
 

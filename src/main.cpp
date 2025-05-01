@@ -40,7 +40,6 @@
 //      g++-14-arm-linux-gnueabihf is only on trixie
 //      use std::exchange instead of std::move
 //      confirm no reference cycles that keep h2 connections alive
-//      key rotation for gigantic requests
 
 // Syntax:
 //      Add 'explict' to constructors
@@ -87,8 +86,6 @@
 // handle client sending HTTP request on HTTPS port
 
 // request_headers struct rather than a vector.
-
-// key rotation
 
 // POST request handling
 // after a connection is accepted, this is the per-client entry point

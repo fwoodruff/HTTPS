@@ -52,6 +52,8 @@ public:
     std::function<task<bool>(http_ctx&)> m_handler;
     bool is_blocking_read = false; // todo: friend awaitable?
 private:
+    task<void> client_inner();
+    void client_cleanup();
     [[nodiscard]] task<bool> connection_startup();
     [[nodiscard]] task<stream_result> send_outbox(bool flush = true);
     bool extract_and_handle();

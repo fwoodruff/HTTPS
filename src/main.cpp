@@ -67,9 +67,7 @@
 //      Russian ciphers
 
 // delete old HTTP/1.1 layer
-
 // reorganise code in the HTTP section - functions in wrong places
-
 // organise webroots by language, then read the Accept-Languages header, refactor application code to be more 'router'-like
 
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
@@ -80,11 +78,8 @@
 // go through RFC 9113 ensuring correct handling of everything
 
 // write and use a 'safe add' function
-
 // don't need multiple async layers for TLS + HTTP/2, combine
-
 // handle client sending HTTP request on HTTPS port
-
 // request_headers struct rather than a vector.
 
 // POST request handling

@@ -6,8 +6,8 @@
 //
 
 #include "string_utils.hpp"
-#include "../global.hpp"
-#include "../TLS/protocol.hpp"
+#include "../../global.hpp"
+#include "../../TLS/protocol.hpp"
 
 #include <sstream>
 #include <memory>

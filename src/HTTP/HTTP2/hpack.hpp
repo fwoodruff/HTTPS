@@ -9,8 +9,7 @@
 #define hpack_hpp
 
 #include "../../global.hpp"
-#include "../http_ctx.hpp"
-
+#include "../common/http_ctx.hpp"
 #include <unordered_map>
 #include <vector>
 #include <string>

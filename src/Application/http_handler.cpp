@@ -7,9 +7,9 @@
 
 #include "http_handler.hpp"
 #include "../Runtime/task.hpp"
-#include "../HTTP/HTTP.hpp"
-#include "../HTTP/string_utils.hpp"
-#include "../HTTP/mimemap.hpp"
+#include "../HTTP/common/HTTP.hpp"
+#include "../HTTP/common/string_utils.hpp"
+#include "../HTTP/common/mimemap.hpp"
 #include "../TLS/Cryptography/one_way/keccak.hpp"
 #include "../global.hpp"
 

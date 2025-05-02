@@ -9,7 +9,7 @@
 #include "h2frame.hpp"
 #include "h2proto.hpp"
 
-#include "../string_utils.hpp"
+#include "../common/string_utils.hpp"
 
 namespace fbw {
 

@@ -2,12 +2,12 @@
 #include "TLS/protocol.hpp"
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
-#include "HTTP/HTTP.hpp"
+#include "HTTP/common/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
 #include "global.hpp"
-#include "HTTP/mimemap.hpp"
+#include "HTTP/common/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
-#include "HTTP/string_utils.hpp"
+#include "HTTP/common/string_utils.hpp"
 #include "limiter.hpp"
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
@@ -75,15 +75,11 @@
 
 // for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 // go through RFC 9113 ensuring correct handling of everything
-
 // write and use a 'safe add' function
 // don't need multiple async layers for TLS + HTTP/2, combine
 // handle client sending HTTP request on HTTPS port
 // request_headers struct rather than a vector.
 
-// adding coroutine_yield to HTTP/1.1 writer seems to trigger a scheduling bug - investigate
-
-// POST request handling
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {

@@ -11,8 +11,8 @@
 #include "../../Runtime/task.hpp"
 #include "../../global.hpp"
 #include "../../TCP/tcp_stream.hpp"
-#include "../http_ctx.hpp"
-#include "../string_utils.hpp"
+#include "../common/http_ctx.hpp"
+#include "../common/string_utils.hpp"
 #include "../../TLS/protocol.hpp"
 #include <functional>
 

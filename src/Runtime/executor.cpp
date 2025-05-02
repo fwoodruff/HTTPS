@@ -56,8 +56,8 @@ void executor::try_poll() {
     }
 }
 
-int executor::resume_batch(int max_iters) {
-    for (size_t i = 0; i < max_iters; ++i) {
+int executor::resume_batch(size_t batch_size) {
+    for (size_t i = 0; i < batch_size; ++i) {
         auto task = m_ready.try_pop();
         if (!task) {
             return i;
@@ -68,7 +68,7 @@ int executor::resume_batch(int max_iters) {
         }
         task->resume();
     }
-    return max_iters;
+    return batch_size;
 }
 
 void executor::main_thread_function() {

@@ -44,7 +44,7 @@ jobs:
       - run:
           name: Build server
           command: |
-            sudo docker build -t server .
+            sudo docker build --progress=plain -t server .
 
 workflows:
   run_tests:

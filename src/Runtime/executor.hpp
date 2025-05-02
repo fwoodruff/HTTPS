@@ -50,6 +50,7 @@ private:
     void main_thread_function();
     void try_poll();
     void notify_runtime();
+    int resume_batch(int max_iters);
     friend struct yield_coroutine;
 };
 

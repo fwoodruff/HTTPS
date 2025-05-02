@@ -146,7 +146,7 @@ std::string choose_alpn(const std::vector<std::string>& client_alpn) {
     constexpr const char* ALPN_H1 = "http/1.1";
     constexpr const char* ALPN_H2 = "h2";
     if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H2) != client_alpn.end()) {
-        //return ALPN_H2;
+        return ALPN_H2;
     }
     if(client_alpn.empty() or std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
         return ALPN_H1;

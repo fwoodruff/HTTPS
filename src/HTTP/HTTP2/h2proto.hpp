@@ -52,6 +52,7 @@ public:
     callback m_handler;
     bool is_blocking_read = false; // todo: friend awaitable?
 private:
+    std::atomic<uint64_t> counter = 1;
     task<void> client_inner();
     void client_cleanup();
     [[nodiscard]] task<bool> connection_startup();

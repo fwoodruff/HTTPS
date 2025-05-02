@@ -45,32 +45,41 @@ void executor::thread_function() {
 }
 
 void executor::try_poll() {
-    if(m_ready.size_hint() < NUM_THREADS) {
-        auto this_can_lock = can_poll_wait.try_lock();
-        if(this_can_lock) {
-            std::vector<std::coroutine_handle<>> wakeable_coroutines{};
-            {
-                std::unique_lock lk { can_poll_wait, std::adopt_lock };
-                wakeable_coroutines = m_reactor.wait(true);
-            }
-            m_ready.push_bulk(std::move(wakeable_coroutines));
+    auto this_can_lock = can_poll_wait.try_lock();
+    if(this_can_lock) {
+        std::vector<std::coroutine_handle<>> wakeable_coroutines{};
+        {
+            std::unique_lock lk { can_poll_wait, std::adopt_lock };
+            wakeable_coroutines = m_reactor.wait(true);
         }
+        m_ready.push_bulk(std::move(wakeable_coroutines));
     }
+}
+
+int executor::resume_batch(int max_iters) {
+    for (size_t i = 0; i < max_iters; ++i) {
+        auto task = m_ready.try_pop();
+        if (!task) {
+            return i;
+        }
+        if (*task == nullptr) {
+            notify_runtime();
+            return -1;
+        }
+        task->resume();
+    }
+    return max_iters;
 }
 
 void executor::main_thread_function() {
     for(;;) {
         try_poll();
-        for(size_t i = 0; i < 1 + (m_ready.size_hint() + 1)/ NUM_THREADS; i++ ) {
-            auto task = m_ready.try_pop();
-            if(task) {
-                if(*task == nullptr) {
-                    notify_runtime();
-                    return;
-                }
-                task->resume();
-                continue;
-            }
+        int num_tasks = resume_batch(((m_ready.size_hint() + 1)/ NUM_THREADS) + 1);
+        if(num_tasks < 0) { // signals to shut down the thread
+            break;
+        }
+        if(num_tasks > 0) {
+            continue;
         }
         std::vector<std::coroutine_handle<>> wakeable_coroutines{};
         {

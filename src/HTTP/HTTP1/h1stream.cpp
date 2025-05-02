@@ -56,7 +56,11 @@ task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end, b
        }
         send_data.pop_front();
     }
-    // todo: adding a coroutine_yield here causes problems, this suggests some kind of scheduling bug
+
+    auto count = counter.fetch_add(1, std::memory_order::relaxed);
+    if(count % 0x40 == 0) {
+        co_await yield_coroutine{};
+    }
     co_return stream_result::ok;
 }
 

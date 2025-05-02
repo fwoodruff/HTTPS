@@ -36,6 +36,7 @@ public:
 
     callback m_application_handler;
 private:
+    std::atomic<uint64_t> counter = 0;
     buffer m_buffered_writer;
     ssize_t content_length_to_read = 0;
     std::vector<entry_t> headers;

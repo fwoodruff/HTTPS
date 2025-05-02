@@ -32,6 +32,9 @@ task<void> HTTP2::client_inner() {
     h2_ctx.send_initial_settings();
     for(;;) {
         for(;;) {
+            if(counter.fetch_add(1, std::memory_order::relaxed) % 0x100 == 0) {
+                co_await yield_coroutine{};
+            }
             auto resa = co_await send_outbox(false);
             if(resa != stream_result::ok) {
                 co_return;

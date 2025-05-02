@@ -167,6 +167,7 @@ void tls_engine::server_alert_sync(std::queue<packet_timed>& output, AlertLevel 
     r.write1(description);
     write_record_sync(output, std::move(r), project_options.error_timeout);
     write_connection_done = true;
+    m_expected_read_record = HandshakeStage::application_closed;
 }
 
 // called internally to decrypt a client record on receipt

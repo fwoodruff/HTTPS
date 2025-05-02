@@ -23,7 +23,7 @@ namespace fbw::secp256r1  {
 
 using namespace std::literals;
 
-struct affine_point256 {
+struct jacobian_point256 {
     ct_u256 xcoord;
     ct_u256 ycoord;
     ct_u256 zcoord;
@@ -72,7 +72,7 @@ constexpr ct_u256 REDCQ(ct_u512 T) noexcept {
 
 
 
-constexpr affine_point256 POINT_AT_INFINITY { secp256r1_p, secp256r1_p, "0x0"_xl};
+constexpr jacobian_point256 POINT_AT_INFINITY { secp256r1_p, secp256r1_p, "0x0"_xl};
 
 ct_u256 add_mod(ct_u256 x, ct_u256 y , ct_u256 mod) noexcept {
     assert(x < mod);
@@ -149,18 +149,18 @@ constexpr ct_u256 MontyinvQ(const ct_u256& a) noexcept {
     return th;
 }
 
-affine_point256 point_double(const affine_point256& P) noexcept;
+jacobian_point256 point_double(const jacobian_point256& P) noexcept;
 // finds point R, on the line through P and Q
 // The y coordinate is inferred from the base point.
-affine_point256 point_add(const affine_point256& P, const affine_point256& Q) noexcept {
-    if(P.ycoord == secp256r1_p) [[unlikely]] { // unreachable in practice therefore CT
+jacobian_point256 point_add(const jacobian_point256& P, const jacobian_point256& Q) noexcept {
+    if(P.zcoord == "0x0"_xl) [[unlikely]] {
         return Q;
     }
-    if(Q.ycoord == secp256r1_p) [[unlikely]]  { // unreachable in practice therefore CT
+    if(Q.zcoord == "0x0"_xl) [[unlikely]]  {
         return P;
     }
 
-    affine_point256 out;
+    jacobian_point256 out;
     auto Z2Z2 = REDC(Q.zcoord * Q.zcoord);
     auto U1 = REDC(Z2Z2 * P.xcoord);
     auto Z1Z1 = REDC(P.zcoord * P.zcoord);
@@ -171,7 +171,6 @@ affine_point256 point_add(const affine_point256& P, const affine_point256& Q) no
     auto S2 = REDC(Q.ycoord * Z13);
     if(U1 == U2) [[unlikely]] {
         if(S1 != S2) {
-            std::println(std::cerr, "Point at infinity"); // unreachable in practice therefore CT
             return POINT_AT_INFINITY;
         } else {
             return point_double(P);
@@ -197,16 +196,14 @@ affine_point256 point_add(const affine_point256& P, const affine_point256& Q) no
     return out;
 }
 
-
 // finds point R on the line tangent to point P on the curve
-affine_point256 point_double(const affine_point256& P) noexcept {
+jacobian_point256 point_double(const jacobian_point256& P) noexcept {
     assert(P.ycoord <= secp256r1_p);
     
-    if(P.ycoord == "0x0"_xl or P.ycoord == secp256r1_p) [[unlikely]] {
-        std::println(std::cerr, "PD Point at Infinity");
+    if(P.zcoord == "0x0"_xl) [[unlikely]] {
         return POINT_AT_INFINITY;
     }
-    affine_point256 out;
+    jacobian_point256 out;
     auto YY = REDC(P.ycoord*P.ycoord);
     auto XYY = REDC(P.xcoord*YY);
     auto XYY2 = add_mod(XYY, XYY, secp256r1_p);
@@ -233,39 +230,31 @@ affine_point256 point_double(const affine_point256& P) noexcept {
     return out;
 }
 
-affine_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
+jacobian_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
     assert(secret <= secp256r1_q);
     assert(secret != "0x0"_xl);
-
     
-    affine_point256 out {"0x0"_xl,"0x0"_xl,"0x0"_xl};
+    jacobian_point256 out = POINT_AT_INFINITY;
 
-    affine_point256 P;
+    jacobian_point256 P;
     P.xcoord = REDC(x_coord*RR_P);
     P.ycoord = REDC(y_coord*RR_P);
     P.zcoord = R_P;
 
-    int init = 0;
-    
-    for(int i = 0; i < 256; i ++) {
-        auto b = "0x1"_xl << i;
-        if((b & secret) != "0x0"_xl) { // todo: CT
-            ct_u256 mask;
-            mask.v[0] = (init == 0);
-            mask -= "0x1"_xl;
-            auto sum = point_add(P, out);
-            out.xcoord = (P.xcoord & ~mask) | (sum.xcoord & mask);
-            out.ycoord = (P.ycoord & ~mask) | (sum.ycoord & mask);
-            out.zcoord = (P.zcoord & ~mask) | (sum.zcoord & mask);
-            init |= 1;
-        }
+    for (int i = 0; i < 256; i++) {
+        auto S = point_add(P, out);
+        ct_u256 bitmask = (secret >> i) & ct_u256{"0x1"_xl};
+        ct_u256 mask = "0x0"_xl - bitmask;
+        out.xcoord = (S.xcoord & mask) | (out.xcoord & ~mask);
+        out.ycoord = (S.ycoord & mask) | (out.ycoord & ~mask);
+        out.zcoord = (S.zcoord & mask) | (out.zcoord & ~mask);
         P = point_double(P);
     }
     return out;
 }
 
-std::pair<ct_u256,ct_u256> project(affine_point256 P) noexcept {
-    if(P.xcoord == POINT_AT_INFINITY.xcoord) [[unlikely]] { 
+std::pair<ct_u256,ct_u256> project_to_affine(jacobian_point256 P) noexcept {
+    if(P.zcoord == POINT_AT_INFINITY.zcoord) [[unlikely]] { 
         return { "0x0"_xl, "0x0"_xl };
     }
     auto zz = REDC(P.zcoord * P.zcoord);
@@ -284,8 +273,8 @@ std::pair<ct_u256,ct_u256> point_multiply(ct_u256 secret, const ct_u256& x_coord
     if(secret > secp256r1_q) [[unlikely]] {
         secret = secret - secp256r1_q;
     }
-    affine_point256 out = point_multiply_affine(secret, x_coord, y_coord);
-    return project(out);
+    jacobian_point256 out = point_multiply_affine(secret, x_coord, y_coord);
+    return project_to_affine(out);
 }
 
 std::array<uint8_t, 32> multiply(const std::array<uint8_t, 32>& private_key, const std::array<uint8_t, 65>& peer_public_key) noexcept {
@@ -338,7 +327,7 @@ bool verify_signature(const ct_u256& h,
     auto P = point_multiply_affine( (h * s1) % secp256r1_q, secp256r1_gx, secp256r1_gy);
     auto Q = point_multiply_affine( (r * s1) % secp256r1_q, pub_x, pub_y);
     auto R = point_add(P, Q);
-    auto [x,y] = project(R); // converts back to cartesian coordinates
+    auto [x,y] = project_to_affine(R); // converts back to cartesian coordinates
     return (x == r);
 }
 

@@ -25,21 +25,15 @@
 // Wishlist:
 
 // Features:
-//      HTTP webroot for ACME
 //      HRR cookies
-//      HTTP/2 timeouts
-//      HTTP/2 error handling
 //      HTTP/2 graceful server shutdown
-//      memory bounded TLS layer 
+//      memory bounded TLS layer
+//      Accept-Languages header folders
 
 // Correctness:
 //      Check that poly1305 is constant-time
-//      Points at infinity?
-//      std::vector<uint8_t> is not UB but can be
-//      Check ALPN in session tickets
 //      g++-14-arm-linux-gnueabihf is only on trixie
-//      use std::exchange instead of std::move
-//      confirm no reference cycles that keep h2 connections alive
+//      go through RFC 9113 ensuring correct handling of everything
 
 // Syntax:
 //      Add 'explict' to constructors
@@ -49,10 +43,14 @@
 //      Reference RFC 8446 in comments
 
 // Separation of concerns:
-//      0-RTT context should be per-server not global - implement fingerprinting query helpersx
+//      0-RTT context should be per-server not global - implement fingerprinting query helpers
 //      read/write operations should emit 'jobs' not data, separate context for actual encryption
 //      buffering logic should be independent from encryption
 //      HTTP codes should be a map code -> { title, blurb }
+//      combine sync layers for TLS + HTTP/2
+//      write and use a 'safe add' function
+//      request_headers struct rather than a vector.
+//      for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 
 // Optimisations:
 //      Revisit big numbers
@@ -60,25 +58,16 @@
 //      Views rather than clones for client hello extensions
 //      ChaCha should zip pairs of 'state' objects for SIMD
 //      std::generator when emitting records
+//      tls record serialisation could be simpler
 
 // Future:
 //      QUIC
 //      TLS Client
 //      Russian ciphers
 
-// reorganise code in the HTTP section - functions in wrong places
-// organise webroots by language, then read the Accept-Languages header, refactor application code to be more 'router'-like
-
+// ideas:
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
-// tls record serialisation could be simpler
-
-// for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
-// go through RFC 9113 ensuring correct handling of everything
-// write and use a 'safe add' function
-// don't need multiple async layers for TLS + HTTP/2, combine
-// handle client sending HTTP request on HTTPS port
-// request_headers struct rather than a vector.
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {

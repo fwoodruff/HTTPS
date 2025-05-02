@@ -36,6 +36,9 @@ void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
 }
 
 std::optional<tls_record> try_extract_record(std::vector<uint8_t>& input) {
+    if(!input.empty() and (input[0] < 19 or input[0] > 27)) {
+        throw ssl_error("bad record", AlertLevel::fatal, AlertDescription::unexpected_message);
+    }
     if (input.size() < TLS_HEADER_SIZE) {
         return std::nullopt;
     }

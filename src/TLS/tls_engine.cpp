@@ -3,7 +3,7 @@
 //  HTTPS Server
 //
 //  Created by Frederick Benjamin Woodruff on 25/03/2025.
-//
+//  Refactored from protocol.cpp written 25/11/2021
 
 #include "protocol.hpp"
 

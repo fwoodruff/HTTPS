@@ -2,16 +2,16 @@
 #include "TLS/protocol.hpp"
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
-#include "HTTP/HTTP1_1/HTTP.hpp"
+#include "HTTP/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
 #include "global.hpp"
-#include "HTTP/HTTP1_1/mimemap.hpp"
+#include "HTTP/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
-#include "HTTP/HTTP1_1/string_utils.hpp"
+#include "HTTP/string_utils.hpp"
 #include "limiter.hpp"
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
-#include "HTTP/HTTP1_new/h1stream.hpp"
+#include "HTTP/HTTP1/h1stream.hpp"
 #include "Application/http_handler.hpp"
 
 #include <memory>
@@ -66,9 +66,6 @@
 //      TLS Client
 //      Russian ciphers
 
-// redirect callback
-
-// delete old HTTP/1.1 layer
 // reorganise code in the HTTP section - functions in wrong places
 // organise webroots by language, then read the Accept-Languages header, refactor application code to be more 'router'-like
 
@@ -84,14 +81,13 @@
 // handle client sending HTTP request on HTTPS port
 // request_headers struct rather than a vector.
 
+// adding coroutine_yield to HTTP/1.1 writer seems to trigger a scheduling bug - investigate
+
 // POST request handling
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {
         if(alpn == "http/1.1") {
-            //fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
-            //co_await http_handler.client();
-            // todo: move across to this so that HTTP/2 and HTTP/1.1 share an interface
             auto http_handler = std::make_shared<fbw::HTTP1>( std::move(client_stream), handler);
             co_await http_handler->client();
         } if(alpn == "h2") {

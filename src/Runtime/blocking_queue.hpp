@@ -1,3 +1,9 @@
+//
+//  blocking_queue.hpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 7/7/2024.
+//
 
 #ifndef blocking_queue_hpp
 #define blocking_queue_hpp

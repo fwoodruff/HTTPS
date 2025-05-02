@@ -4,7 +4,7 @@
 //
 //  Created by Frederick Benjamin Woodruff on 20/07/2021.
 //
-#include "../../global.hpp"
+#include "../global.hpp"
 #include "mimemap.hpp"
 #include "string_utils.hpp"
 
@@ -116,6 +116,9 @@ std::string Mime_from_file(const std::filesystem::path &filename) {
         auto ext = extension_from_path(filename);
         if(ext == "jpeg") {
             return "image/jpeg";
+        }
+        if(ext == "") {
+            return "text/plain";
         }
         auto ret = get_MIME(ext);
         return ret;

@@ -57,6 +57,8 @@ public:
 
 using callback = std::function< task<bool>(http_ctx&) >;
 
+task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message);
+
 }
 
 #endif // http_ctx_hpp

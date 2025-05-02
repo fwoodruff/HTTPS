@@ -1,3 +1,9 @@
+//
+//  concurrent_queue.hpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 7/7/2024.
+//
 
 #ifndef concurrent_queue_hpp
 #define concurrent_queue_hpp

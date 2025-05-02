@@ -10,7 +10,6 @@
 #include "h2proto.hpp"
 #include <queue>
 #include "../../Runtime/executor.hpp"
-#include "../../Application/http_handler.hpp"
 #include "h2frame.hpp"
 #include "h2awaitable.hpp"
 #include "../../global.hpp"

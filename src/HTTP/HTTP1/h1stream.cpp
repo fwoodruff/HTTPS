@@ -7,7 +7,7 @@
 
 #include "h1stream.hpp"
 
-#include "../../Application/http_handler.hpp"
+#include "../../Runtime/executor.hpp"
 
 namespace fbw {
 
@@ -56,6 +56,7 @@ task<stream_result> HTTP1::write_data(std::span<const uint8_t> data, bool end, b
        }
         send_data.pop_front();
     }
+    // todo: adding a coroutine_yield here causes problems, this suggests some kind of scheduling bug
     co_return stream_result::ok;
 }
 
@@ -87,6 +88,10 @@ std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
         throw http_error(413, "Payload Too Large");
     }
+    if (!m_buffer.empty() && !std::isupper(m_buffer[0])) {
+        throw http_error(400, "Invalid HTTP request"); 
+    }
+
     auto header_bytes = extract(m_buffer, "\r\n\r\n");
     if(header_bytes.empty()) {
         return {};
@@ -117,6 +122,19 @@ task<void> HTTP1::client() {
             if(res != stream_result::ok) {
                 break;
             }
+
+            if (!did_handle_connection and m_read_buffer.size() >= 3 and m_read_buffer[0] == 0x16 and m_read_buffer[1] == 0x03
+                    and (m_read_buffer[2] >= 0x00 && m_read_buffer[2] <= 0x04)) {
+                static constexpr std::array<uint8_t,7> tls_alert = {0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x46};
+                std::vector<uint8_t> alert_vec(tls_alert.begin(), tls_alert.end());
+                auto res = co_await m_stream->write(alert_vec, project_options.session_timeout);
+                if(res != stream_result::ok) {
+                    break;
+                }
+                co_await m_stream->close_notify();
+                co_return;
+            }
+
             headers = app_try_extract_header(m_read_buffer);
             if(headers.empty()) {
                 continue;
@@ -165,5 +183,7 @@ task<void> HTTP1::client() {
     co_await send_error(*this, err->m_http_code, err->what() );
     co_await m_stream->close_notify();
 }
+
+
 
 }

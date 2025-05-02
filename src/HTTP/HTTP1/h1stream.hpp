@@ -12,7 +12,7 @@
 #include "../../global.hpp"
 #include "../../TCP/tcp_stream.hpp"
 #include "../http_ctx.hpp"
-#include "../HTTP1_1/string_utils.hpp"
+#include "../string_utils.hpp"
 #include "../../TLS/protocol.hpp"
 #include <functional>
 
@@ -39,8 +39,9 @@ private:
     buffer m_buffered_writer;
     ssize_t content_length_to_read = 0;
     std::vector<entry_t> headers;
-    std::deque<uint8_t> m_read_buffer; // todo: deque
+    std::deque<uint8_t> m_read_buffer;
 };
+
 
 } // namespace
 

@@ -5,15 +5,16 @@
 //  Created by Frederick Benjamin Woodruff on 22/09/2024.
 //
 
-#include "../Runtime/task.hpp"
 #include "http_handler.hpp"
-#include "../HTTP/HTTP1_1/HTTP.hpp"
-#include "../HTTP/HTTP1_1/mimemap.hpp"
+#include "../Runtime/task.hpp"
+#include "../HTTP/HTTP.hpp"
+#include "../HTTP/string_utils.hpp"
+#include "../HTTP/mimemap.hpp"
 #include "../TLS/Cryptography/one_way/keccak.hpp"
+#include "../global.hpp"
+
 #include <algorithm>
 #include <string>
-
-#include "../global.hpp"
 
 namespace fbw {
 
@@ -26,7 +27,7 @@ std::optional<std::string> find_header(const std::vector<entry_t>& request_heade
     return it->value;
 }
 
-std::string replace_all_app(std::string str, const std::string& from, const std::string& to) {
+std::string replace_all(std::string str, const std::string& from, const std::string& to) {
     size_t start_pos = 0;
     while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
         str.replace(start_pos, from.size(), to);
@@ -35,36 +36,16 @@ std::string replace_all_app(std::string str, const std::string& from, const std:
     return str;
 };
 
-void write_body_app(std::string body) {
+void write_body(std::string body) {
     std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
-    body = replace_all_app(std::move(body), "username=", "username: ");
-    body = replace_all_app(std::move(body), "&password=", ", password: ");
-    body = replace_all_app(std::move(body), "&confirm=", ", confirmed: ");
-    body = replace_all_app(std::move(body), "<", "&lt;");
-    body = replace_all_app(std::move(body), ">", "&gt;");
+    body = replace_all(std::move(body), "username=", "username: ");
+    body = replace_all(std::move(body), "&password=", ", password: ");
+    body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
+    body = replace_all(std::move(body), "<", "&lt;");
+    body = replace_all(std::move(body), ">", "&gt;");
     body.append("</p>");
     body.insert(0,"<p>");
     fout << body << std::endl;
-}
-
-
-task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message) {
-    std::vector<entry_t> send_headers;
-    std::string message = error_to_html(status_code, status_message);
-    send_headers.push_back({":status", std::to_string(status_code)});
-    send_headers.push_back({"content-length", std::to_string(message.size())});
-    send_headers.push_back({"content-type", "text/html; charset=utf-8"});
-    send_headers.push_back({"server", "FredPi/0.1 (Unix) (Raspbian/Linux)"});
-    auto res = co_await connection.write_headers(send_headers);
-    if(res != stream_result::ok) {
-        co_return;
-    }
-    auto umessage = to_unsigned(message);
-    std::span<const uint8_t> sp {umessage};
-    auto resu = co_await connection.write_data(sp, true);
-    if(resu != stream_result::ok) {
-        co_return;
-    }
 }
 
 std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool full = true) {
@@ -94,7 +75,7 @@ std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool f
     return out;
 }
 
-task<stream_result> app_send_body_slice(http_ctx& conn, std::ifstream& file, ssize_t begin, ssize_t end, bool end_of_data = true) {
+task<stream_result> send_body_slice(http_ctx& conn, std::ifstream& file, ssize_t begin, ssize_t end, bool end_of_data = true) {
     std::vector<uint8_t> buffer;
     file.seekg(begin);
     while(file.tellg() != end && !file.eof()) {
@@ -131,7 +112,7 @@ task<bool> send_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t fil
         co_return false;
     }
     if(send_body) {
-        co_await app_send_body_slice(conn, file, range.first, end);
+        co_await send_body_slice(conn, file, range.first, end);
     }
     co_return true;
 }
@@ -171,7 +152,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize
                 co_return;
             }
             if(send_body) {
-                result = co_await app_send_body_slice(conn, file, range.first, range.second + 1, false);
+                result = co_await send_body_slice(conn, file, range.first, range.second + 1, false);
                 if(result != stream_result::ok) {
                     co_return;
                 }
@@ -198,7 +179,7 @@ task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_
         co_return;
     }
     if(send_body) {
-        co_await app_send_body_slice(conn, file, 0, file_size);
+        co_await send_body_slice(conn, file, 0, file_size);
     }
     co_return;
 }
@@ -267,7 +248,7 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
         co_return;
     }
     std::string body(request_body.begin(), request_body.end());
-    write_body_app(body);
+    write_body(body);
 
     std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
     if(file.fail()) {
@@ -326,24 +307,43 @@ task<bool> handle_redirect(http_ctx& connection) {
     if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
         throw http_error(400, "Bad Request");
     }
-    if(!authority or authority->starts_with("localhost")) {
+
+    if(!authority) {
         authority = project_options.default_subfolder;
+    }
+    auto domain = *authority;
+    if(authority->starts_with("localhost")) {
+        authority = project_options.default_subfolder;
+    }
+    size_t colon = domain.rfind(':');
+    if (colon != std::string::npos) {
+        domain = domain.substr(0, colon);
+    }
+
+    std::filesystem::path a_path = *path;
+
+    if (*method == "GET" && a_path.string().starts_with("/.well-known/acme-challenge/")) {
+        auto webroot = project_options.webpage_folder;
+        auto file_path = (webroot / project_options.default_subfolder / a_path.relative_path());
+        auto canonical_webroot = std::filesystem::canonical(webroot);
+        auto canonical_file = std::filesystem::weakly_canonical(file_path);
+        if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
+            throw http_error(403, "Forbidden");
+        }
+        co_await handle_get_request(connection, file_path, request_headers, true);
+        co_return true;
     }
 
     std::string body = moved_301();
-
-    std::string filename = fix_filename(*path);
-    std::string MIME = Mime_from_file(filename);
-
-    std::string a_path = *path;
+    
+    std::filesystem::path safe_path = fix_filename(*path);
+    std::string MIME = Mime_from_file(safe_path);
     
     std::string https_port = project_options.server_port;
     std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
-
     std::string location_resource = a_path == "/" ? "" : a_path;
     std::vector<entry_t> out;
 
-    std::string domain = project_options.default_subfolder;
     std::string location = "https://" + domain + optional_port + location_resource;
     
     out.push_back({":status", "301"});

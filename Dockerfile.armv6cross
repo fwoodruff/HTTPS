@@ -1,0 +1,17 @@
+# docker cp $(docker create $(docker build -q -f Dockerfile.armv6cross .)):/target/codeymccodeface ./codeymccodeface.armv6
+# scp codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface
+FROM debian:sid
+
+
+RUN apt update && \
+    apt install -y --no-install-recommends \
+        git make ca-certificates \
+        crossbuild-essential-armhf \
+        g++-14-arm-linux-gnueabihf \
+        libc6-dev-armhf-cross libstdc++-14-dev-armhf-cross
+
+WORKDIR /
+COPY src/ src/
+COPY makefile .
+
+RUN make PLATFORM=armv6 -j$(nproc)

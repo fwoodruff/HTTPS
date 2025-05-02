@@ -11,8 +11,8 @@
 #include "../../Runtime/task.hpp"
 #include "../../global.hpp"
 #include "../../TCP/tcp_stream.hpp"
-#include "../http_ctx.hpp"
-#include "../HTTP1_1/string_utils.hpp"
+#include "../common/http_ctx.hpp"
+#include "../common/string_utils.hpp"
 #include "../../TLS/protocol.hpp"
 #include <functional>
 
@@ -36,11 +36,13 @@ public:
 
     callback m_application_handler;
 private:
+    std::atomic<uint64_t> counter = 0;
     buffer m_buffered_writer;
     ssize_t content_length_to_read = 0;
     std::vector<entry_t> headers;
-    std::deque<uint8_t> m_read_buffer; // todo: deque
+    std::deque<uint8_t> m_read_buffer;
 };
+
 
 } // namespace
 

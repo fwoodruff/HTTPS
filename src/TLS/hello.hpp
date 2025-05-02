@@ -1,3 +1,10 @@
+//
+//  hello.hpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 18/08/2024.
+//
+
 #ifndef hello_hpp
 #define hello_hpp
 

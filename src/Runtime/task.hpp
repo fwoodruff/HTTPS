@@ -196,6 +196,4 @@ public:
 };
 
 
-
-
 #endif // task_hpp

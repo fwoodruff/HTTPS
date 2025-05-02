@@ -138,17 +138,25 @@ http_header parse_http_headers(const std::string& header_str) {
     return headers;
 }
 
-// freddiewoodruff.co.uk implicitly refers to freddiewoodruff.co.uk/index
-// which implicitly refers to either freddiewoodruff.co.uk/index.html or
-// freddiewoodruff.co.uk/index.php and we need the full form to look up
-// the file name locally at the server
+// add an extension if not present, and set / to /index.html
+// note index.php not supported here
+// edge case for /folder/.file
 std::string fix_filename(std::string filename) {
-    if( filename == "/") {
-        return "/index.html";
+    if(filename.empty()) {
+        filename = "/";
     }
     std::transform(filename.begin(), filename.end(), filename.begin(),
         [](unsigned char c){ return std::tolower(c); });
-    if(filename.find(".") == std::string::npos) {
+
+    if (filename.back() == '/') {
+        filename += "index.html";
+        return filename;
+    }
+
+    auto last_slash = filename.find_last_of('/');
+    auto last_dot = filename.find_last_of('.');
+
+    if (last_dot == std::string::npos || (last_slash != std::string::npos && last_dot < last_slash)) {
         filename.append(".html");
     }
     return filename;

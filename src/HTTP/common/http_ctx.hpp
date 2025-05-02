@@ -9,12 +9,12 @@
 #ifndef http_ctx_hpp
 #define http_ctx_hpp
 
-#include "../TCP/stream_base.hpp"
+#include "../../TCP/stream_base.hpp"
 #include <vector>
 #include <span>
 #include <functional>
 
-#include "../Runtime/task.hpp"
+#include "../../Runtime/task.hpp"
 
 namespace fbw {
 
@@ -56,6 +56,8 @@ public:
 };
 
 using callback = std::function< task<bool>(http_ctx&) >;
+
+task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message);
 
 }
 

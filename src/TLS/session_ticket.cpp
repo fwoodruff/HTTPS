@@ -1,3 +1,9 @@
+//
+//  session_ticket.cpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 16/03/2025.
+//
 
 #include "session_ticket.hpp"
 #include "../global.hpp"

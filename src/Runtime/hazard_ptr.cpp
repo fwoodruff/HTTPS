@@ -9,7 +9,8 @@
 
 #include "hazard_ptr.hpp"
 
-// Abridged from Anthony Williams C++ Concurrency in Action
+// Uses code from 'C++ Concurrency in Action' with modifications
+// Boost Software License - Version 1.0
 
 constexpr size_t program_threads_upper_bound_hint = 32;
 

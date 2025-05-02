@@ -136,7 +136,8 @@ enum class ContentType : uint8_t {
     Application,
     Heartbeat,
     tls12_cid,
-    ACK
+    ACK,
+    return_routability_check
 };
 
 enum class ECCurveType : uint8_t{

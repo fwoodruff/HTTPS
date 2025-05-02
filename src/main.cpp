@@ -2,16 +2,16 @@
 #include "TLS/protocol.hpp"
 #include "Runtime/executor.hpp"
 #include "TCP/listener.hpp"
-#include "HTTP/HTTP1_1/HTTP.hpp"
+#include "HTTP/common/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
 #include "global.hpp"
-#include "HTTP/HTTP1_1/mimemap.hpp"
+#include "HTTP/common/mimemap.hpp"
 #include "TLS/PEMextract.hpp"
-#include "HTTP/HTTP1_1/string_utils.hpp"
+#include "HTTP/common/string_utils.hpp"
 #include "limiter.hpp"
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
-#include "HTTP/HTTP1_new/h1stream.hpp"
+#include "HTTP/HTTP1/h1stream.hpp"
 #include "Application/http_handler.hpp"
 
 #include <memory>
@@ -25,21 +25,15 @@
 // Wishlist:
 
 // Features:
-//      HTTP webroot for ACME
 //      HRR cookies
-//      HTTP/2 timeouts
-//      HTTP/2 error handling
 //      HTTP/2 graceful server shutdown
-//      memory bounded TLS layer 
+//      memory bounded TLS layer
+//      Accept-Languages header folders
 
 // Correctness:
 //      Check that poly1305 is constant-time
-//      Points at infinity?
-//      std::vector<uint8_t> is not UB but can be
-//      Check ALPN in session tickets
 //      g++-14-arm-linux-gnueabihf is only on trixie
-//      use std::exchange instead of std::move
-//      confirm no reference cycles that keep h2 connections alive
+//      go through RFC 9113 ensuring correct handling of everything
 
 // Syntax:
 //      Add 'explict' to constructors
@@ -49,10 +43,14 @@
 //      Reference RFC 8446 in comments
 
 // Separation of concerns:
-//      0-RTT context should be per-server not global - implement fingerprinting query helpersx
+//      0-RTT context should be per-server not global - implement fingerprinting query helpers
 //      read/write operations should emit 'jobs' not data, separate context for actual encryption
 //      buffering logic should be independent from encryption
 //      HTTP codes should be a map code -> { title, blurb }
+//      combine sync layers for TLS + HTTP/2
+//      write and use a 'safe add' function
+//      request_headers struct rather than a vector.
+//      for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
 
 // Optimisations:
 //      Revisit big numbers
@@ -60,38 +58,21 @@
 //      Views rather than clones for client hello extensions
 //      ChaCha should zip pairs of 'state' objects for SIMD
 //      std::generator when emitting records
+//      tls record serialisation could be simpler
 
 // Future:
 //      QUIC
 //      TLS Client
 //      Russian ciphers
 
-// redirect callback
-
-// delete old HTTP/1.1 layer
-// reorganise code in the HTTP section - functions in wrong places
-// organise webroots by language, then read the Accept-Languages header, refactor application code to be more 'router'-like
-
+// ideas:
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
-// tls record serialisation could be simpler
 
-// for state machine transitions, have functions close_local() and close_remote() which perform some cleanup
-// go through RFC 9113 ensuring correct handling of everything
-
-// write and use a 'safe add' function
-// don't need multiple async layers for TLS + HTTP/2, combine
-// handle client sending HTTP request on HTTPS port
-// request_headers struct rather than a vector.
-
-// POST request handling
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {
         if(alpn == "http/1.1") {
-            //fbw::HTTP http_handler { std::move(client_stream), fbw::project_options.webpage_folder, redirect };
-            //co_await http_handler.client();
-            // todo: move across to this so that HTTP/2 and HTTP/1.1 share an interface
             auto http_handler = std::make_shared<fbw::HTTP1>( std::move(client_stream), handler);
             co_await http_handler->client();
         } if(alpn == "h2") {

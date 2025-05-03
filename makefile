@@ -4,12 +4,12 @@ CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2
 LDFLAGS :=
 
 ifeq ($(PLATFORM),armv6)
-	CXX := arm-linux-gnueabihf-g++
-	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm
-	LDFLAGS  += -static-libgcc -latomic
+	CXX := arm-linux-gnueabi-g++
+	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=softfp -marm
+	LDFLAGS  += -static-libgcc -static-libstdc++ -latomic
 else 
 	CXX := g++
-	CXXFLAGS += -march=native
+	CXXFLAGS +=
 endif
 
 # Directories

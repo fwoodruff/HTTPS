@@ -2,16 +2,17 @@
 # scp codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface
 FROM debian:sid
 
-
 RUN apt update && \
     apt install -y --no-install-recommends \
-        git make ca-certificates \
-        crossbuild-essential-armhf \
-        g++-14-arm-linux-gnueabihf \
-        libc6-dev-armhf-cross libstdc++-14-dev-armhf-cross
+        binutils git make ca-certificates \
+        crossbuild-essential-armel \
+        g++-14-arm-linux-gnueabi \
+        libc6-dev-armel-cross libstdc++-14-dev-armel-cross
 
 WORKDIR /
 COPY src/ src/
 COPY makefile .
 
 RUN make PLATFORM=armv6 -j$(nproc)
+
+RUN readelf -A /target/codeymccodeface | grep Tag_

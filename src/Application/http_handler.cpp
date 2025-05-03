@@ -270,15 +270,23 @@ task<bool> handle_request(http_ctx& connection) {
     if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
         throw http_error(400, "Bad Request");
     }
-    if(!authority or authority->starts_with("localhost")) {
-        authority = project_options.default_subfolder;
-    }
 
     std::filesystem::path safe_path = fix_filename(*path);
-
     auto webroot = project_options.webpage_folder;
+
+    std::string host = project_options.default_subfolder;
+    if(authority and !authority->starts_with("localhost")) {
+        host = *authority;
+        auto p = host.rfind(':');
+        if(p != std::string::npos) {
+            host.erase(p);
+        }
+        if(host.starts_with("www.")) {
+            host = host.substr(4);
+        }
+    }
     
-    auto file_path = (webroot/(*authority)/(safe_path.relative_path()));
+    auto file_path = (webroot/host/(safe_path.relative_path()));
     auto canonical_webroot = std::filesystem::canonical(webroot);
     auto canonical_file = std::filesystem::weakly_canonical(file_path);
 

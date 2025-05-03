@@ -138,13 +138,13 @@ std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t
 }
 
 preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
-    preshared_key_ext psk_exts;
+    preshared_key_ext psk_exts {};
     auto psk_ids = der_span_read(extension_data, 0, 2);
     psk_exts.idxbinders_ext = psk_ids.size() + 2;
     extension_data = extension_data.subspan(psk_ids.size() + 2);
     while(!psk_ids.empty()) {
         auto psk = der_span_read(psk_ids, 0, 2);
-        pre_shared_key_entry psk_entry;
+        pre_shared_key_entry psk_entry {};
         psk_entry.m_key = {psk.begin(), psk.end()};
         psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size() + 2, 4);
         psk_exts.m_keys.push_back(std::move(psk_entry));

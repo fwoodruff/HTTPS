@@ -5,9 +5,9 @@ LDFLAGS :=
 
 ifeq ($(PLATFORM),armv6)
 	CXX := armv6-rpi-linux-gnueabihf-g++
-	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm -pthread
+	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm
 	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic
-else 
+else
 	CXX := g++
 	CXXFLAGS +=
 endif

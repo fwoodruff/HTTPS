@@ -45,6 +45,10 @@ jobs:
           name: Build server
           command: |
             sudo docker build --progress=plain -t server .
+      - run:
+          name: Build armv6
+          command: |
+            sudo docker build -f Dockerfile.armv6 --progress=plain -t server-armv6 .
 
 workflows:
   run_tests:

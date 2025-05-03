@@ -194,7 +194,7 @@ std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> messag
     std::array<uint8_t, 24> s_bytes {0};
     std::copy_n(&key[16], 16, s_bytes.rbegin());
 
-    u192 accumulator ("0x0");
+    u192 accumulator{"0x0"};
     u192 r(r_bytes);
     u192 s(s_bytes);
     

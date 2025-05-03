@@ -1,4 +1,4 @@
-# docker cp $(docker create $(docker build -q -f Dockerfile.armv6cross .)):/target/codeymccodeface ./codeymccodeface.armv6
+# docker cp $(docker create $(docker build -q -f Dockerfile.armv6 .)):/target/codeymccodeface ./codeymccodeface.armv6
 # scp codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface
 FROM debian:sid
 

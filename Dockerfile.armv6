@@ -1,6 +1,8 @@
-# docker cp $(docker create $(docker build -q -f Dockerfile.armv6 .)):/target/codeymccodeface ./codeymccodeface.armv6
+# docker build -t containerymccontainerface -f Dockerfile.armv6 .
+# c_id=$(docker create containerymccontainerface)
+# docker cp $c_id:/target/codeymccodeface ./codeymccodeface.armv6
 # scp codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface
-FROM debian:sid
+FROM debian:sid-20250428
 
 RUN dpkg --add-architecture amd64 && apt-get update && \
     apt-get install -y libc6:amd64 libstdc++6:amd64 curl \

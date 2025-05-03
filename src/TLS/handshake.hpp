@@ -49,7 +49,7 @@ public:
     std::unique_ptr<const hash_base> hash_ctor = nullptr;
     std::array<uint8_t,32> server_private_key_ephem {};
     
-    hello_record_data client_hello;
+    hello_record_data client_hello {};
     key_schedule tls13_key_schedule;
     std::vector<uint8_t> tls12_master_secret;
 

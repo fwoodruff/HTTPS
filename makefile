@@ -1,15 +1,15 @@
-# Compiler and flags
-CXX := g++
-#CXX := arm-linux-gnueabihf-g++
-CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP #-O2 # -march=native
+PLATFORM ?= native
+
+CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2
 LDFLAGS :=
 
-ifeq ($(shell uname -s),Linux)
-# GLIBCXX_3.4.30 does not support armv6
-	CXXFLAGS += -flto=6 -static
-    LDFLAGS += # -static-libstdc++ -static-libgcc
+ifeq ($(PLATFORM),armv6)
+	CXX := armv6-rpi-linux-gnueabihf-g++
+	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm
+	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic
 else
- 	#CXXFLAGS += -flto
+	CXX := g++
+	CXXFLAGS +=
 endif
 
 # Directories
@@ -34,7 +34,7 @@ TARGET := $(TARGET_DIR)/codeymccodeface
 # Compile and link
 $(TARGET): $(OBJ)
 	@mkdir -p $(TARGET_DIR)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
 #	strip $(TARGET)
 
 # Compile source files into object files

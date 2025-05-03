@@ -26,7 +26,7 @@ bool init = false;
 // this depends on the extension of the file that was requested.
 // we therefore need to map from extension to Content-Type.
 std::unordered_map<std::string,std::string> MIME_csv_to_map(const std::filesystem::path& filename) {
-    std::ifstream file (filename);
+    std::ifstream file(filename);
     std::string line;
     std::unordered_map<std::string,std::string> MIME_types;
     while(std::getline(file, line)) {

@@ -6,24 +6,31 @@ This has thrown up many curiosities and helped me harden the server.
 <details>
 <summary>Highlights</summary>
   
-* Full TLS 1.3 implementation including 0-RTT, with modern ChaCha20-Poly1305 and AES-GCM AEAD ciphers
+* Full [TLS 1.3](https://datatracker.ietf.org/doc/html/rfc8446) implementation including 0-RTT, with modern ChaCha20-Poly1305 and AES-GCM AEAD ciphers
+* Full [HTTP/2](https://datatracker.ietf.org/doc/html/rfc9113) implementation
 * Homemade elliptic curve group implementations for TLS key-exchange and signatures
-* TLS 1.2 fallback with both modern and legacy ciphers
+* HTTP/1.1 and TLS 1.2 fallbacks with both modern and legacy ciphers
 * C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
 * Buffered and skippable video streaming supported with HTTP range requests
-* The server runs at https://freddiewoodruff.co.uk on a Raspberry Pi 1B.
+* [HPACK](https://datatracker.ietf.org/doc/html/rfc7541)
+  * Huffman compression for strings - these can be toggled off for secrets
+  * Dynamic indexing of HTTP headers, for requests on the same TCP connection
+* Fixed size data frames
+  * Avoids fragmentation between ethernet packets
+  * Ensures TLS record size patterns do not reveal data contents
+* Handles multiple concurrent requests on the same TCP connection
+* Consumes frames eagerly when streaming to manage back-pressure in real-time
+* The server runs at https://freddiewoodruff.co.uk on a Raspberry Pi 1 Model B.
 * Homemade event and task manager
   - lock-free task executor with a fixed-size threadpool
   - `poll()`-based event reactor
   - [Rust port](https://github.com/fwoodruff/async_io) of this component
-* Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for lock-freedom
-
-* HTTP/2 is in the works, with HPACK, HoL-blocking resistant stream-handling and full-duplex presentation layer requirements already implemented
+* Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for achieving lock-freedom
 
 </details>
 
 <details>
-<summary>Basic usage</summary>
+<summary>Usage</summary>
   
   
 Install with
@@ -33,7 +40,7 @@ cd HTTPS
 ```
 then run with Make
 ```
-make -j8 && ./target/codeymccodeface
+make -j$(nproc) && ./target/codeymccodeface
 ```
 Note, this requires GCC 14 or later.
 
@@ -64,3 +71,18 @@ sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --ellip
 | `scp freddiewoodruff.co.uk:~/doc/HTTPS20/webpages/assets/carina.png .` | 3.0MB/s   | 41s           |
 | `wget https://freddiewoodruff.co.uk/assets/carina.png`                 | 702KB/s   | 3m 3s         |
 </details>
+
+
+<details>
+  <summary>Targeting</summary>
+
+Compiling C++23 for a Raspberry Pi 1B mixes old with new.
+`Dockerfile.armv6` downloads a cross-compiler and builds the ARMv6 binary. Run as follows:
+```bash
+docker build -t containerymccontainerface -f Dockerfile.armv6 .
+c_id=$(docker create containerymccontainerface)
+docker cp $c_id:/target/codeymccodeface ./codeymccodeface.armv6
+docker rm $c_id
+```
+</details>
+

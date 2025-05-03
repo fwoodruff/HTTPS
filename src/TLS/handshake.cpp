@@ -217,7 +217,7 @@ tls_record synthetic_message_hash(const hash_base& hash_ctor, const std::vector<
 }
 
 std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> handshake_ctx::get_resumption_psk(const std::vector<uint8_t>& prefix_hash) const {
-    auto key = client_hello.pre_shared_key;
+    const auto& key = client_hello.pre_shared_key;
     assert(hash_ctor != nullptr);
     auto null_psk = std::vector<uint8_t>(hash_ctor->get_hash_size(), 0);
     if(!key) {
@@ -564,7 +564,7 @@ tls_record handshake_ctx::server_key_exchange_record() {
     std::array<uint8_t, 32> csrn;
     randomgen.randgen(csrn);
     std::vector<uint8_t> signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
-    std::vector<uint8_t> sig_header ({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
+    std::vector<uint8_t> sig_header({static_cast<uint8_t>(HashAlgorithm::sha256), // Signature Header
         static_cast<uint8_t>(SignatureAlgorithm::ecdsa)});
     
     record.write(signed_empheral_key);

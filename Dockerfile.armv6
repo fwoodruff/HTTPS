@@ -1,0 +1,21 @@
+# docker build -t containerymccontainerface -f Dockerfile.armv6 .
+# c_id=$(docker create containerymccontainerface)
+# docker cp $c_id:/target/codeymccodeface ./codeymccodeface.armv6
+# scp codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface
+FROM debian:sid-20250428
+
+RUN dpkg --add-architecture amd64 && apt-get update && \
+    apt-get install -y libc6:amd64 libstdc++6:amd64 curl \
+        crossbuild-essential-armel libstdc++-14-dev-armel-cross build-essential libc6-armel-cross
+
+RUN curl -L https://github.com/tttapa/toolchains/releases/download/1.0.2/x-tools-armv6-rpi-linux-gnueabihf-gcc14.tar.xz | tar -xJ -C /opt
+
+ENV PATH="/opt/x-tools/armv6-rpi-linux-gnueabihf/bin:${PATH}"
+
+WORKDIR /
+COPY src/ src/
+COPY makefile .
+
+RUN make PLATFORM=armv6 -j$(nproc)
+
+RUN readelf -A /target/codeymccodeface | grep Tag_

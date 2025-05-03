@@ -2,12 +2,13 @@
 # scp codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface
 FROM debian:sid
 
-RUN apt update && \
-    apt install -y --no-install-recommends \
-        binutils git make ca-certificates \
-        crossbuild-essential-armel \
-        g++-14-arm-linux-gnueabi \
-        libc6-dev-armel-cross libstdc++-14-dev-armel-cross
+RUN dpkg --add-architecture amd64 && apt-get update && \
+    apt-get install -y libc6:amd64 libstdc++6:amd64 curl \
+        crossbuild-essential-armel libstdc++-14-dev-armel-cross build-essential libc6-armel-cross
+
+RUN curl -L https://github.com/tttapa/toolchains/releases/download/1.0.2/x-tools-armv6-rpi-linux-gnueabihf-gcc14.tar.xz | tar -xJ -C /opt
+
+ENV PATH="/opt/x-tools/armv6-rpi-linux-gnueabihf/bin:${PATH}"
 
 WORKDIR /
 COPY src/ src/

@@ -4,9 +4,9 @@ CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2
 LDFLAGS :=
 
 ifeq ($(PLATFORM),armv6)
-	CXX := arm-linux-gnueabi-g++
-	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=softfp -marm
-	LDFLAGS  += -static-libgcc -static-libstdc++ -latomic
+	CXX := armv6-rpi-linux-gnueabihf-g++
+	CXXFLAGS += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm -pthread
+	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic
 else 
 	CXX := g++
 	CXXFLAGS +=

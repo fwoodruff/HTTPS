@@ -27,12 +27,11 @@
 // Features:
 //      HRR cookies
 //      HTTP/2 graceful server shutdown
-//      memory bounded TLS layer
+//      memory-bounded TLS layer
 //      Accept-Languages header folders
 
 // Correctness:
 //      Check that poly1305 is constant-time
-//      g++-14-arm-linux-gnueabihf is only on trixie
 //      go through RFC 9113 ensuring correct handling of everything
 
 // Syntax:
@@ -63,7 +62,7 @@
 // Future:
 //      QUIC
 //      TLS Client
-//      Russian ciphers
+//      Russian TLS ciphers and curves - Magma and Kuznyechik
 
 // ideas:
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames

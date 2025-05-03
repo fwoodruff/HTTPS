@@ -174,6 +174,9 @@ task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_
     if(file_size > RANGE_SUGGESTED_SIZE) {
         headers.push_back({"accept-ranges", "bytes"});
     }
+    if(mime == "video/mp4") {
+        headers.push_back({"content-disposition", "inline"});
+    }
     auto res = co_await conn.write_headers(headers);
     if(res != stream_result::ok) {
         co_return;
@@ -197,7 +200,7 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
     std::string mime = Mime_from_file(file_path);
     auto range_hdr = find_header(headers, "range");
     if (range_hdr) {
-        auto ranges = parse_range_header_2(*range_hdr, file_size);
+        auto ranges = parse_range_header(*range_hdr, file_size);
         if(ranges.empty()) {
             throw http_error(400, "Bad Request");
         }

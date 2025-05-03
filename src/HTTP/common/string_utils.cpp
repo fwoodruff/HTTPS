@@ -270,33 +270,7 @@ std::string make_server_name() {
     return server_name;
 }
 
-std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header) {
-    std::string prefix = "bytes=";
-    if(range_header.substr(0, prefix.size()) != prefix) {
-        return {};
-    }
-    ssize_t pos = prefix.size();
-    std::vector<std::pair<ssize_t, ssize_t>> out;
-    while(true) {
-        size_t end = range_header.find(',', pos);
-        std::string range = range_header.substr(pos, end - pos);
-        remove_whitespace(range);
-        ssize_t mid = range.find("-");
-        auto first = range.substr(0, mid);
-        auto second = range.substr(mid + 1);
-        if(first == "" and second == "") {
-            return {};
-        }
-        out.push_back({first == "" ? -1 : std::stoi(first), second == "" ? -1 : std::stoi(second)});
-        if(end == std::string::npos) {
-            break;
-        }
-        pos = end + 1;
-    }
-    return out;
-}
-
-std::vector<std::pair<size_t, size_t>> parse_range_header_2(const std::string& range_header, size_t file_size) {
+std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& range_header, size_t file_size) {
     std::string prefix = "bytes=";
     if(range_header.substr(0, prefix.size()) != prefix) {
         throw http_error(416, "Range Not Satisfiable");

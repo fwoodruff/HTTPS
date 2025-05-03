@@ -172,9 +172,7 @@ std::string fix_filename(std::string filename);
 
 std::string make_server_name();
 
-[[nodiscard]] std::vector<std::pair<ssize_t, ssize_t>> parse_range_header(const std::string& range_header);
-
-[[nodiscard]] std::vector<std::pair<size_t, size_t>> parse_range_header_2(const std::string& range_header, size_t file_size);
+[[nodiscard]] std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& range_header, size_t file_size);
 
 [[nodiscard]] std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header);
 

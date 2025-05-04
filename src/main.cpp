@@ -29,6 +29,8 @@
 //      HTTP/2 graceful server shutdown
 //      memory-bounded TLS layer
 //      Accept-Languages header folders
+//      More robust config - systemd compatibility
+//      apt install
 
 // Correctness:
 //      Check that poly1305 is constant-time

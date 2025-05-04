@@ -92,9 +92,10 @@ Set up a cronjob for renewal with `sudo crontab -e`
 Compiling C++23 for a Raspberry Pi 1B mixes old with new.
 `Dockerfile.armv6` downloads a cross-compiler and builds the ARMv6 binary. Run as follows:
 ```bash
+mkdir -p target
 docker build -t containerymccontainerface -f Dockerfile.armv6 .
 c_id=$(docker create containerymccontainerface)
-docker cp $c_id:/target/codeymccodeface ./codeymccodeface.armv6
+docker cp $c_id:/target/codeymccodeface ./target/codeymccodeface.armv6
 docker rm $c_id
 ```
 </details>

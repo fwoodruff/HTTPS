@@ -32,9 +32,6 @@ task<void> HTTP2::client_inner() {
     h2_ctx.send_initial_settings();
     for(;;) {
         for(;;) {
-            if(counter.fetch_add(1, std::memory_order::relaxed) % 3 == 0) {
-                co_await yield_coroutine{};
-            }
             auto resa = co_await send_outbox(false);
             if(resa != stream_result::ok) {
                 co_return;
@@ -136,6 +133,7 @@ task<stream_result> HTTP2::send_outbox(bool flush) {
         if(res != stream_result::ok) {
             co_return res;
         }
+        co_await yield_coroutine{};
     }
     if(closing) {
         co_await m_stream->close_notify();

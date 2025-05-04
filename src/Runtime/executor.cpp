@@ -74,7 +74,7 @@ int executor::resume_batch(size_t batch_size) {
 void executor::main_thread_function() {
     for(;;) {
         try_poll();
-        int num_tasks = resume_batch(3);
+        int num_tasks = resume_batch(1);
         if(num_tasks < 0) { // signals to shut down the thread
             break;
         }

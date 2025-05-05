@@ -35,6 +35,8 @@
 // Correctness:
 //      Check that poly1305 is constant-time
 //      go through RFC 9113 ensuring correct handling of everything
+//      TLS SNI should match HTTP/2 :authority and HTTP/1.1 Host
+//      HTTP/1.1 should add keep-alive/close header
 
 // Syntax:
 //      Add 'explict' to constructors

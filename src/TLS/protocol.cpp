@@ -73,6 +73,24 @@ task<stream_result> TLS::read_append_common(std::deque<uint8_t>& data, std::opti
     }
 }
 
+task<stream_result> TLS::bail_if_http(const std::deque<uint8_t>& input_data) {
+    std::string redirect_response = 
+        "HTTP/1.1 302 Found\r\nLocation: https://" +
+        project_options.default_subfolder.string() +
+        "/assets/never.mp4\r\n"
+        "Content-Length: 0\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+    if(m_engine.m_expected_read_record == HandshakeStage::client_hello) {
+        if(!input_data.empty() and (input_data.front() < 19 or input_data.front() > 27)) {
+            std::vector<uint8_t> data{redirect_response.begin(), redirect_response.end() };
+            co_await m_client->write(data, project_options.error_timeout);
+            co_return stream_result::closed;
+        }
+    }
+    co_return stream_result::ok;
+}
+
 task<stream_result> TLS::await_message(HandshakeStage stage) {
     guard g { &m_async_read_mut };
     co_await m_async_read_mut.lock();
@@ -86,6 +104,9 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
         std::deque<uint8_t> input_data;
         auto read_res = co_await m_client->read_append(input_data, project_options.handshake_timeout);
         if(read_res != stream_result::ok) {
+            co_return read_res;
+        }
+        if(co_await bail_if_http(input_data) != stream_result::ok) {
             co_return read_res;
         }
         m_engine.process_net_read(output, early_data_buffer, input_data, project_options.handshake_timeout);

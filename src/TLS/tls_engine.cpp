@@ -127,14 +127,6 @@ void tls_engine::update_sync(std::queue<packet_timed>& output) {
     }
 }
 
-// if the last record is going to be really small, just add that data to the penultimate record
-bool squeeze_last_chunk(ssize_t additional_data_len) {
-    return  size_t(additional_data_len) < WRITE_RECORD_SIZE and 
-            additional_data_len != 0 and 
-            additional_data_len + WRITE_RECORD_SIZE + 50 < TLS_RECORD_SIZE and
-            size_t(additional_data_len) * 3 < WRITE_RECORD_SIZE * 2;
-}
-
 stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     std::scoped_lock lk { m_write_queue_mut };

@@ -58,6 +58,7 @@ private:
     task<stream_result> read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early);
     task<stream_result> net_write_all();
     task<stream_result> await_message(HandshakeStage stage);
+    task<stream_result> bail_if_http(const std::deque<uint8_t>& input_data);
 };
 
 tls_record server_key_update_record(KeyUpdateRequest req);

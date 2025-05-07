@@ -10,7 +10,6 @@
 
 #include <sstream>
 
-
 namespace fbw {
 
 using enum h2_code;

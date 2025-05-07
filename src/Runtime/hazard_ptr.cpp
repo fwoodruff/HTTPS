@@ -3,7 +3,6 @@
 #include <atomic>
 #include <thread>
 #include <new>
-#include <iostream>
 #include <cassert>
 #include <array>
 

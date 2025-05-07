@@ -7,7 +7,6 @@
 
 #include "executor.hpp"
 #include <mutex>
-#include <iostream>
 #include <chrono>
 #include <poll.h>
 #include <algorithm>
@@ -56,37 +55,41 @@ void executor::try_poll() {
     }
 }
 
-int executor::resume_batch(size_t batch_size) {
-    for (size_t i = 0; i < batch_size; ++i) {
-        auto task = m_ready.try_pop();
-        if (!task) {
-            return i;
-        }
-        if (*task == nullptr) {
-            notify_runtime();
-            return -1;
-        }
-        task->resume();
+int executor::try_resume_task() {
+    auto task = m_ready.try_pop();
+    if (!task) {
+        return 0;
     }
-    return batch_size;
+    if (*task == nullptr) {
+        notify_runtime();
+        return -1;
+    }
+    task->resume();
+    return 1;
+}
+
+void executor::block_until_ready() {
+    std::vector<std::coroutine_handle<>> wakeables;
+    {
+        std::scoped_lock lk{ can_poll_wait };
+        wakeables = m_reactor.wait(false);
+    }
+    m_ready.push_bulk(std::move(wakeables));
 }
 
 void executor::main_thread_function() {
     for(;;) {
         try_poll();
-        int num_tasks = resume_batch(1);
-        if(num_tasks < 0) { // signals to shut down the thread
-            break;
-        }
-        if(num_tasks > 0) {
+        auto task = m_ready.try_pop();
+        if (!task) {
+            block_until_ready();
             continue;
         }
-        std::vector<std::coroutine_handle<>> wakeable_coroutines{};
-        {
-            std::scoped_lock lk { can_poll_wait };
-            wakeable_coroutines = m_reactor.wait(false);
+        if (*task == nullptr) {
+            notify_runtime();
+            return;
         }
-        m_ready.push_bulk(std::move(wakeable_coroutines));
+        task->resume();
     }
 }
 

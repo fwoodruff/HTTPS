@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <vector>
 #include <limits.h>
-#include <sstream>
+
 #include <filesystem>
 
 namespace fbw {

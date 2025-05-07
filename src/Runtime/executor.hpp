@@ -50,7 +50,8 @@ private:
     void main_thread_function();
     void try_poll();
     void notify_runtime();
-    int resume_batch(size_t batch_size);
+    int try_resume_task();
+    void block_until_ready();
     friend struct yield_coroutine;
 };
 

@@ -8,7 +8,6 @@
 #include "reactor.hpp"
 #include <poll.h>
 #include <unistd.h>
-#include <iostream>
 #include <thread>
 #include <cassert>
 #include "fcntl.h"

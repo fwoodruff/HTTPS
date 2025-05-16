@@ -23,7 +23,7 @@
 namespace fbw {
 
 char asciitolower(char in) {
-    if (in <= 'Z' && in >= 'A') {
+    if (in <= 'Z' and in >= 'A') {
         return in - ('Z' - 'z');
     }
     return in;
@@ -35,7 +35,7 @@ std::string to_lower(std::string s) {
 }
 
 char asciitoupper(char in) {
-    if (in <= 'z' && in >= 'a') {
+    if (in <= 'z' and in >= 'a') {
         return in + ('Z' - 'z');
     }
     return in;
@@ -155,7 +155,7 @@ std::string fix_filename(std::string filename) {
     auto last_slash = filename.find_last_of('/');
     auto last_dot = filename.find_last_of('.');
 
-    if (last_dot == std::string::npos || (last_slash != std::string::npos && last_dot < last_slash)) {
+    if (last_dot == std::string::npos or (last_slash != std::string::npos and last_dot < last_slash)) {
         filename.append(".html");
     }
     return filename;

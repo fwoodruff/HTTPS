@@ -12,6 +12,7 @@
 #include "../HTTP/common/mimemap.hpp"
 #include "../TLS/Cryptography/one_way/keccak.hpp"
 #include "../global.hpp"
+#include "websockets.hpp"
 
 #include <algorithm>
 #include <string>
@@ -263,12 +264,38 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
     co_return;
 }
 
+std::string get_host(const std::vector<entry_t>& request_headers) {
+    const auto authority = find_header(request_headers, ":authority");
+    const auto host = find_header(request_headers, "host");
+    std::string dir_host = project_options.default_subfolder;
+    if(authority) {
+        dir_host = *authority;
+    } else if(host) {
+        dir_host = *host;
+    }
+    if(dir_host.starts_with("localhost")) {
+        dir_host = project_options.default_subfolder;
+    }
+    auto p = dir_host.rfind(':');
+    if(p != std::string::npos) {
+        dir_host.erase(p);
+    }
+    if(dir_host.starts_with("www.")) {
+        dir_host = dir_host.substr(4);
+    }
+    return dir_host;
+}
+
 task<bool> handle_request(http_ctx& connection) {
     const std::vector<entry_t> request_headers = connection.get_headers();
-    auto method = find_header(request_headers, ":method");
-    auto path = find_header(request_headers, ":path");
-    auto authority = find_header(request_headers, ":authority");
-    auto scheme = find_header(request_headers, ":scheme");
+    const auto method = find_header(request_headers, ":method");
+    const auto path = find_header(request_headers, ":path");
+    const auto scheme = find_header(request_headers, ":scheme");
+    
+    if(is_websocket_upgrade(request_headers)) {
+        co_await handle_websocket(connection, request_headers);
+        co_return false;
+    }
 
     if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
         throw http_error(400, "Bad Request");
@@ -277,19 +304,9 @@ task<bool> handle_request(http_ctx& connection) {
     std::filesystem::path safe_path = fix_filename(*path);
     auto webroot = project_options.webpage_folder;
 
-    std::string host = project_options.default_subfolder;
-    if(authority and !authority->starts_with("localhost")) {
-        host = *authority;
-        auto p = host.rfind(':');
-        if(p != std::string::npos) {
-            host.erase(p);
-        }
-        if(host.starts_with("www.")) {
-            host = host.substr(4);
-        }
-    }
+    auto dir_host = get_host(request_headers);
     
-    auto file_path = (webroot/host/(safe_path.relative_path()));
+    auto file_path = (webroot/dir_host/(safe_path.relative_path()));
     auto canonical_webroot = std::filesystem::canonical(webroot);
     auto canonical_file = std::filesystem::weakly_canonical(file_path);
 

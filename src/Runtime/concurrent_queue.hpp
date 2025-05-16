@@ -62,7 +62,7 @@ public:
                     new_next = old_next;
                 }
                 node* const current_tail_ptr = old_tail;
-                while(!tail.compare_exchange_weak(old_tail, new_next) && old_tail == current_tail_ptr);
+                while(!tail.compare_exchange_weak(old_tail, new_next) and old_tail == current_tail_ptr);
                 return;
             } else {
                 node* old_next = nullptr;
@@ -71,7 +71,7 @@ public:
                     new_next = new node; 
                 }
                 node* const current_tail_ptr = old_tail;
-                while(!tail.compare_exchange_weak(old_tail, old_next) && old_tail == current_tail_ptr);
+                while(!tail.compare_exchange_weak(old_tail, old_next) and old_tail == current_tail_ptr);
             }
         }
     }

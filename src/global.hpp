@@ -116,6 +116,8 @@ void remove_whitespace(std::string& str);
 
 std::vector<std::string> split(const std::string& line, const std::string& delim);
 
+std::string base64_encode(const std::vector<uint8_t>& data);
+
 } // namespace fbw
 
 #endif // global_hpp

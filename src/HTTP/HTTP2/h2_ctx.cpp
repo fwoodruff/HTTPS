@@ -87,8 +87,8 @@ void h2_context::close_connection() {
 
 std::pair<std::deque<std::vector<uint8_t>>, bool> h2_context::extract_outbox(bool flush) {
     std::scoped_lock lk { m_mut };
-    std::deque<std::vector<uint8_t>> data_contiguous = outbox.get(flush);
     bool closing = go_away_sent and stream_ctx_map.empty();
+    std::deque<std::vector<uint8_t>> data_contiguous = outbox.get(flush or closing);
     return { data_contiguous, closing };
 }
 

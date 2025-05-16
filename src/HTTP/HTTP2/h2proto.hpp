@@ -56,7 +56,7 @@ private:
     task<void> client_inner();
     void client_cleanup();
     [[nodiscard]] task<bool> connection_startup();
-    [[nodiscard]] task<stream_result> send_outbox(bool flush = true);
+    [[nodiscard]] task<stream_result> send_outbox(bool flush = true, bool blocking_reader = false);
     bool extract_and_handle();
     void handle_frame(h2frame& frame);
     bool resume_back_pressure();

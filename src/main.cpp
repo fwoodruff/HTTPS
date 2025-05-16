@@ -114,7 +114,6 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
                 if(conn == std::nullopt) [[unlikely]] {
                     continue;
                 }
-
                 auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
                 auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
                 

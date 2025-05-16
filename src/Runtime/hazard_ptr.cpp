@@ -71,7 +71,7 @@ std::atomic<size_t> max_hp_idx = 0;
 
 void update_max(std::atomic<size_t>& atom, size_t value) {
     auto current = atom.load(relaxed); // atom never decreases
-    while (current < value && !atom.compare_exchange_weak(current, value, seq_cst, relaxed));
+    while (current < value and !atom.compare_exchange_weak(current, value, seq_cst, relaxed));
 }
 
 

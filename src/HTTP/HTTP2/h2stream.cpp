@@ -94,7 +94,6 @@ std::vector<entry_t> h2_stream::get_headers() {
     }
     auto& cx = connection->h2_ctx;
     auto headers = cx.get_headers(m_stream_id);
-    headers.push_back({":protocol", "h2"}); // todo: use a request headers struct
     return headers;
 }
 

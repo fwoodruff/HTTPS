@@ -212,7 +212,7 @@ void table::add_entry(const std::string& name, const std::string& value) {
     auto size = name.size() + value.size() + entry_overhead;
     m_size += size;
     entries_ordered.push_front({name, value});
-    while(m_size > m_capacity && !entries_ordered.empty()) {
+    while(m_size > m_capacity and !entries_ordered.empty()) {
         pop_entry();
     }
     next_idx++;
@@ -220,7 +220,7 @@ void table::add_entry(const std::string& name, const std::string& value) {
 
 void table::set_capacity(size_t capacity) {
     m_capacity = capacity;
-    while(m_size > m_capacity && !entries_ordered.empty()) {
+    while(m_size > m_capacity and !entries_ordered.empty()) {
         pop_entry();
     }
 }

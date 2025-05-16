@@ -81,6 +81,31 @@ void init_options() {
 }
 
 
+std::string base64_encode(const std::vector<uint8_t>& data) {
+    static constexpr const char* base64_chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+    std::string encoded;
+    size_t i = 0;
+    std::array<uint32_t, 3> octets;
+    uint32_t triple;
+
+    while (i < data.size()) {
+        octets[0] = i < data.size() ? data[i++] : 0;
+        octets[1] = i < data.size() ? data[i++] : 0;
+        octets[2] = i < data.size() ? data[i++] : 0;
+
+        triple = (octets[0] << 16) + (octets[1] << 8) + octets[2];
+
+        encoded += base64_chars[(triple >> 18) & 0x3F];
+        encoded += base64_chars[(triple >> 12) & 0x3F];
+        encoded += (i - 1 < data.size()) ? base64_chars[(triple >> 6) & 0x3F] : '=';
+        encoded += (i < data.size()) ? base64_chars[triple & 0x3F] : '=';
+    }
+    return encoded;
+}
 
 
 }

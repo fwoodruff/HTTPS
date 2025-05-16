@@ -85,7 +85,7 @@ reactor::wakeup_timeouts( const time_point<steady_clock> &now) {
                 it->second.wake_up[i] = std::nullopt;
             }
         }
-        if(it->second.handle[0] == nullptr && it->second.handle[1] == nullptr) {
+        if(it->second.handle[0] == nullptr and it->second.handle[1] == nullptr) {
             it = park_map.erase(it);
         } else {
             it++;
@@ -170,7 +170,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
                     wakeup[i] = std::nullopt;
                 }
             }
-            if (handle[0] == nullptr && handle[1] == nullptr) {
+            if (handle[0] == nullptr and handle[1] == nullptr) {
                 auto res = park_map.erase(fdd.fd);
                 assert(res == 1);
             }

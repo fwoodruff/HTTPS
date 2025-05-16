@@ -18,15 +18,8 @@
 #include <cassert>
 #include <exception>
 
-#ifdef __cpp_impl_coroutine
 #include <coroutine>
-#else
-#include <experimental/coroutine>
-namespace std {
-    namespace experimental {}
-    using namespace experimental;
-}
-#endif
+
 
 
 // pared down from Lewis Baker's cppcoro

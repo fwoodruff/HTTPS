@@ -1,4 +1,4 @@
-# docker build -t containerymccontainerface -f Dockerfile.armv6 .
+# docker build --progress=plain -t containerymccontainerface -f Dockerfile.armv6 .
 # c_id=$(docker create containerymccontainerface)
 # docker cp $c_id:/target/codeymccodeface ./target/codeymccodeface.armv6
 # scp target/codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/HTTPS23/target/codeymccodeface

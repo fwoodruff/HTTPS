@@ -15,6 +15,7 @@
 #include "../../global.hpp"
 #include "h2stream.hpp"
 #include "../../TLS/protocol.hpp"
+#include <print>
 
 namespace fbw {
 

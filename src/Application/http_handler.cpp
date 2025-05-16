@@ -291,6 +291,15 @@ task<bool> handle_request(http_ctx& connection) {
     const auto method = find_header(request_headers, ":method");
     const auto path = find_header(request_headers, ":path");
     const auto scheme = find_header(request_headers, ":scheme");
+
+    std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
+    if (!ip_ban.is_open()) {
+        throw std::runtime_error("failed to open ip ban file");
+    }
+    auto timestamp = build_iso_8601_current_timestamp();
+    auto ip = connection.get_ip();
+    std::println(ip_ban, "[{}] HTTP    ip={} detail={} {}", timestamp, ip, method.value_or("BAD"), path.value_or("/malformed"));
+    ip_ban.flush();
     
     if(is_websocket_upgrade(request_headers)) {
         co_await handle_websocket(connection, request_headers);

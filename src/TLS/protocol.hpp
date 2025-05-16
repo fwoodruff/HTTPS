@@ -40,6 +40,7 @@ public:
     [[nodiscard]] task<stream_result> read_append_early_data(std::deque<uint8_t>&, std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
     [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] std::string get_ip() override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] task<stream_result> await_hello();
 

@@ -61,6 +61,10 @@ task<void> tcp_stream::close_notify() {
     co_return;
 }
 
+[[nodiscard]] std::string tcp_stream::get_ip() {
+    return m_ip;
+}
+
 tcp_stream::tcp_stream(tcp_stream&& other) : m_ip(std::move(other.m_ip)), m_port(std::move(other.m_port)), m_fd(std::exchange(other.m_fd, -1)) { }
 
 tcp_stream& tcp_stream::operator=(tcp_stream&& other) {

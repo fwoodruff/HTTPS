@@ -45,6 +45,7 @@ public:
     // returns true if stream is still open on read
     [[nodiscard]] virtual task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) = 0;
     [[nodiscard]] virtual task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) = 0;
+    [[nodiscard]] virtual std::string get_ip() = 0;
 
     [[nodiscard]] virtual task<void> close_notify() = 0;
     virtual ~stream() noexcept = default;

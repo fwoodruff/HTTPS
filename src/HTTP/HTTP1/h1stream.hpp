@@ -32,6 +32,7 @@ public:
     task<stream_result> write_headers(const std::vector<entry_t>& headers) override;
     task<stream_result> write_data(std::span<const uint8_t> data, bool end = false, bool do_flush = false) override;
     task<std::pair<stream_result, bool>> append_http_data(std::deque<uint8_t>& buffer) override;
+    std::string get_ip() override;
     bool is_done() override;
 
     callback m_application_handler;

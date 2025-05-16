@@ -28,6 +28,10 @@ namespace fbw {
 
 using enum ContentType;
 
+std::string TLS::get_ip() {
+    return m_client->get_ip();
+}
+
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
 task<stream_result> TLS::read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early) {

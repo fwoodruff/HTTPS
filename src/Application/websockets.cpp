@@ -69,7 +69,7 @@ bool is_websocket_upgrade(const std::vector<entry_t>& headers) {
         }
     }
 
-    if ((upgrade || connection || method || protocol) && !(want_http1 || want_http2)) {
+    if ((upgrade || protocol) && !(want_http1 || want_http2)) {
         throw http_error(400, "Bad Request: Incomplete or invalid WebSocket upgrade headers");
     }
 

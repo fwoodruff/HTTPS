@@ -106,6 +106,11 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
 // when the task wakes we push it to the server
 task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
+        std::ofstream ip_ban(fbw::project_options.ip_ban_file);
+        if (!ip_ban.is_open()) {
+            throw std::runtime_error("failed to open ip ban file");
+        }
+
         for(;;) {
             if(auto client = co_await listener.accept()) {
                 assert(ip_connections != nullptr);
@@ -114,6 +119,10 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
                 if(conn == std::nullopt) [[unlikely]] {
                     continue;
                 }
+                auto timestamp = fbw::build_iso_8601_current_timestamp();
+                std::println(ip_ban, "[{}] CONNECT {}", timestamp, client->m_ip);
+                ip_ban.flush();
+
                 auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
                 auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
                 

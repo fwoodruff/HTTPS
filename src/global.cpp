@@ -9,12 +9,16 @@
 
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <unordered_map>
 #include <mutex>
 #include <algorithm>
 #include <unistd.h>
 #include <vector>
 #include <limits.h>
+
+#include <iomanip>
+#include <ctime>
 
 #include <filesystem>
 
@@ -70,6 +74,7 @@ void init_options() {
     project_options.tld_file = option_map.at("TLD_FILE");
     project_options.mime_folder = option_map.at("MIME_FOLDER");
     project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
+    project_options.ip_ban_file = (option_map.at( "IP_BAN_PATH"));
 
 
     using namespace std::chrono_literals;
@@ -105,6 +110,16 @@ std::string base64_encode(const std::vector<uint8_t>& data) {
         encoded += (i < data.size()) ? base64_chars[triple & 0x3F] : '=';
     }
     return encoded;
+}
+
+std::string build_iso_8601_current_timestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto tt = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::gmtime(&tt);
+    auto t = std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    std::ostringstream ts;
+    ts << t;
+    return ts.str();
 }
 
 

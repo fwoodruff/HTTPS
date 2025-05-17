@@ -11,7 +11,6 @@
 
 #include <array>
 #include <algorithm>
-#include <iostream>
 #include <cmath>
 #include <iomanip>
 #include <climits>

@@ -53,6 +53,7 @@ public:
     virtual task<stream_result> write_data(std::span<const uint8_t> data, bool end = false, bool do_flush = false) = 0;
     virtual bool is_done() = 0;
     virtual ~http_ctx() = default;
+    virtual std::string get_ip() = 0;
 };
 
 using callback = std::function< task<bool>(http_ctx&) >;

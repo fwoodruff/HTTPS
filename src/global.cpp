@@ -9,13 +9,17 @@
 
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <unordered_map>
 #include <mutex>
 #include <algorithm>
 #include <unistd.h>
 #include <vector>
 #include <limits.h>
-#include <sstream>
+
+#include <iomanip>
+#include <ctime>
+
 #include <filesystem>
 
 namespace fbw {
@@ -70,6 +74,7 @@ void init_options() {
     project_options.tld_file = option_map.at("TLD_FILE");
     project_options.mime_folder = option_map.at("MIME_FOLDER");
     project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
+    project_options.ip_ban_file = (option_map.at( "IP_BAN_PATH"));
 
 
     using namespace std::chrono_literals;
@@ -81,6 +86,41 @@ void init_options() {
 }
 
 
+std::string base64_encode(const std::vector<uint8_t>& data) {
+    static constexpr const char* base64_chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+    std::string encoded;
+    size_t i = 0;
+    std::array<uint32_t, 3> octets;
+    uint32_t triple;
+
+    while (i < data.size()) {
+        octets[0] = i < data.size() ? data[i++] : 0;
+        octets[1] = i < data.size() ? data[i++] : 0;
+        octets[2] = i < data.size() ? data[i++] : 0;
+
+        triple = (octets[0] << 16) + (octets[1] << 8) + octets[2];
+
+        encoded += base64_chars[(triple >> 18) & 0x3F];
+        encoded += base64_chars[(triple >> 12) & 0x3F];
+        encoded += (i - 1 < data.size()) ? base64_chars[(triple >> 6) & 0x3F] : '=';
+        encoded += (i < data.size()) ? base64_chars[triple & 0x3F] : '=';
+    }
+    return encoded;
+}
+
+std::string build_iso_8601_current_timestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto tt = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::gmtime(&tt);
+    auto t = std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    std::ostringstream ts;
+    ts << t;
+    return ts.str();
+}
 
 
 }

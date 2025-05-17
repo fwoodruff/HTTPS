@@ -12,6 +12,8 @@ This has thrown up many curiosities and helped me harden the server.
 * HTTP/1.1 and TLS 1.2 fallbacks with both modern and legacy ciphers
 * C++20 coroutines for [improving](https://github.com/fwoodruff/https-archive) control flow particularly around bulk file transfer latency
 * Buffered and skippable video streaming supported with HTTP range requests
+* Supports [HTTP-01](https://datatracker.ietf.org/doc/html/rfc8555#section-8.3) ACME challenges
+  * SSL certificates are renewed automatically with no server downtime
 * [HPACK](https://datatracker.ietf.org/doc/html/rfc7541)
   * Huffman compression for strings - these can be toggled off for secrets
   * Dynamic indexing of HTTP headers, for requests on the same TCP connection
@@ -25,6 +27,7 @@ This has thrown up many curiosities and helped me harden the server.
   - lock-free task executor with a fixed-size threadpool
   - `poll()`-based event reactor
   - [Rust port](https://github.com/fwoodruff/async_io) of this component
+* Log output for a `fail2ban` dynamic firewall
 * Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for achieving lock-freedom
 
 </details>
@@ -51,10 +54,21 @@ docker run --init --rm -p 8443:8443 -p 8080:8080 server
 ```
 
 
-CA certificates can be renewed with:
-
+CA certificates can renewed with:
+```bash
+sudo certbot certonly \
+  --webroot \
+  -w /home/freddiewoodruff/doc/HTTPS23/resources/webpages/freddiewoodruff.co.uk \
+  --key-type ecdsa \
+  --elliptic-curve secp256r1 \
+  --cert-name freddiewoodruff.co.uk \
+  -d freddiewoodruff.co.uk \
+  -d www.freddiewoodruff.co.uk \
+  --force-renewal
 ```
-sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --elliptic-curve=secp256r1 --webroot --force-renewal
+Set up a cronjob for renewal with `sudo crontab -e`
+```
+0 */12 * * * certbot renew --quiet
 ```
 
 `config.txt` is for localhost.
@@ -79,9 +93,10 @@ sudo certbot certonly --key-type=ecdsa --cert-name=freddiewoodruff.co.uk --ellip
 Compiling C++23 for a Raspberry Pi 1B mixes old with new.
 `Dockerfile.armv6` downloads a cross-compiler and builds the ARMv6 binary. Run as follows:
 ```bash
+mkdir -p target
 docker build -t containerymccontainerface -f Dockerfile.armv6 .
 c_id=$(docker create containerymccontainerface)
-docker cp $c_id:/target/codeymccodeface ./codeymccodeface.armv6
+docker cp $c_id:/target/codeymccodeface ./target/codeymccodeface.armv6
 docker rm $c_id
 ```
 </details>

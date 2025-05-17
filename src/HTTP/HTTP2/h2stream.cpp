@@ -87,6 +87,14 @@ task<std::pair<stream_result, bool>> h2_stream::append_http_data(std::deque<uint
     co_return {stream_result::ok, data_done };
 }
 
+std::string h2_stream::get_ip() {
+    auto conn = m_connection.lock();
+    if(!conn) {
+        return "";
+    }
+    return conn->m_stream->get_ip();
+}
+
 std::vector<entry_t> h2_stream::get_headers() {
     auto connection = m_connection.lock();
     if(!connection) {
@@ -94,7 +102,6 @@ std::vector<entry_t> h2_stream::get_headers() {
     }
     auto& cx = connection->h2_ctx;
     auto headers = cx.get_headers(m_stream_id);
-    headers.push_back({":protocol", "h2"}); // todo: use a request headers struct
     return headers;
 }
 

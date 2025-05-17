@@ -38,6 +38,7 @@ public:
     [[nodiscard]] task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
+    [[nodiscard]] std::string get_ip() override;
 
     std::string m_ip;
     uint16_t m_port;

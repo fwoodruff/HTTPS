@@ -15,6 +15,7 @@
 #include "../../global.hpp"
 #include "h2stream.hpp"
 #include "../../TLS/protocol.hpp"
+#include <print>
 
 namespace fbw {
 
@@ -32,9 +33,6 @@ task<void> HTTP2::client_inner() {
     h2_ctx.send_initial_settings();
     for(;;) {
         for(;;) {
-            if(counter.fetch_add(1, std::memory_order::relaxed) % 0x10 == 0) {
-                co_await yield_coroutine{};
-            }
             auto resa = co_await send_outbox(false);
             if(resa != stream_result::ok) {
                 co_return;
@@ -50,7 +48,7 @@ task<void> HTTP2::client_inner() {
                 break;
             }
         }
-        if(stream_result::ok != co_await send_outbox(true)) { // flush
+        if(stream_result::ok != co_await send_outbox(true, true)) { // must flush
             co_return;
         }
         auto res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
@@ -125,9 +123,17 @@ void HTTP2::handle_frame(h2frame& frame) {
     return;
 }
 
-task<stream_result> HTTP2::send_outbox(bool flush) {
+task<stream_result> HTTP2::send_outbox(bool flush, bool blocking_reader) {
     guard g(&m_async_mut);
     co_await m_async_mut.lock();
+    {
+        // if the event loop is still running hot, defer flushing write buffer
+        // this contends with resume_back_pressure()
+        std::scoped_lock lk { m_coro_mut };
+        if(!is_blocking_read and !blocking_reader) {
+            flush = false;
+        }
+    }
     auto [data_contiguous, closing] = h2_ctx.extract_outbox(flush);
     while(!data_contiguous.empty()) {
         auto packet = std::move(data_contiguous.front());
@@ -136,6 +142,7 @@ task<stream_result> HTTP2::send_outbox(bool flush) {
         if(res != stream_result::ok) {
             co_return res;
         }
+        co_await yield_coroutine{};
     }
     if(closing) {
         co_await m_stream->close_notify();
@@ -202,7 +209,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     try {
         co_await conn->m_handler(*hcx);
     } catch(std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        std::println(stderr, "{}\n", e.what());
     }
     if(!hcx->is_done()) {
         co_await hcx->write_data(std::span<uint8_t> {}, true);

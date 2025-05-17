@@ -12,22 +12,14 @@
 
 
 #include <type_traits>
-#include <iostream>
 #include <concepts>
 #include <atomic>
 #include <optional>
 #include <cassert>
 #include <exception>
 
-#ifdef __cpp_impl_coroutine
 #include <coroutine>
-#else
-#include <experimental/coroutine>
-namespace std {
-    namespace experimental {}
-    using namespace experimental;
-}
-#endif
+
 
 
 // pared down from Lewis Baker's cppcoro

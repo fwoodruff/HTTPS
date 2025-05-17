@@ -88,11 +88,15 @@ std::vector<entry_t> HTTP1::get_headers() {
 
 HTTP1::HTTP1(std::unique_ptr<stream> stream, callback handler) : m_stream(std::move(stream)), m_application_handler(handler), m_buffered_writer(WRITE_RECORD_SIZE) {}
 
+std::string HTTP1::get_ip() {
+    return m_stream->get_ip();
+}
+
 std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
         throw http_error(413, "Payload Too Large");
     }
-    if (!m_buffer.empty() && !std::isupper(m_buffer[0])) {
+    if (!m_buffer.empty() and !std::isupper(m_buffer[0])) {
         throw http_error(400, "Invalid HTTP request"); 
     }
 
@@ -103,14 +107,9 @@ std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     auto headers_obj = parse_http_headers(to_signed(header_bytes));
     std::vector<entry_t> headers;
     headers.push_back({":method", headers_obj.verb});
-    headers.push_back({":authority", headers_obj.headers["host"]});
     headers.push_back({":path", headers_obj.resource});
-    headers.push_back({":protocol", headers_obj.protocol});
-    headers.push_back({":scheme", "https"}); // todo: fix me
+    headers.push_back({":h1protocol", headers_obj.protocol});
     for(auto& [ key, value] : headers_obj.headers ) {
-        if(key == "host") {
-            continue;
-        }
         headers.push_back({key, value});
     }
     return headers;

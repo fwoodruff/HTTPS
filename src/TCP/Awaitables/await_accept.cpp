@@ -18,15 +18,7 @@
 #include <arpa/inet.h>
 #include <optional>
 
-#ifdef __cpp_impl_coroutine
 #include <coroutine>
-#else
-#include <experimental/coroutine>
-namespace std {
-    namespace experimental {}
-    using namespace experimental;
-}
-#endif
 
 
 std::pair<std::string, uint16_t> get_ip_port(const struct sockaddr& sa) {

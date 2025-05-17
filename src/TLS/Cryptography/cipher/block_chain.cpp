@@ -14,7 +14,6 @@
 #include "../../TLS_enums.hpp"
 
 #include <algorithm>
-#include <iostream>
 #include <iomanip>
 
 namespace fbw::aes {

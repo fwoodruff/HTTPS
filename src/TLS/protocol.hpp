@@ -40,6 +40,7 @@ public:
     [[nodiscard]] task<stream_result> read_append_early_data(std::deque<uint8_t>&, std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
     [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] std::string get_ip() override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] task<stream_result> await_hello();
 
@@ -58,6 +59,7 @@ private:
     task<stream_result> read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early);
     task<stream_result> net_write_all();
     task<stream_result> await_message(HandshakeStage stage);
+    task<stream_result> bail_if_http(const std::deque<uint8_t>& input_data);
 };
 
 tls_record server_key_update_record(KeyUpdateRequest req);

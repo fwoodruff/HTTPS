@@ -236,7 +236,7 @@ std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> handshake_ctx::get
         if(ticket->cipher_suite != cipher) {
             continue;
         }
-        if(ticket->sni != "" && ticket->sni != m_SNI) {
+        if(ticket->sni != "" and ticket->sni != m_SNI) {
             continue;
         }
         uint64_t computed_age_millis = uint32_t(key_entry.m_obfuscated_age - ticket->ticket_age_add);
@@ -314,16 +314,16 @@ void handshake_ctx::client_hello_record(const std::vector<uint8_t>& handshake_me
         const bool has_psk_dhe_ke = std::any_of(client_hello.pskmodes.begin(), client_hello.pskmodes.end(),
                                    [](auto mode) { return mode == PskKeyExchangeMode::psk_dhe_ke; });
 
-        if(!has_key_share && (!has_psk_ke || has_psk_dhe_ke)) {
+        if(!has_key_share and (!has_psk_ke || has_psk_dhe_ke)) {
             throw ssl_error("no key share sent", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
-        if(!has_psk_modes && has_preshared_key ) {
+        if(!has_psk_modes and has_preshared_key ) {
             throw ssl_error("preshared key sent without accepting any psk modes", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
         if(has_key_share != has_supported_groups) {
             throw ssl_error("key share must be sent with supported groups", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
-        if(has_psk_dhe_ke && !has_key_share) {
+        if(has_psk_dhe_ke and !has_key_share) {
             throw ssl_error("offered PSK DHE without offering a key", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
 

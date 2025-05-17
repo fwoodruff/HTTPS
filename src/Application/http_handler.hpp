@@ -18,6 +18,7 @@ namespace fbw {
 [[nodiscard]] task<bool> application_handler(http_ctx& connection);
 [[nodiscard]] task<bool> redirect_handler(http_ctx& connection);
 
+std::optional<std::string> find_header(const std::vector<entry_t>& request_headers, std::string header);
 
 } // namespace fbw
 

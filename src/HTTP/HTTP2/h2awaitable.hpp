@@ -21,15 +21,7 @@
 
 #include "../../TCP/stream_base.hpp"
 
-#ifdef __cpp_impl_coroutine
 #include <coroutine>
-#else
-#include <experimental/coroutine>
-namespace std {
-    namespace experimental {}
-    using namespace experimental;
-}
-#endif
 
 using namespace std::chrono;
 

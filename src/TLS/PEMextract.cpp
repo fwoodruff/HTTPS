@@ -9,7 +9,6 @@
 #include "Cryptography/assymetric/secp256r1.hpp"
 #include "TLS_enums.hpp"
 
-#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <algorithm>

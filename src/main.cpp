@@ -17,7 +17,6 @@
 #include <memory>
 #include <fstream>
 #include <string>
-#include <sstream>
 #include <filesystem>
 #include <unordered_map>
 #include <print>
@@ -29,10 +28,16 @@
 //      HTTP/2 graceful server shutdown
 //      memory-bounded TLS layer
 //      Accept-Languages header folders
+//      More robust config - systemd compatibility
+//      apt install
+//      add to HTTP handler a response Upgrade headers: websockets
+//      consume bytes on h2 context for protocol switching
 
 // Correctness:
 //      Check that poly1305 is constant-time
 //      go through RFC 9113 ensuring correct handling of everything
+//      TLS SNI should match HTTP/2 :authority and HTTP/1.1 Host
+//      HTTP/1.1 should add keep-alive/close header
 
 // Syntax:
 //      Add 'explict' to constructors
@@ -79,7 +84,7 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_to
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {
-        std::println(std::cerr, "{}", e.what());
+        std::println(stderr, "{}\n", e.what());
     }
 }
 
@@ -105,6 +110,16 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             if(auto client = co_await listener.accept()) {
                 assert(ip_connections != nullptr);
                 assert(ip_connections != nullptr);
+                std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
+                if (!ip_ban.is_open()) {
+                    throw std::runtime_error("failed to open ip ban file");
+                }
+
+                auto timestamp = fbw::build_iso_8601_current_timestamp();
+                auto ip = client->get_ip();
+                std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
+                ip_ban.flush();
+
                 auto conn = ip_connections->add_connection(client->m_ip);
                 if(conn == std::nullopt) [[unlikely]] {
                     continue;
@@ -117,7 +132,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             }
         }
     } catch(const std::exception& e) {
-        std::println(std::cerr, "{}", e.what());
+        std::println(stderr, "{}\n", e.what());
     }
 }
 
@@ -129,6 +144,16 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
                 assert(client != std::nullopt);
                 assert(ip_connections != nullptr);
                 assert(client != std::nullopt);
+
+                std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
+                if (!ip_ban.is_open()) {
+                    throw std::runtime_error("failed to open ip ban file");
+                }
+                auto timestamp = fbw::build_iso_8601_current_timestamp();
+                auto ip = client->get_ip();
+                std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
+                ip_ban.flush();
+
                 auto conn = ip_connections->add_connection(client->m_ip);
                 if(conn == std::nullopt) [[unlikely]] {
                     continue;
@@ -138,7 +163,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             }
         }
     } catch(const std::exception& e ) {
-        std::println(std::cerr, "{}", e.what());
+        std::println(stderr, "{}\n", e.what());
     }
 }
 
@@ -157,10 +182,11 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
-        std::println(std::cerr, "{}", e.what());
-        std::println(std::cerr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).string());
-        std::println(std::cerr, "Key file: {}", std::filesystem::absolute(fbw::project_options.key_file).string());
-        std::println(std::cerr, "Certificate file: {}", std::filesystem::absolute(fbw::project_options.certificate_file).string());
+        std::println(stderr, "{}", e.what());
+        std::println(stderr, "{}", e.what());
+        std::println(stderr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).c_str());
+        std::println(stderr, "Key file: {}", std::filesystem::absolute(fbw::project_options.key_file).c_str());
+        std::println(stderr, "Certificate file: {}", std::filesystem::absolute(fbw::project_options.certificate_file).c_str());
     }
     co_return;
 }
@@ -179,7 +205,7 @@ int main(int argc, const char * argv[]) {
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {
-        std::cerr << "main: " << e.what() << std::endl;
+        std::println(stderr, "main: {}\n", e.what());
     }
     return 0;
 }

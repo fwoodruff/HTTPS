@@ -11,8 +11,6 @@
 #include <cassert>
 #include <array>
 #include <string>
-#include <sstream>
-#include <iostream>
 #include <climits>
 #include <algorithm>
 
@@ -110,7 +108,7 @@ constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) { // todo: 
 
 // computes lhs - rhs mod P
 constexpr ct_u256 modulo_sub(const ct_u256& lhs, const ct_u256& rhs) {
-    assert(lhs < (Prime + Prime) && rhs < Prime);
+    assert(lhs < (Prime + Prime) and rhs < Prime);
     ct_u256 diff = lhs - rhs;
     ct_u256 mask = -(diff >> (sizeof(ct_u256) * CHAR_BIT - 1));
     ct_u256 result = diff + (mask & Prime);

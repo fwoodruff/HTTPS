@@ -11,7 +11,6 @@
 #include <cassert>
 #include <string>
 #include <array>
-#include <iostream>
 #include <fstream>
 #include <cstdint>
 #include <optional>
@@ -36,6 +35,7 @@ constexpr long MAX_BODY_SIZE = 8192;
 struct options {
     std::string redirect_port;
     std::string server_port;
+    std::string ip_ban_file;
     std::vector<std::string> domain_names;
     std::filesystem::path certificate_file;
     std::filesystem::path key_file;
@@ -53,6 +53,7 @@ struct options {
 
 extern options project_options;
 void init_options();
+std::string build_iso_8601_current_timestamp();
 
 template<typename T>
 [[nodiscard("returns read integer")]] inline uint64_t try_bigend_read(const T& container, size_t idx, size_t nbytes) {
@@ -116,6 +117,8 @@ inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
 void remove_whitespace(std::string& str);
 
 std::vector<std::string> split(const std::string& line, const std::string& delim);
+
+std::string base64_encode(const std::vector<uint8_t>& data);
 
 } // namespace fbw
 

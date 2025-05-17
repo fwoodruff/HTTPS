@@ -27,6 +27,7 @@ This has thrown up many curiosities and helped me harden the server.
   - lock-free task executor with a fixed-size threadpool
   - `poll()`-based event reactor
   - [Rust port](https://github.com/fwoodruff/async_io) of this component
+* Log output for a `fail2ban` dynamic firewall
 * Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for achieving lock-freedom
 
 </details>

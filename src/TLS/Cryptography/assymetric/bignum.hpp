@@ -346,10 +346,10 @@ public:
     friend constexpr uVar<192> cha::REDCpoly(uVar<384>) noexcept;
 };
 
-constexpr ct_u256 operator "" _xl(const char* const str, std::size_t siz) {
+constexpr ct_u256 operator ""_xl(const char* const str, std::size_t siz) {
     return std::string_view { str,siz };
 }
-constexpr ct_u512 operator "" _xll(const char* const str, std::size_t siz) {
+constexpr ct_u512 operator ""_xll(const char* const str, std::size_t siz) {
     return std::string_view {str,siz};
 }
 

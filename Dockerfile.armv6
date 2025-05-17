@@ -8,7 +8,7 @@ RUN dpkg --add-architecture amd64 && apt-get update && \
     apt-get install -y libc6:amd64 libstdc++6:amd64 curl \
         crossbuild-essential-armel libstdc++-14-dev-armel-cross build-essential libc6-armel-cross
 
-RUN curl -L https://github.com/tttapa/toolchains/releases/download/1.0.2/x-tools-armv6-rpi-linux-gnueabihf-gcc14.tar.xz | tar -xJ -C /opt
+RUN curl -L https://github.com/tttapa/toolchains/releases/download/1.1.0/x-tools-armv6-rpi-linux-gnueabihf-gcc15.tar.xz | tar -xJ -C /opt
 
 ENV PATH="/opt/x-tools/armv6-rpi-linux-gnueabihf/bin:${PATH}"
 

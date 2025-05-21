@@ -24,7 +24,7 @@ namespace fbw {
 constexpr size_t TLS_RECORD_SIZE = (1u << 14);
 constexpr size_t TLS_EXPANSION_MAX = 2048;
 constexpr size_t TLS_HEADER_SIZE = 5;
-constexpr size_t WRITE_RECORD_SIZE = 1437;
+constexpr size_t WRITE_RECORD_SIZE = 1417;
 constexpr size_t DECRYPTED_TLS_RECORD_GIVE = 1024;
 constexpr ssize_t FILE_READ_SIZE = 11401;
 constexpr long MAX_HEADER_SIZE = 6000;

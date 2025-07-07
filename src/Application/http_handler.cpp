@@ -290,7 +290,7 @@ task<bool> handle_request(http_ctx& connection) {
     const std::vector<entry_t> request_headers = connection.get_headers();
     const auto method = find_header(request_headers, ":method");
     const auto path = find_header(request_headers, ":path");
-    const auto scheme = find_header(request_headers, ":scheme");
+    [[maybe_unused]] const auto scheme = find_header(request_headers, ":scheme");
 
     std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
     if (!ip_ban.is_open()) {
@@ -306,7 +306,7 @@ task<bool> handle_request(http_ctx& connection) {
         co_return false;
     }
 
-    if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
+    if (!method.has_value() or !path.has_value()) {
         throw http_error(400, "Bad Request");
     }
 
@@ -339,9 +339,9 @@ task<bool> handle_redirect(http_ctx& connection) {
     auto method = find_header(request_headers, ":method");
     auto path = find_header(request_headers, ":path");
     auto authority = find_header(request_headers, ":authority");
-    auto scheme = find_header(request_headers, ":scheme");
+    [[maybe_unused]] auto scheme = find_header(request_headers, ":scheme");
 
-    if (!method.has_value() or !path.has_value() or !scheme.has_value()) {
+    if (!method.has_value() or !path.has_value()) {
         throw http_error(400, "Bad Request");
     }
 

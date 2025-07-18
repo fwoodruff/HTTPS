@@ -332,7 +332,7 @@ enum class SignatureAlgorithm : uint8_t {
     rsa = 1,
     dsa = 2,
     ecdsa = 3,
-    ed25519	= 7,
+    ed25519 = 7,
     ed448 = 8,
     gostr34102012_256 = 64,
     gostr34102012_512 = 65,

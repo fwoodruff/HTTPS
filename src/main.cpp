@@ -26,12 +26,13 @@
 // Features:
 //      HRR cookies
 //      HTTP/2 graceful server shutdown
-//      memory-bounded TLS layer
+//      memory-bounded TLS layer w.r.t. async suspension points
 //      Accept-Languages header folders
-//      More robust config - systemd compatibility
+//      Config path should be relative to exec not caller working dir
 //      apt install
-//      add to HTTP handler a response Upgrade headers: websockets
+//      websockets need an awaitable sleep function
 //      consume bytes on h2 context for protocol switching
+//      at max connections await an async semaphore rather than the tcp listener
 
 // Correctness:
 //      Check that poly1305 is constant-time

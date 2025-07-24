@@ -28,7 +28,7 @@ void write_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) no
 void xor_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noexcept;
 
 
-keccak_sponge::keccak_sponge(size_t capacity_) noexcept {
+keccak_sponge::keccak_sponge(size_t capacity_, uint8_t domain_separator) noexcept {
     capacity = capacity_;
     rate = 1600 - capacity;
     assert(rate % 8 == 0 and capacity < 1600);
@@ -37,6 +37,7 @@ keccak_sponge::keccak_sponge(size_t capacity_) noexcept {
     block_size = 0;
     absorb_phase = true;
     idx = 0;
+    padding_byte = domain_separator;
 }
 
 void keccak_sponge::reset() noexcept {
@@ -79,7 +80,7 @@ void keccak_sponge::absorb(const char* const input, size_t inputByteLen) noexcep
 void keccak_sponge::squeeze(uint8_t* const output, size_t outputByteLen) noexcept {
     if(absorb_phase) {
         assert(idx < 200);
-        state[idx] ^= 0x1F;
+        state[idx] ^= padding_byte;
         state[rate_in_bytes-1] ^= 0x80;
         keccak_F1600_state_permute(state);
         absorb_phase = false;
@@ -97,7 +98,7 @@ void keccak_sponge::squeeze(uint8_t* const output, size_t outputByteLen) noexcep
 void keccak_sponge::squeeze(char* const output, size_t outputByteLen) noexcept {
     if(absorb_phase) {
         assert(idx < 200);
-        state[idx] ^= 0x1F;
+        state[idx] ^= padding_byte;
         state[rate_in_bytes-1] ^= 0x80;
         keccak_F1600_state_permute(state);
         absorb_phase = false;

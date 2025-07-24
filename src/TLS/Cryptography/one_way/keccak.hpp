@@ -24,8 +24,9 @@ class keccak_sponge {
     size_t block_size;
     size_t idx;
     bool absorb_phase = true;
+    uint8_t padding_byte;
 public:
-    keccak_sponge(size_t capacity = 256) noexcept;
+    keccak_sponge(size_t capacity = 256, uint8_t domain_separator = 0x1F) noexcept;
     // code duplication is better than undefined behaviour
     void absorb(const uint8_t* const input, size_t N) noexcept;
     void absorb(const char* const input, size_t N) noexcept;

@@ -419,13 +419,7 @@ tls_record handshake_ctx::server_hello_record() {
     handshake_hasher->update(hello_record.m_contents);
 
     if(*p_tls_version == TLS13 and server_hello_type != ServerHelloType::hello_retry) {
-        std::vector<uint8_t> shared_secret;
-        if(server_hello_type == ServerHelloType::preshared_key) {
-            shared_secret = std::vector<uint8_t>();
-        } else {
-            shared_secret = get_shared_secret(server_private_key_ephem, client_public_key);
-        }
-        tls13_handshake_key_calc(*hash_ctor, tls13_key_schedule, shared_secret, handshake_hasher->hash());
+        tls13_handshake_key_calc(*hash_ctor, tls13_key_schedule, tls13_shared_secret, handshake_hasher->hash());
     }
     return hello_record;
 }
@@ -525,8 +519,8 @@ void handshake_ctx::client_handshake_finished13_record(const std::vector<uint8_t
 }
 
 tls_record handshake_ctx::server_key_exchange_record() {
-    randomgen.randgen(server_private_key_ephem);
-    std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_private_key_ephem);
+    randomgen.randgen(tls12_server_private_key_ephem);
+    std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(tls12_server_private_key_ephem);
     
     // Record Header
     tls_record record(ContentType::Handshake);
@@ -623,9 +617,11 @@ void handshake_ctx::hello_extensions(tls_record& record) {
         if(server_hello_type == ServerHelloType::diffie_hellman or server_hello_type == ServerHelloType::preshared_key_dh) {
             assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
             assert(!client_public_key.key.empty());
-            auto [ privkey, pubkey_ephem ] = server_keypair(client_public_key.key_type);
-            server_private_key_ephem = privkey;
-            write_key_share(record, pubkey_ephem);
+            auto [ shared_secret, server_keyshare ] = process_client_key_share(client_public_key);
+            tls13_shared_secret = shared_secret;
+            write_key_share(record, server_keyshare);
+        } else {
+            tls13_shared_secret = std::vector<uint8_t>();
         }
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {
@@ -670,7 +666,7 @@ std::vector<uint8_t> handshake_ctx::client_key_exchange_receipt(const std::vecto
     std::copy(&key_exchange[5], &key_exchange[37], client_public_key.key.begin());
     std::array<uint8_t, 32> client_pub{};
     std::copy_n(client_public_key.key.begin(), 32, client_pub.begin());
-    auto premaster_secret = fbw::curve25519::multiply(server_private_key_ephem, client_pub);
+    auto premaster_secret = fbw::curve25519::multiply(tls12_server_private_key_ephem, client_pub);
     std::vector<uint8_t> combined_random(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
     combined_random.insert(combined_random.end(), m_server_random.begin(), m_server_random.end());
     tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", combined_random, 48);

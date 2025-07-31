@@ -405,6 +405,12 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
     }
 }
 
+std::pair<std::vector<uint8_t>, key_share> decapsulate_client_key_share(key_share client_keyshare) {
+    auto [ privkey, pubkey_ephem ] = server_keypair(client_keyshare.key_type);
+    auto shared_secret = get_shared_secret(privkey, client_keyshare);
+    return { shared_secret, pubkey_ephem };
+}
+
 std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype) {
     switch(client_keytype) {
         case NamedGroup::x25519:

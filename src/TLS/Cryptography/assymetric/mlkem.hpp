@@ -26,6 +26,10 @@ constexpr int32_t dk512size = serial_byte_len * 2 + seed_len;
 constexpr int32_t dk768size = serial_byte_len * 3 + seed_len;
 constexpr int32_t dk1024size = serial_byte_len * 4 + seed_len;
 
+constexpr int32_t ciphertext512size = 768;
+constexpr int32_t ciphertext768size = 1088;
+constexpr int32_t ciphertext1024size = 1568; // todo: calculate don't hardcode
+
 constexpr int32_t ek512size = serial_byte_len * 4 + seed_len * 3;
 constexpr int32_t ek768size = serial_byte_len * 6 + seed_len * 3;
 constexpr int32_t ek1024size = serial_byte_len * 8 + seed_len * 3;

@@ -12,7 +12,7 @@
 
 namespace fbw::xkem {
 
-shared_secret process_client_keyshare(pubkey client_pub) {
+std::pair<std::vector<uint8_t>, std::vector<uint8_t>> process_client_keyshare(std::vector<uint8_t> pub) {
     // mlkem::ml_kem_768_pub client_ml_pubkey;
     // std::array<uint8_t, curve25519::PUBKEY_SIZE> client_x_pubkey;
 

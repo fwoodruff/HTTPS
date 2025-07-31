@@ -11,7 +11,7 @@
 #include "mlkem.hpp"
 #include "x25519.hpp"
 #include <array>
-
+#include <vector>
 
 namespace fbw::xkem {
 
@@ -25,7 +25,7 @@ namespace fbw::xkem {
     using ciphertext = std::array<uint8_t, ciphertext_size>;
     using shared_secret = std::array<uint8_t, shared_secret_size>;
 
-    shared_secret process_client_keyshare(pubkey pub);
+    std::pair<std::vector<uint8_t>, std::vector<uint8_t>> process_client_keyshare(std::vector<uint8_t> pub);
 
 
 }

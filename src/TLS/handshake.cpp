@@ -11,6 +11,7 @@
 #include "PEMextract.hpp"
 #include "Cryptography/assymetric/secp256r1.hpp"
 #include "Cryptography/assymetric/x25519.hpp"
+#include "Cryptography/assymetric/x25519mlkem768.hpp"
 #include "../global.hpp"
 #include "Cryptography/key_derivation.hpp"
 #include "Cryptography/cipher/block_chain.hpp"
@@ -189,6 +190,11 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
                     throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
                 return key;
+            //case NamedGroup::X25519MLKEM768:
+            //    if(key.key.size() != xkem::pub_key_size) {
+            //        throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            //    }
+            //    return key;
             default:
                 break;
         }
@@ -197,6 +203,7 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
         switch(group) {
             case NamedGroup::x25519: [[fallthrough]];
             case NamedGroup::secp256r1:
+            //case NamedGroup::X25519MLKEM768:
                 return key_share{ group, {} };
             default:
                 break;

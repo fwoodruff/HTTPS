@@ -50,7 +50,7 @@ struct kyber_params {
     uint8_t d_v;
 };
 
-using cyclotomic_poly = std::array<int32_t, 256>;
+using cyclotomic_poly = std::array<int32_t, n_len>;
 
 // https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf
 

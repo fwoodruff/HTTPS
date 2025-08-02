@@ -431,7 +431,6 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
         }
         case NamedGroup::X25519MLKEM768:
         {
-            std::println("hit this branch");
             auto [ shared_secret, server_keyshare ] = xkem::process_client_keyshare(client_keyshare.key);
             if (shared_secret.empty()) {
                 throw ssl_error("", AlertLevel::fatal, AlertDescription::illegal_parameter);

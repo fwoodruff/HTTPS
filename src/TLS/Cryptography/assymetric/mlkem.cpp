@@ -15,23 +15,26 @@ namespace fbw::mlkem {
 
 
 void byte_encode(uint8_t d, cyclotomic_poly F_poly, std::span<uint8_t> b_out) {
-    assert(b_out.size() == seed_len * d);
+    assert(b_out.size() == (n_len * d + 7)/8);
     std::fill(b_out.begin(), b_out.end(), 0);
-    for(int i = 0; i < n_len; i +=2) {
+    for(int i = 0; i < n_len; i ++ ) {
         int a = F_poly[i];
         assert(a < (1<<d));
         assert(a < q_modulo);
         for(int j = 0; j < d; j++) {
             auto bit_idx = i * d + j;
-            b_out[bit_idx % 8] |= (a & 1) << (bit_idx % 8);
+            auto byte_idx = bit_idx / 8;
+            b_out[byte_idx] |= (a & 1) << (bit_idx % 8);
             a >>= 1;
         }
     }
 }
 
 cyclotomic_poly byte_decode(std::span<uint8_t> serial_F_poly, uint32_t d) {
+    assert(serial_F_poly.size() == 32 * d);
     cyclotomic_poly F_poly;
     const int m = (d < 12) ? (1 << d) : q_modulo;
+    
     for (int i = 0; i < n_len; i++) {
         uint32_t val = 0;
         for (int j = 0; j < d; j++) {
@@ -132,7 +135,7 @@ cyclotomic_poly NTT(cyclotomic_poly f) {
             auto zeta = zeta_exp_bit_rev_7(i);
             i++;
             for(auto j = start; j < start + len; j++) {
-                auto t = zeta * f[j + len];
+                auto t = (zeta * f[j + len]) % q_modulo;
                 f[j + len] = f[j] - t;
                 f[j] += t;
             }
@@ -266,15 +269,17 @@ void sample_vector_poly_CBD(uint8_t k, uint8_t eta, std::span<uint8_t> iv, uint8
     }
 }
 
-int decompress_d(uint32_t y, uint32_t d) {
+int decompress_d(int32_t y, uint32_t d) {
     assert(d <= 12);
     assert(y < (1u << d));
     return (q_modulo * y + (1 << (d - 1))) >> d;
 }
 
-uint32_t compress_d(uint32_t x, uint32_t d) {
-    uint32_t scale = 1u << d;
-    return (static_cast<uint64_t>(x) * scale + q_modulo / 2) / q_modulo;
+uint32_t compress_d(int32_t x, uint32_t d) {
+    uint32_t scale = (1u << d) - 1;
+    int32_t t = x % int32_t(q_modulo);
+    int32_t w = (t + q_modulo) % q_modulo;
+    return (w * scale + q_modulo / 2) / q_modulo;
 }
 
 cyclotomic_poly decompress_poly(cyclotomic_poly poly, uint32_t d) {
@@ -294,15 +299,17 @@ cyclotomic_poly compress_poly(cyclotomic_poly poly, uint32_t d) {
 }
 
 void k_pke_encrypt(kyber_params params, std::span<uint8_t> ek_PKE, std::array<uint8_t, seed_len> message, std::array<uint8_t, seed_len> randomness, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> eta_buffer, std::span<uint8_t> c_out) {
-    assert(ek_PKE.size() == params.k * serial_byte_len);
+    assert(ek_PKE.size() == params.k * serial_byte_len + 32);
     assert(Aty_buffer.size() == params.k*(params.k+4));
     assert(c_out.size() == seed_len * (params.d_u * params.k + params.d_v));
-    assert(eta_buffer.size() == std::max(params.eta_1, params.eta_2));
+    assert(eta_buffer.size() == 64 * std::max(params.eta_1, params.eta_2));
     auto A_matrix = Aty_buffer.subspan(0, params.k*params.k);
     auto t_buffer = Aty_buffer.subspan(params.k*params.k, params.k);
     auto y_buffer = Aty_buffer.subspan(params.k*(params.k+1), params.k);
     auto e_buffer = Aty_buffer.subspan(params.k*(params.k+2), params.k);
     auto u_polys = Aty_buffer.subspan(params.k*(params.k+3), params.k);
+    auto eta_1_buffer = eta_buffer.subspan(0, 64 * params.eta_1);
+    auto eta_2_buffer = eta_buffer.subspan(0, 64 * params.eta_2); // reused
 
     for(int i = 0; i < params.k; i++) {
         std::span<uint8_t, serial_byte_len> subsp (ek_PKE.data() + serial_byte_len * i, serial_byte_len * (i+1));
@@ -312,10 +319,10 @@ void k_pke_encrypt(kyber_params params, std::span<uint8_t> ek_PKE, std::array<ui
     prepare_matrix_A(params.k, rho, A_matrix);
 
     uint8_t N = 0;
-    sample_vector_poly_CBD(params.k, params.eta_1, randomness, N, y_buffer, eta_buffer);
-    sample_vector_poly_CBD(params.k, params.eta_2, randomness, N, e_buffer, eta_buffer);
+    sample_vector_poly_CBD(params.k, params.eta_1, randomness, N, y_buffer, eta_1_buffer);
+    sample_vector_poly_CBD(params.k, params.eta_2, randomness, N, e_buffer, eta_2_buffer);
     
-    auto e2 = sample_poly_CBD_seed(params.eta_2, randomness, N, eta_buffer);
+    auto e2 = sample_poly_CBD_seed(params.eta_2, randomness, N, eta_2_buffer);
 
     for(int i = 0; i < params.k; i++) {
         y_buffer[i] = NTT(y_buffer[i]);
@@ -325,7 +332,7 @@ void k_pke_encrypt(kyber_params params, std::span<uint8_t> ek_PKE, std::array<ui
         cyclotomic_poly acc {};
         for (int j = 0; j < params.k; j++) {
             auto product = multiply_NTT(A_matrix[j*params.k+i], y_buffer[j]);
-            invNTT(product);
+            product = invNTT(product);
             acc = add_NTT(acc, product);
         }
         u_polys[i] = add_NTT(acc, e_buffer[i]);
@@ -342,9 +349,9 @@ void k_pke_encrypt(kyber_params params, std::span<uint8_t> ek_PKE, std::array<ui
     v = add_NTT(v, mu);
 
     for(int i = 0; i < params.k; i++) {
-        byte_encode(params.d_u, compress_poly(u_polys[i], params.d_u * seed_len), c_out.subspan(i * seed_len * params.d_u, seed_len * params.d_u));
+        byte_encode(params.d_u, compress_poly(u_polys[i], params.d_u), c_out.subspan(i * seed_len * params.d_u, seed_len * params.d_u));
     }
-    byte_encode(params.d_v, compress_poly(v, params.d_v), c_out.subspan(params.k * params.d_v));
+    byte_encode(params.d_v, compress_poly(v, params.d_v), c_out.subspan(seed_len * params.k * params.d_u));
 }
 
 std::array<uint8_t, seed_len> k_pke_decrypt(kyber_params params, std::span<uint8_t> dk_PKE, std::span<uint8_t> ciphertext, std::span<cyclotomic_poly> us_buffer) {
@@ -357,7 +364,7 @@ std::array<uint8_t, seed_len> k_pke_decrypt(kyber_params params, std::span<uint8
     auto s_hat = us_buffer.subspan(params.k, params.k);
 
     for(int i = 0; i < params.k; i++) {
-       u_prime[i] = decompress_poly(byte_decode(c1, params.d_u), params.d_u);
+       u_prime[i] = decompress_poly(byte_decode(c1.subspan(i * 32 * params.d_u, 32 * params.d_u), params.d_u), params.d_u);
     }
     auto v_prime = decompress_poly(byte_decode(c2, params.d_v), params.d_v);
     for(int i = 0; i < params.k; i++) {
@@ -501,7 +508,7 @@ std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 768>> ml_kem_encaps_512(m
     randomgen.randgen(message);
     std::array<uint8_t, 32> shared_key;
     std::array<uint8_t, 768> ciphertext;
-    std::array<cyclotomic_poly, 18> Ase_buffer;
+    std::array<cyclotomic_poly, params512.k*(params512.k+4)> Ase_buffer;
     std::array<uint8_t, 128> eta_buffer;
     ml_kem_encaps_internal(params512, key, message, shared_key, ciphertext, Ase_buffer, eta_buffer);
     return {shared_key, ciphertext};
@@ -512,7 +519,7 @@ std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 1088>> ml_kem_encaps_768(
     randomgen.randgen(message);
     std::array<uint8_t, 32> shared_key;
     std::array<uint8_t, 1088> ciphertext;
-    std::array<cyclotomic_poly, 18> Ase_buffer;
+    std::array<cyclotomic_poly, params768.k*(params768.k+4)> Ase_buffer;
     std::array<uint8_t, 128> eta_buffer;
     ml_kem_encaps_internal(params768, key, message, shared_key, ciphertext, Ase_buffer, eta_buffer);
     return {shared_key, ciphertext};
@@ -523,7 +530,7 @@ std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 1568>> ml_kem_encaps_1024
     randomgen.randgen(message);
     std::array<uint8_t, 32> shared_key;
     std::array<uint8_t, 1568> ciphertext;
-    std::array<cyclotomic_poly, 18> Ase_buffer;
+    std::array<cyclotomic_poly, params1024.k*(params1024.k+4)> Ase_buffer;
     std::array<uint8_t, 128> eta_buffer;
     ml_kem_encaps_internal(params1024, key, message, shared_key, ciphertext, Ase_buffer, eta_buffer);
     return {shared_key, ciphertext};
@@ -532,7 +539,7 @@ std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 1568>> ml_kem_encaps_1024
 std::array<uint8_t, 32> ml_kem_decaps_512(ml_kem_512_priv key) {
     std::array<uint8_t, 1568> ciphertext;
     std::array<uint8_t, 32> secret_key;
-    std::array<cyclotomic_poly, 18> Ase_buffer;
+    std::array<cyclotomic_poly, params512.k*(params512.k+4)> Ase_buffer;
     std::array<uint8_t, 128> eta_buffer;
     ml_kem_decaps_internal(params512, key, ciphertext, secret_key, Ase_buffer, eta_buffer);
     return secret_key;
@@ -541,7 +548,7 @@ std::array<uint8_t, 32> ml_kem_decaps_512(ml_kem_512_priv key) {
 std::array<uint8_t, 32> ml_kem_decaps_768(ml_kem_512_priv key) {
     std::array<uint8_t, 1088> ciphertext;
     std::array<uint8_t, 32> secret_key;
-    std::array<cyclotomic_poly, 18> Ase_buffer;
+    std::array<cyclotomic_poly, params768.k*(params768.k+4)> Ase_buffer;
     std::array<uint8_t, 128> eta_buffer;
     ml_kem_decaps_internal(params768, key, ciphertext, secret_key, Ase_buffer, eta_buffer);
     return secret_key;
@@ -550,7 +557,7 @@ std::array<uint8_t, 32> ml_kem_decaps_768(ml_kem_512_priv key) {
 std::array<uint8_t, 32> ml_kem_decaps_1024(ml_kem_512_priv key) {
     std::array<uint8_t, 1568> ciphertext;
     std::array<uint8_t, 32> secret_key;
-    std::array<cyclotomic_poly, 18> Ase_buffer;
+    std::array<cyclotomic_poly, params1024.k*(params1024.k+4)> Ase_buffer;
     std::array<uint8_t, 128> eta_buffer;
     ml_kem_decaps_internal(params1024, key, ciphertext, secret_key, Ase_buffer, eta_buffer);
     return secret_key;

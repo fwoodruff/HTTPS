@@ -20,36 +20,62 @@ constexpr int32_t d_bitlen = 12;
 constexpr int32_t n_len = 256;
 constexpr int32_t zeta_q = 17;
 constexpr int32_t seed_len = 32;
-constexpr int32_t serial_byte_len = (n_len * d_bitlen/8);
+constexpr int32_t secret_message_size = 32;
+constexpr int32_t serial_byte_len = ((n_len * d_bitlen + 7)/8);
 
-constexpr int32_t dk512size = serial_byte_len * 2 + seed_len;
-constexpr int32_t dk768size = serial_byte_len * 3 + seed_len;
-constexpr int32_t dk1024size = serial_byte_len * 4 + seed_len;
-
-constexpr int32_t ciphertext512size = 768;
-constexpr int32_t ciphertext768size = 1088;
-constexpr int32_t ciphertext1024size = 1568; // todo: calculate don't hardcode
-
-constexpr int32_t ek512size = serial_byte_len * 4 + seed_len * 3;
-constexpr int32_t ek768size = serial_byte_len * 6 + seed_len * 3;
-constexpr int32_t ek1024size = serial_byte_len * 8 + seed_len * 3;
-
-using ml_kem_512_pub = std::array<uint8_t, dk512size>;
-using ml_kem_768_pub = std::array<uint8_t, dk768size>;
-using ml_kem_1024_pub = std::array<uint8_t, dk1024size>;
-
-using ml_kem_512_priv = std::array<uint8_t, ek512size>;
-using ml_kem_768_priv = std::array<uint8_t, ek768size>;
-using ml_kem_1024_priv = std::array<uint8_t, ek1024size>;
+constexpr int32_t inv128_q = 3303;
 
 struct kyber_params {
-    constexpr static uint8_t eta_2 = 2;
     uint8_t k;
     uint8_t eta_1;
+    uint8_t eta_2;
     uint8_t d_u;
     uint8_t d_v;
 };
 
+constexpr kyber_params params512 {
+    .k = 2,
+    .eta_1 = 3,
+    .eta_2 = 2,
+    .d_u = 10,
+    .d_v = 4
+};
+
+constexpr kyber_params params768 {
+    .k = 3,
+    .eta_1 = 2,
+    .eta_2 = 2,
+    .d_u = 10,
+    .d_v = 4
+};
+
+constexpr kyber_params params1024 {
+    .k = 4,
+    .eta_1 = 2,
+    .eta_2 = 2,
+    .d_u = 11,
+    .d_v = 5
+};
+
+template<kyber_params Params>
+constexpr int32_t dk_size = serial_byte_len * Params.k*2 + 3*seed_len;
+
+template<kyber_params Params>
+constexpr int32_t ciphertext_size = (n_len / 8) * (Params.d_u * Params.k + Params.d_v);
+
+template<kyber_params Params>
+constexpr int32_t ek_size = serial_byte_len * Params.k + seed_len;
+
+template<kyber_params Params>
+using ml_kem_priv = std::array<uint8_t, dk_size<Params>>;
+
+template<kyber_params Params>
+using ml_kem_pub = std::array<uint8_t, ek_size<Params>>;
+
+template<kyber_params Params>
+using ciphertext = std::array<uint8_t, ciphertext_size<Params>>;
+
+using shared_secret = std::array<uint8_t, secret_message_size>;
 using cyclotomic_poly = std::array<int32_t, n_len>;
 
 // https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf
@@ -94,19 +120,43 @@ void ml_kem_key_gen_internal(kyber_params params, std::array<uint8_t, seed_len> 
 
 void ml_kem_encaps_internal(kyber_params params, std::span<uint8_t> ek, std::array<uint8_t, seed_len> message, std::array<uint8_t, seed_len>& shared_key, std::span<uint8_t> cipher_text, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> eta_buffer );
 
-std::array<uint8_t, seed_len> ml_kem_decaps_internal(kyber_params params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::array<uint8_t, seed_len> secret_key, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> cipher_eta_buffer);
+shared_secret ml_kem_decaps_internal(kyber_params params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::array<uint8_t, seed_len> secret_key, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> cipher_eta_buffer);
 
-std::pair<ml_kem_512_pub, ml_kem_512_priv> ml_key_key_gen_512();
-std::pair<ml_kem_768_pub, ml_kem_768_priv> ml_key_key_gen_768();
-std::pair<ml_kem_1024_pub, ml_kem_1024_priv> ml_key_key_gen_1024();
+template<kyber_params Params>
+std::pair<ml_kem_pub<Params>, ml_kem_priv<Params>> ml_key_key_gen() {
+    std::array<uint8_t, 32> d;
+    std::array<uint8_t, 32> z;
+    randomgen.randgen(d);
+    randomgen.randgen(z);
+    ml_kem_pub<Params> ek;
+    ml_kem_priv<Params> dk;
+    std::array<cyclotomic_poly, Params.k * (Params.k+4)> Ase_buffer;
+    std::array<uint8_t, 64> eta_buffer;
+    ml_kem_key_gen_internal(Params, d, z, ek, dk, Ase_buffer, eta_buffer);
+    return { ek, dk};
+}
 
-std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 768>> ml_kem_encaps_512(ml_kem_512_pub key);
-std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 1088>> ml_kem_encaps_768(ml_kem_768_pub key);
-std::pair<std::array<uint8_t, 32>, std::array<uint8_t, 1568>> ml_kem_encaps_1024(ml_kem_1024_pub key);
+template<kyber_params Params>
+std::pair<shared_secret, ciphertext<Params>> ml_kem_encaps(ml_kem_pub<Params> key) {
+    std::array<uint8_t, 32> message;
+    randomgen.randgen(message);
+    shared_secret shared_key;
+    ciphertext<Params> ciphertext;
+    std::array<cyclotomic_poly, Params.k*(Params.k+4)> Ase_buffer;
+    std::array<uint8_t, 128> eta_buffer;
+    ml_kem_encaps_internal(Params, key, message, shared_key, ciphertext, Ase_buffer, eta_buffer);
+    return {shared_key, ciphertext};
+}
 
-std::array<uint8_t, 32> ml_kem_decaps_512(ml_kem_512_priv key);
-std::array<uint8_t, 32> ml_kem_decaps_768(ml_kem_512_priv key);
-std::array<uint8_t, 32> ml_kem_decaps_1024(ml_kem_512_priv key);
+template<kyber_params Params>
+shared_secret ml_kem_decaps(ml_kem_priv<Params> key) {
+    ciphertext<Params> ciphertext;
+    shared_secret secret_key;
+    std::array<cyclotomic_poly, Params.k*(Params.k+4)> Ase_buffer;
+    std::array<uint8_t, 128> eta_buffer;
+    ml_kem_decaps_internal(Params, key, ciphertext, secret_key, Ase_buffer, eta_buffer);
+    return secret_key;
+}
 
 }
 

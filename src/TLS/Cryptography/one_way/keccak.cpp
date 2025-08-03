@@ -34,7 +34,6 @@ keccak_sponge::keccak_sponge(size_t capacity_, uint8_t domain_separator) noexcep
     assert(rate % 8 == 0 and capacity < 1600);
     state = {0};
     rate_in_bytes = rate/8;
-    block_size = 0;
     absorb_phase = true;
     idx = 0;
     padding_byte = domain_separator;
@@ -42,8 +41,8 @@ keccak_sponge::keccak_sponge(size_t capacity_, uint8_t domain_separator) noexcep
 
 void keccak_sponge::reset() noexcept {
     absorb_phase = true;
-    block_size = 0;
     state = {0};
+    idx = 0;
 }
 
 void keccak_sponge::absorb(const uint8_t* const input, size_t inputByteLen) noexcept {
@@ -51,13 +50,13 @@ void keccak_sponge::absorb(const uint8_t* const input, size_t inputByteLen) noex
     if(!inputByteLen) [[unlikely]] {
         return;
     }
-    while(inputByteLen > 0) {
-        if(idx==rate_in_bytes) {
+    size_t i = 0;
+    while (i < inputByteLen) {
+        if (idx == rate_in_bytes) {
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        assert(idx < 200);
-        state[idx++] ^= input[--inputByteLen];
+        state[idx++] ^= input[i++];
     }
 }
 
@@ -66,12 +65,13 @@ void keccak_sponge::absorb(const char* const input, size_t inputByteLen) noexcep
     if(!inputByteLen) [[unlikely]]  {
         return;
     }
-    while(inputByteLen > 0) {
-        if(idx==rate_in_bytes) {
+    size_t i = 0;
+    while (i < inputByteLen) {
+        if (idx == rate_in_bytes) {
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        state[idx++] ^= static_cast<uint8_t>(input[--inputByteLen]);
+        state[idx++] ^= static_cast<uint8_t>(input[i++]);
     }
 }
 
@@ -86,12 +86,13 @@ void keccak_sponge::squeeze(uint8_t* const output, size_t outputByteLen) noexcep
         absorb_phase = false;
         idx = 0;
     }
-    while(outputByteLen > 0) {
-        if(idx==rate_in_bytes) {
+    size_t i = 0;
+    while (i < outputByteLen) {
+        if (idx == rate_in_bytes) {
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        output[--outputByteLen] = state[idx++];
+        output[i++] = state[idx++];
     }
 }
 
@@ -104,19 +105,21 @@ void keccak_sponge::squeeze(char* const output, size_t outputByteLen) noexcept {
         absorb_phase = false;
         idx = 0;
     }
-    while(outputByteLen > 0) {
-        if(idx==rate_in_bytes) {
+    size_t i = 0;
+    while (i < outputByteLen) {
+        if (idx == rate_in_bytes) {
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        output[--outputByteLen] = static_cast<char>(state[idx++]);
+        output[i++] = state[idx++];
     }
 }
 
 
 uint64_t ROL64(uint64_t a, uint64_t offset) noexcept {
     assert(offset<64);
-    return (a<<offset)^(a>>(64-offset));
+    assert(offset>0);
+    return (a<<offset)|(a>>(64-offset));
 }
 
 uint64_t read_lane(const std::array<uint8_t, 200>& state, int x, int y) noexcept {
@@ -194,7 +197,8 @@ void keccak_F1600_state_permute(std::array<uint8_t,200>& state) noexcept {
 
 int LFSR86540(uint8_t& LFSR) noexcept {
     int result = (LFSR & 0x01) != 0;
-    LFSR = (LFSR & 0x80) ? LFSR << 1 : (LFSR << 1) ^ 0x71;
+    int set = ((LFSR & 0x80) != 0) * 0x71;
+    LFSR = (LFSR << 1) ^ set;
     return result;
 }
 

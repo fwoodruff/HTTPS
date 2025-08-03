@@ -15,7 +15,7 @@
 
 namespace fbw::mlkem {
 
-constexpr int32_t q_modulo = 3299;
+constexpr int32_t q_modulo = 3329;
 constexpr int32_t d_bitlen = 12;
 constexpr int32_t n_len = 256;
 constexpr int32_t zeta_q = 17;
@@ -120,7 +120,7 @@ void ml_kem_key_gen_internal(kyber_params params, std::array<uint8_t, seed_len> 
 
 void ml_kem_encaps_internal(kyber_params params, std::span<uint8_t> ek, std::array<uint8_t, seed_len> message, std::array<uint8_t, seed_len>& shared_key, std::span<uint8_t> cipher_text, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> eta_buffer );
 
-shared_secret ml_kem_decaps_internal(kyber_params params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::array<uint8_t, seed_len> secret_key, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> cipher_eta_buffer);
+shared_secret ml_kem_decaps_internal(kyber_params params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::span<cyclotomic_poly> Aty_buffer, std::span<uint8_t> cipher_eta_buffer);
 
 template<kyber_params Params>
 std::pair<ml_kem_pub<Params>, ml_kem_priv<Params>> ml_key_key_gen() {
@@ -138,7 +138,7 @@ std::pair<ml_kem_pub<Params>, ml_kem_priv<Params>> ml_key_key_gen() {
 
 template<kyber_params Params>
 std::pair<shared_secret, ciphertext<Params>> ml_kem_encaps(ml_kem_pub<Params> key) {
-    std::array<uint8_t, 32> message;
+    std::array<uint8_t, secret_message_size> message;
     randomgen.randgen(message);
     shared_secret shared_key;
     ciphertext<Params> ciphertext;
@@ -153,8 +153,11 @@ shared_secret ml_kem_decaps(ml_kem_priv<Params> key) {
     ciphertext<Params> ciphertext;
     shared_secret secret_key;
     std::array<cyclotomic_poly, Params.k*(Params.k+4)> Ase_buffer;
-    std::array<uint8_t, 128> eta_buffer;
-    ml_kem_decaps_internal(Params, key, ciphertext, secret_key, Ase_buffer, eta_buffer);
+
+    constexpr auto max_eta = 64 * std::max(Params.eta_1, Params.eta_2);
+    constexpr auto c_size = 32 * (Params.d_u * Params.k + Params.d_v);
+    std::array<uint8_t, max_eta + c_size > eta_buffer;
+    return ml_kem_decaps_internal(Params, key, ciphertext, Ase_buffer, eta_buffer);
     return secret_key;
 }
 

@@ -181,12 +181,12 @@ key_share choose_client_public_key(const std::vector<key_share>& keys, const std
     for(const auto& key : keys) {
         switch(key.key_type) {
             case NamedGroup::x25519:
-                if(key.key.size() != 32) {
+                if(key.key.size() != curve25519::PUBKEY_SIZE) {
                     throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
                 return key;
             case NamedGroup::secp256r1:
-                if(key.key.size() != 65) {
+                if(key.key.size() != secp256r1::PUBKEY_SIZE) {
                     throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
                 return key;

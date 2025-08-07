@@ -198,35 +198,6 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
 
 int main(int argc, const char * argv[]) {
-    /*
-    std::array<uint8_t, 32> seed_d;
-    std::array<uint8_t, 1184> ek_PKE;
-    std::array<uint8_t, 384* 3> dk_PKE;
-    std::array<fbw::mlkem::cyclotomic_poly, 21> Ase_buffer;
-    
-    std::array<uint8_t, 128> eta_buffer;
-    std::array<uint8_t, 1216> cipher_eta_buffer;
-    for(int i = 0; i < 32; i++) {
-        seed_d[i] = i;
-    }
-    fbw::mlkem::k_pke_key_gen(fbw::mlkem::params768, seed_d, ek_PKE, dk_PKE, Ase_buffer, eta_buffer );
-
-    std::array<uint8_t, 32> shared_key;
-    std::array<uint8_t, 1088> ciphertext;
-    fbw::mlkem::ml_kem_encaps_internal(fbw::mlkem::params768, ek_PKE, seed_d, shared_key, ciphertext, Ase_buffer, eta_buffer );
-    for(auto c : shared_key) {
-        std::print("{}, ", c);
-    }
-    std::println("");
-
-    auto ss = fbw::mlkem::ml_kem_decaps_internal(fbw::mlkem::params768, dk_PKE, ciphertext, Ase_buffer, cipher_eta_buffer);
-
-    for(auto c : ss) {
-        std::print("{}, ", c);
-    }
-    std::println("");
-    */
-
     try {
         fbw::init_options();
         auto http_port = fbw::project_options.redirect_port ;

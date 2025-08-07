@@ -15,10 +15,10 @@
 
 namespace fbw::xkem {
 
-    constexpr int32_t pub_key_size = mlkem::dk_size<mlkem::params768> + curve25519::PUBKEY_SIZE;
-    constexpr int32_t priv_key_size = mlkem::ek_size<mlkem::params768> + curve25519::PRIVKEY_SIZE;
+    constexpr int32_t pub_key_size = mlkem::ek_size<mlkem::params768> + curve25519::PUBKEY_SIZE;
+    constexpr int32_t priv_key_size = mlkem::dk_size<mlkem::params768> + curve25519::PRIVKEY_SIZE;
     constexpr int32_t ciphertext_size = mlkem::ciphertext_size<mlkem::params768> + curve25519::PUBKEY_SIZE;
-    constexpr int32_t shared_secret_size = mlkem::seed_len + curve25519::PUBKEY_SIZE;
+    constexpr int32_t shared_secret_size = mlkem::entropy_length + curve25519::PUBKEY_SIZE;
     
     using pubkey = std::array<uint8_t, pub_key_size>;
     using privkey = std::array<uint8_t, priv_key_size>;

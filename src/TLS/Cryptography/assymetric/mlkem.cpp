@@ -59,6 +59,7 @@ cyclotomic_polynomial sample_NTT(std::span<const uint8_t, entropy_length> seed_i
     ctx.absorb(&ii, 1);
     int j = 0;
     while(j < n_len) {
+        // hot loop
         std::array<uint8_t, 3> C;
         ctx.squeeze(C.data(), C.size());
         auto d1 = int(C[0]) | (int(C[1] & 0x0f) << 8);
@@ -100,7 +101,7 @@ cyclotomic_polynomial sample_poly_CBD(uint8_t eta, std::span<const uint8_t> eta_
     return out;
 }
 
-int modexp(int base, int exp, int mod) {
+constexpr int modexp(int base, int exp, int mod) {
     int result = 1;
     base %= mod;
     while(exp > 0) {
@@ -113,7 +114,7 @@ int modexp(int base, int exp, int mod) {
     return result;
 }
 
-int bit_rev_7(int i) {
+constexpr int bit_rev_7(int i) {
     return ((i >> 0) & 1) << 6 |
            ((i >> 1) & 1) << 5 |
            ((i >> 2) & 1) << 4 |
@@ -123,16 +124,25 @@ int bit_rev_7(int i) {
            ((i >> 6) & 1) << 0;
 }
 
-int zeta_exp_bit_rev_7(int i) {
+constexpr int zeta_exp_bit_rev_7(int i) {
     auto rev = bit_rev_7(i);
     return modexp(zeta_q, rev, q_modulo);
 }
+
+constexpr auto zeta_exp_bit_rev_7_arr = []{
+    std::array<int, 128> out;
+    for(int i = 0; i < out.size(); i++) {
+        out[i] = zeta_exp_bit_rev_7(i);
+    }
+    return out;
+}();
 
 cyclotomic_polynomial NTT(cyclotomic_polynomial f) {
     int i = 1;
     for(int len = 128; len >= 2; len >>= 1) {
         for(int start = 0; start < 256; start += (2 * len)) {
-            auto zeta = zeta_exp_bit_rev_7(i);
+            assert(i < 128);
+            auto zeta = zeta_exp_bit_rev_7_arr[i];
             i++;
             for(auto j = start; j < start + len; j++) {
                 auto t = (zeta * f[j + len]) % q_modulo;

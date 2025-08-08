@@ -55,8 +55,8 @@ cyclotomic_polynomial sample_NTT(std::span<const uint8_t, entropy_length> seed_i
     fbw::keccak_sponge ctx(256, 0x1F);
     cyclotomic_polynomial out;
     ctx.absorb(seed_idx.data(), seed_idx.size());
-    ctx.absorb(&ii, 1);
     ctx.absorb(&jj, 1);
+    ctx.absorb(&ii, 1);
     int j = 0;
     while(j < n_len) {
         std::array<uint8_t, 3> C;
@@ -213,7 +213,7 @@ void mmul_with_error(uint8_t k, std::span<cyclotomic_polynomial> A_matrix, std::
     for (int i = 0; i < k; i++) {
         cyclotomic_polynomial acc {};
         for (int j = 0; j < k; j++) {
-            auto product = multiply_NTT(A_matrix[i*k+j], s_polys[j]);
+            auto product = multiply_NTT(A_matrix[j*k+i], s_polys[j]);
             acc = add_poly(acc, product);
         }
         t_polys[i] = add_poly(acc, e_polys[i]);
@@ -228,7 +228,7 @@ void k_pke_key_gen(kyber_parameters params, std::array<uint8_t, entropy_length> 
     
     keccak_sponge bobleponge(1024, 0x06);
     bobleponge.absorb(d.data(), d.size());
-    //bobleponge.absorb(&params.k, 1); // todo: add this back after debug
+    bobleponge.absorb(&params.k, 1);
     std::array<uint8_t, entropy_length> rho;
     std::array<uint8_t, entropy_length> sigma;
     auto A_buffer = Ase_buffer.subspan(0, params.k*params.k);
@@ -306,7 +306,6 @@ void k_pke_encrypt(kyber_parameters params, std::span<uint8_t> ek_PKE, std::arra
     assert(ek_PKE.size() == params.k * serial_byte_len + entropy_length);
     assert(Aty_buffer.size() == params.k*(params.k+4));
     assert(c_out.size() == entropy_length * (params.d_u * params.k + params.d_v));
-    std::println("{}, {}", eta_buffer.size(), entropy_length * 2 * std::max(params.eta_1, params.eta_2));
     assert(eta_buffer.size() == entropy_length * 2 * std::max(params.eta_1, params.eta_2));
     auto A_matrix = Aty_buffer.subspan(0, params.k*params.k);
     auto t_buffer = Aty_buffer.subspan(params.k*params.k, params.k);
@@ -409,11 +408,9 @@ void ml_kem_encaps_internal(kyber_parameters params, std::span<uint8_t> ek, std:
     sponge.squeeze(shared_key.data(), shared_key.size());
     std::array<uint8_t, entropy_length> rand;
     sponge.squeeze(rand.data(), rand.size());
-    std::println("encaps internal");
     k_pke_encrypt(params, ek, message, rand, Aty_buffer, eta_buffer, cipher_text);
 }
 
-// todo: 'checked' decaps
 shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::span<cyclotomic_polynomial> Aty_buffer, std::span<uint8_t> cipher_eta_buffer) {
     auto klen = serial_byte_len * params.k;
     assert(dk.size() == 2 * klen + 3 * entropy_length);
@@ -442,7 +439,6 @@ shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t>
     J.absorb(ciphertext.data(), ciphertext.size());
     J.squeeze(k_bar.data(), k_bar.size());
 
-    std::println("decaps internal");
     k_pke_encrypt(params, ek_pke, m_prime, r_prime, Aty_buffer, eta_buffer, c_prime);
     
     uint8_t diff = 0;
@@ -457,6 +453,26 @@ shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t>
         k_prime[i] = (k_prime[i] & mask_prime) | (k_bar[i] & mask_bar);
     }
     return k_prime;
+}
+
+bool encaps_input_sanitise(kyber_parameters params, std::span<const uint8_t> ek) {
+    const size_t t_len = serial_byte_len * params.k;
+    const size_t expected = t_len + entropy_length;
+    if (ek.size() != expected) {
+        return false; 
+    }
+    for (size_t i = 0; i < t_len; i += 3) {
+        uint16_t b0 = ek[i + 0];
+        uint16_t b1 = ek[i + 1];
+        uint16_t b2 = ek[i + 2];
+        uint16_t a0 = b0 | ((b1 & 0x0Fu) << 8);
+        uint16_t a1 = (b1 >> 4) | (b2 << 4);
+        if(a0 >= q_modulo || a1 >= q_modulo) {
+            // public value checks need not be constant time
+            return false;
+        }
+    }
+    return true;
 }
 
 }

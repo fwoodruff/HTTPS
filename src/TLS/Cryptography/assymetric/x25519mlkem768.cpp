@@ -16,7 +16,6 @@ namespace fbw::xkem {
 std::pair<std::vector<uint8_t>, std::vector<uint8_t>> process_client_keyshare(std::vector<uint8_t> pub) {
     constexpr auto params = mlkem::params768;
     if(pub.size() != mlkem::ek_size<params> + curve25519::PUBKEY_SIZE) {
-        std::println("bad key len");
         return {};
     }
     mlkem::public_encapsulation<params> client_ml_pubkey;
@@ -30,8 +29,11 @@ std::pair<std::vector<uint8_t>, std::vector<uint8_t>> process_client_keyshare(st
     auto server_x_pubkey = curve25519::base_multiply(server_x_privkey);
     auto x25519_shared_secret = curve25519::multiply(server_x_privkey, client_x_pubkey);
 
-    auto [ ml_kem_shared_secret, ml_kem_ciphertext ] = mlkem::encapsulate_secret<params>(client_ml_pubkey);
-
+    auto [ ml_kem_shared_secret, ml_kem_ciphertext, valid_encaps ] = mlkem::encapsulate_secret<params>(client_ml_pubkey);
+    if(!valid_encaps) {
+        // invalid peer public key
+        return {};
+    }
     std::vector<uint8_t> server_keyshare(mlkem::ciphertext_size<params> + curve25519::PUBKEY_SIZE);
     std::vector<uint8_t> server_shared_secret(curve25519::PUBKEY_SIZE + mlkem::entropy_length);
 

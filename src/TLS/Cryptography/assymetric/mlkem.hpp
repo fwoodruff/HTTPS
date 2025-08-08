@@ -122,6 +122,8 @@ void ml_kem_encaps_internal(kyber_parameters params, std::span<uint8_t> ek, std:
 
 shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::span<cyclotomic_polynomial> Aty_buffer, std::span<uint8_t> cipher_eta_buffer);
 
+bool encaps_input_sanitise(kyber_parameters params, std::span<const uint8_t> ek);
+
 template<kyber_parameters Params>
 std::pair<public_encapsulation<Params>, private_decapsulation<Params>> generate_key_pair() {
     std::array<uint8_t, entropy_length> d;
@@ -137,7 +139,7 @@ std::pair<public_encapsulation<Params>, private_decapsulation<Params>> generate_
 }
 
 template<kyber_parameters Params>
-std::pair<shared_secret, ciphertext<Params>> encapsulate_secret(public_encapsulation<Params> encapsulation_key) {
+std::tuple<shared_secret, ciphertext<Params>, bool> encapsulate_secret(public_encapsulation<Params> encapsulation_key) {
     std::array<uint8_t, entropy_length> message;
     randomgen.randgen(message);
     shared_secret shared_key;
@@ -145,8 +147,11 @@ std::pair<shared_secret, ciphertext<Params>> encapsulate_secret(public_encapsula
     std::array<cyclotomic_polynomial, Params.k*(Params.k+4)> Ase_buffer;
     constexpr auto max_eta = 2 * entropy_length * std::max(Params.eta_1, Params.eta_2);
     std::array<uint8_t, max_eta> eta_buffer;
+    if(!encaps_input_sanitise(Params, encapsulation_key)) {
+        return { {}, {}, false };
+    }
     ml_kem_encaps_internal(Params, encapsulation_key, message, shared_key, ciphertext, Ase_buffer, eta_buffer);
-    return {shared_key, ciphertext};
+    return {shared_key, ciphertext, true};
 }
 
 template<kyber_parameters Params>

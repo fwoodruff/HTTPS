@@ -15,7 +15,7 @@
 namespace fbw::mlkem {
 
 void byte_encode(uint8_t d, cyclotomic_polynomial F_poly, std::span<uint8_t> b_out) {
-    assert(b_out.size() == (n_len * d + 7)/8);
+    assert(b_out.size() == size_t(n_len * d + 7)/8);
     std::fill(b_out.begin(), b_out.end(), 0);
     for(int i = 0; i < n_len; i ++ ) {
         int a = F_poly[i];
@@ -38,7 +38,7 @@ cyclotomic_polynomial byte_decode(std::span<uint8_t> serial_F_poly, uint32_t d) 
     
     for (int i = 0; i < n_len; i++) {
         uint32_t val = 0;
-        for (int j = 0; j < d; j++) {
+        for (unsigned j = 0; j < d; j++) {
             int bit_pos = i * d + j;
             int byte_idx = bit_pos / 8;
             int bit_offset = bit_pos % 8;
@@ -131,7 +131,7 @@ constexpr int zeta_exp_bit_rev_7(int i) {
 
 constexpr auto zeta_exp_bit_rev_7_arr = []{
     std::array<int, 128> out;
-    for(int i = 0; i < out.size(); i++) {
+    for(unsigned i = 0; i < out.size(); i++) {
         out[i] = zeta_exp_bit_rev_7(i);
     }
     return out;
@@ -155,7 +155,7 @@ cyclotomic_polynomial NTT(cyclotomic_polynomial f) {
 }
 
 cyclotomic_polynomial neg(cyclotomic_polynomial f) {
-    for(int i = 0; i < f.size(); i ++) {
+    for(size_t i = 0; i < f.size(); i ++) {
         f[i] = (q_modulo-f[i]) % q_modulo;
     }
     return f;
@@ -231,10 +231,10 @@ void mmul_with_error(uint8_t k, std::span<cyclotomic_polynomial> A_matrix, std::
 }
 
 void k_pke_key_gen(kyber_parameters params, std::array<uint8_t, entropy_length> d, std::span<uint8_t> ek_PKE, std::span<uint8_t> dk_PKE, std::span<cyclotomic_polynomial> Ase_buffer, std::span<uint8_t> eta_buffer ) {
-    assert(ek_PKE.size() == serial_byte_len * params.k + entropy_length);
-    assert(dk_PKE.size() == serial_byte_len * params.k);
-    assert(Ase_buffer.size() == params.k * (params.k+4));
-    assert(eta_buffer.size() == params.eta_1 * entropy_length * 2);
+    assert(ek_PKE.size() == size_t(serial_byte_len * params.k + entropy_length));
+    assert(dk_PKE.size() == size_t(serial_byte_len * params.k));
+    assert(Ase_buffer.size() == size_t(params.k * (params.k+4)));
+    assert(eta_buffer.size() == size_t(params.eta_1 * entropy_length * 2));
     
     keccak_sponge bobleponge(1024, 0x06);
     bobleponge.absorb(d.data(), d.size());
@@ -284,7 +284,7 @@ void sample_vector_poly_CBD(uint8_t k, uint8_t eta, std::span<uint8_t> iv, uint8
 
 int decompress_d(int32_t y, uint32_t d) {
     assert(d <= 12);
-    assert(y < (1u << d));
+    assert(y < int32_t(1u << d));
     return (q_modulo * y + (1 << (d - 1))) >> d;
 }
 
@@ -313,9 +313,9 @@ cyclotomic_polynomial compress_poly(cyclotomic_polynomial poly, uint32_t d) {
 }
 
 void k_pke_encrypt(kyber_parameters params, std::span<uint8_t> ek_PKE, std::array<uint8_t, entropy_length> message, std::array<uint8_t, entropy_length> randomness, std::span<cyclotomic_polynomial> Aty_buffer, std::span<uint8_t> eta_buffer, std::span<uint8_t> c_out) {
-    assert(ek_PKE.size() == params.k * serial_byte_len + entropy_length);
-    assert(Aty_buffer.size() == params.k*(params.k+4));
-    assert(c_out.size() == entropy_length * (params.d_u * params.k + params.d_v));
+    assert(ek_PKE.size() == size_t(params.k * serial_byte_len + entropy_length));
+    assert(Aty_buffer.size() == size_t(params.k*(params.k+4)));
+    assert(c_out.size() == size_t(entropy_length * (params.d_u * params.k + params.d_v)));
     assert(eta_buffer.size() == entropy_length * 2 * std::max(params.eta_1, params.eta_2));
     auto A_matrix = Aty_buffer.subspan(0, params.k*params.k);
     auto t_buffer = Aty_buffer.subspan(params.k*params.k, params.k);
@@ -395,8 +395,8 @@ std::array<uint8_t, entropy_length> k_pke_decrypt(kyber_parameters params, std::
 
 void ml_kem_key_gen_internal(kyber_parameters params, std::array<uint8_t, entropy_length> d, std::array<uint8_t, entropy_length> z, std::span<uint8_t> ek, std::span<uint8_t> dk, std::span<cyclotomic_polynomial> Ase_buffer, std::span<uint8_t> eta_buffer) {
     auto k_bytelen = serial_byte_len * params.k;
-    assert(ek.size() == k_bytelen + entropy_length);
-    assert(dk.size() == k_bytelen * 2 + 3 * entropy_length);
+    assert(ek.size() == size_t(k_bytelen + entropy_length));
+    assert(dk.size() == size_t(k_bytelen * 2 + 3 * entropy_length));
     auto dk_pke = dk.subspan(0, k_bytelen);
     k_pke_key_gen(params, d, ek, dk_pke, Ase_buffer, eta_buffer);
     std::copy(ek.begin(), ek.end(), dk.begin() + k_bytelen);
@@ -423,7 +423,7 @@ void ml_kem_encaps_internal(kyber_parameters params, std::span<uint8_t> ek, std:
 
 shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t> dk, std::span<uint8_t> ciphertext, std::span<cyclotomic_polynomial> Aty_buffer, std::span<uint8_t> cipher_eta_buffer) {
     auto klen = serial_byte_len * params.k;
-    assert(dk.size() == 2 * klen + 3 * entropy_length);
+    assert(dk.size() == size_t(2 * klen + 3 * entropy_length));
     auto c_size = entropy_length * (params.d_u * params.k + params.d_v);
     auto dk_pke = dk.subspan(0, klen);
     auto ek_pke = dk.subspan(klen, klen + entropy_length);
@@ -435,7 +435,7 @@ shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t>
     auto c_prime = cipher_eta_buffer.subspan(0, c_size);
     auto max_eta = entropy_length * 2 * std::max(params.eta_1, params.eta_2);
     auto eta_buffer = cipher_eta_buffer.subspan(c_size, max_eta);
-    assert(cipher_eta_buffer.size() == max_eta + c_size);
+    assert(cipher_eta_buffer.size() == size_t(max_eta + c_size));
     keccak_sponge sponge(1024, 0x06);
     sponge.absorb(m_prime.data(), m_prime.size());
     sponge.absorb(h.data(), h.size());
@@ -452,7 +452,7 @@ shared_secret ml_kem_decaps_internal(kyber_parameters params, std::span<uint8_t>
     k_pke_encrypt(params, ek_pke, m_prime, r_prime, Aty_buffer, eta_buffer, c_prime);
     
     uint8_t diff = 0;
-    for(int i = 0; i < ciphertext.size(); i++) {
+    for(size_t i = 0; i < ciphertext.size(); i++) {
         diff |= ciphertext[i] ^ c_prime[i];
     }
     uint8_t mask_prime = (diff == 0);

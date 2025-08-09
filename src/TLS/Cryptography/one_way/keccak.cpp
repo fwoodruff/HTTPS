@@ -86,8 +86,11 @@ void keccak_sponge::squeeze(T* const output, size_t outputByteLen) noexcept {
     }
 }
 
-template void keccak_sponge::absorb<uint8_t>(const uint8_t* const, size_t) noexcept;
-template void keccak_sponge::absorb<char>(const char* const, size_t) noexcept;
+template void keccak_sponge::absorb<unsigned char>(const unsigned char* const, size_t);
+template void keccak_sponge::absorb<char>(const char* const, size_t);
+
+template void keccak_sponge::squeeze<char>(char* const, size_t);
+template void keccak_sponge::squeeze<unsigned char>(unsigned char* const, size_t);
 
 uint64_t ROL64(uint64_t a, uint64_t offset) noexcept {
     assert(offset<64);

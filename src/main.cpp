@@ -87,7 +87,7 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_to
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {
-        std::println(stderr, "{}\n", e.what());
+        std::println(stderr, "client exception: {}\n", e.what());
     }
 }
 

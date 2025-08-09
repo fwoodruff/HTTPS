@@ -223,7 +223,7 @@ void mmul_with_error(uint8_t k, std::span<cyclotomic_polynomial> A_matrix, std::
     for (int i = 0; i < k; i++) {
         cyclotomic_polynomial acc {};
         for (int j = 0; j < k; j++) {
-            auto product = multiply_NTT(A_matrix[j*k+i], s_polys[j]);
+            auto product = multiply_NTT(A_matrix[i*k+j], s_polys[j]);
             acc = add_poly(acc, product);
         }
         t_polys[i] = add_poly(acc, e_polys[i]);

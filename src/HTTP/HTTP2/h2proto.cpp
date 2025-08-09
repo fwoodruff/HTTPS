@@ -209,7 +209,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     try {
         co_await conn->m_handler(*hcx);
     } catch(std::exception& e) {
-        std::println(stderr, "{}\n", e.what());
+        std::println(stderr, "stream error: {}\n", e.what());
     }
     if(!hcx->is_done()) {
         co_await hcx->write_data(std::span<uint8_t> {}, true);

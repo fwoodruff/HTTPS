@@ -26,11 +26,8 @@ class keccak_sponge {
     uint8_t padding_byte;
 public:
     keccak_sponge(size_t capacity = 512, uint8_t domain_separator = 0x1F) noexcept;
-    // code duplication is better than undefined behaviour
-    void absorb(const uint8_t* const input, size_t N) noexcept;
-    void absorb(const char* const input, size_t N) noexcept;
-    void squeeze(uint8_t* const output, size_t N) noexcept;
-    void squeeze(char* const output, size_t N) noexcept;
+    template <typename T> void absorb(const T* const input, size_t N) noexcept;
+    template <typename T> void squeeze(T* const output, size_t N) noexcept;
     void reset() noexcept;
 };
 

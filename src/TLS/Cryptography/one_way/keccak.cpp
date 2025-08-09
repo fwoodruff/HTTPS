@@ -45,26 +45,15 @@ void keccak_sponge::reset() noexcept {
     idx = 0;
 }
 
-void keccak_sponge::absorb(const uint8_t* const input, size_t inputByteLen) noexcept {
+template <typename T>
+void keccak_sponge::absorb(const T* const input, size_t inputByteLen) noexcept {
+    static_assert(sizeof(T) == 1);
+
     assert(absorb_phase);
     if(!inputByteLen) [[unlikely]] {
         return;
     }
-    size_t i = 0;
-    while (i < inputByteLen) {
-        if (idx == rate_in_bytes) {
-            keccak_F1600_state_permute(state);
-            idx = 0;
-        }
-        state[idx++] ^= input[i++];
-    }
-}
-
-void keccak_sponge::absorb(const char* const input, size_t inputByteLen) noexcept {
-    assert(absorb_phase);
-    if(!inputByteLen) [[unlikely]]  {
-        return;
-    }
+    
     size_t i = 0;
     while (i < inputByteLen) {
         if (idx == rate_in_bytes) {
@@ -75,9 +64,10 @@ void keccak_sponge::absorb(const char* const input, size_t inputByteLen) noexcep
     }
 }
 
+template <typename T>
+void keccak_sponge::squeeze(T* const output, size_t outputByteLen) noexcept {
+    static_assert(sizeof(T) == 1);
 
-
-void keccak_sponge::squeeze(uint8_t* const output, size_t outputByteLen) noexcept {
     if(absorb_phase) {
         assert(idx < 200);
         state[idx] ^= padding_byte;
@@ -92,29 +82,12 @@ void keccak_sponge::squeeze(uint8_t* const output, size_t outputByteLen) noexcep
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        output[i++] = state[idx++];
+        output[i++] = static_cast<T>(state[idx++]);
     }
 }
 
-void keccak_sponge::squeeze(char* const output, size_t outputByteLen) noexcept {
-    if(absorb_phase) {
-        assert(idx < 200);
-        state[idx] ^= padding_byte;
-        state[rate_in_bytes-1] ^= 0x80;
-        keccak_F1600_state_permute(state);
-        absorb_phase = false;
-        idx = 0;
-    }
-    size_t i = 0;
-    while (i < outputByteLen) {
-        if (idx == rate_in_bytes) {
-            keccak_F1600_state_permute(state);
-            idx = 0;
-        }
-        output[i++] = state[idx++];
-    }
-}
-
+template void keccak_sponge::absorb<uint8_t>(const uint8_t* const, size_t) noexcept;
+template void keccak_sponge::absorb<char>(const char* const, size_t) noexcept;
 
 uint64_t ROL64(uint64_t a, uint64_t offset) noexcept {
     assert(offset<64);

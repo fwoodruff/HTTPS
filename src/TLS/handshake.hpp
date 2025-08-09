@@ -47,11 +47,13 @@ public:
     std::vector<uint8_t> m_server_random {};
     
     std::unique_ptr<const hash_base> hash_ctor = nullptr;
-    std::array<uint8_t,32> server_private_key_ephem {};
+    std::array<uint8_t,32> tls12_server_private_key_ephem {};
     
     hello_record_data client_hello {};
     key_schedule tls13_key_schedule;
     std::vector<uint8_t> tls12_master_secret;
+
+    std::vector<uint8_t> tls13_shared_secret;
 
     std::string alpn;
 
@@ -85,12 +87,12 @@ public:
     void client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message);
     void client_handshake_finished13_record(const std::vector<uint8_t>& handshake_message);
 
-    tls_record server_handshake_finished12_record();
+    tls_record server_handshake_finished12_record() const;
     tls_record server_handshake_finished13_record();
 
 private:
-    void hello_extensions(tls_record& buffer);
-    void hello_retry_extensions(tls_record& record);
+    void hello_extensions(tls_record& buffer, const key_share& server_keyshare) const;
+    void hello_retry_extensions(tls_record& record) const;
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 

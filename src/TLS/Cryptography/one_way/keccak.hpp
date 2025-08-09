@@ -21,16 +21,13 @@ class keccak_sponge {
     size_t rate;
     std::array<uint8_t,200> state;
     size_t rate_in_bytes;
-    size_t block_size;
     size_t idx;
     bool absorb_phase = true;
+    uint8_t padding_byte;
 public:
-    keccak_sponge(size_t capacity = 256) noexcept;
-    // code duplication is better than undefined behaviour
-    void absorb(const uint8_t* const input, size_t N) noexcept;
-    void absorb(const char* const input, size_t N) noexcept;
-    void squeeze(uint8_t* const output, size_t N) noexcept;
-    void squeeze(char* const output, size_t N) noexcept;
+    keccak_sponge(size_t capacity = 512, uint8_t domain_separator = 0x1F) noexcept;
+    template <typename T> void absorb(const T* const input, size_t N) noexcept;
+    template <typename T> void squeeze(T* const output, size_t N) noexcept;
     void reset() noexcept;
 };
 

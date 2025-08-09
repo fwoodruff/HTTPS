@@ -15,6 +15,7 @@
 #include <algorithm>
 #include "Cryptography/assymetric/secp256r1.hpp"
 #include "Cryptography/assymetric/x25519.hpp"
+#include "Cryptography/assymetric/x25519mlkem768.hpp"
 #include "Cryptography/one_way/keccak.hpp"
 
 namespace fbw {
@@ -405,16 +406,17 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
     }
 }
 
-std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype) {
-    switch(client_keytype) {
+std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_share& client_keyshare) {
+    switch(client_keyshare.key_type) {
         case NamedGroup::x25519:
         {
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
             std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_privkey);
             std::vector<uint8_t> server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
-            key_share server_key { client_keytype, server_pub };
-            return { server_privkey, server_key };
+            key_share server_key { client_keyshare.key_type, server_pub };
+            auto shared_secret = get_shared_secret(server_privkey, client_keyshare);
+            return { shared_secret, server_key };
         }
         case NamedGroup::secp256r1:
         {
@@ -422,8 +424,17 @@ std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& c
             randomgen.randgen(server_privkey);
             std::array<uint8_t, 65> pubkey_ephem = secp256r1::get_public_key(server_privkey);
             std::vector<uint8_t> server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
-            key_share server_key { client_keytype, server_pub };
-            return { server_privkey, server_key };
+            key_share server_key { client_keyshare.key_type, server_pub };
+            auto shared_secret = get_shared_secret(server_privkey, client_keyshare);
+            return { shared_secret, server_key };
+        }
+        case NamedGroup::X25519MLKEM768:
+        {
+            auto [ shared_secret, server_keyshare ] = xkem::process_client_keyshare(client_keyshare.key);
+            if (shared_secret.empty()) {
+                throw ssl_error("", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
+            return { shared_secret, { NamedGroup::X25519MLKEM768, server_keyshare } };
         }
         default:
             assert(false);

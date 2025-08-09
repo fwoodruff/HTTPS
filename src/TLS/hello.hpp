@@ -85,7 +85,7 @@ void write_pre_shared_key_extension(tls_record& record, uint16_t key_id);
 void write_early_data_encrypted_ext(tls_record& record);
 
 std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key);
-std::pair<std::array<uint8_t, 32>, key_share> server_keypair(const NamedGroup& client_keytype);
+std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_share& client_keyshare);
 std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_retry);
 
 }

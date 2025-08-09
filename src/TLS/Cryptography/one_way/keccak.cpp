@@ -28,94 +28,74 @@ void write_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) no
 void xor_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noexcept;
 
 
-keccak_sponge::keccak_sponge(size_t capacity_) noexcept {
+keccak_sponge::keccak_sponge(size_t capacity_, uint8_t domain_separator) noexcept {
     capacity = capacity_;
     rate = 1600 - capacity;
     assert(rate % 8 == 0 and capacity < 1600);
     state = {0};
     rate_in_bytes = rate/8;
-    block_size = 0;
     absorb_phase = true;
     idx = 0;
+    padding_byte = domain_separator;
 }
 
 void keccak_sponge::reset() noexcept {
     absorb_phase = true;
-    block_size = 0;
     state = {0};
+    idx = 0;
 }
 
-void keccak_sponge::absorb(const uint8_t* const input, size_t inputByteLen) noexcept {
+template <typename T>
+void keccak_sponge::absorb(const T* const input, size_t inputByteLen) noexcept {
+    static_assert(sizeof(T) == 1);
+
     assert(absorb_phase);
     if(!inputByteLen) [[unlikely]] {
         return;
     }
-    while(inputByteLen > 0) {
-        if(idx==rate_in_bytes) {
+    
+    size_t i = 0;
+    while (i < inputByteLen) {
+        if (idx == rate_in_bytes) {
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        assert(idx < 200);
-        state[idx++] ^= input[--inputByteLen];
+        state[idx++] ^= static_cast<uint8_t>(input[i++]);
     }
 }
 
-void keccak_sponge::absorb(const char* const input, size_t inputByteLen) noexcept {
-    assert(absorb_phase);
-    if(!inputByteLen) [[unlikely]]  {
-        return;
-    }
-    while(inputByteLen > 0) {
-        if(idx==rate_in_bytes) {
-            keccak_F1600_state_permute(state);
-            idx = 0;
-        }
-        state[idx++] ^= static_cast<uint8_t>(input[--inputByteLen]);
-    }
-}
+template <typename T>
+void keccak_sponge::squeeze(T* const output, size_t outputByteLen) noexcept {
+    static_assert(sizeof(T) == 1);
 
-
-
-void keccak_sponge::squeeze(uint8_t* const output, size_t outputByteLen) noexcept {
     if(absorb_phase) {
         assert(idx < 200);
-        state[idx] ^= 0x1F;
+        state[idx] ^= padding_byte;
         state[rate_in_bytes-1] ^= 0x80;
         keccak_F1600_state_permute(state);
         absorb_phase = false;
         idx = 0;
     }
-    while(outputByteLen > 0) {
-        if(idx==rate_in_bytes) {
+    size_t i = 0;
+    while (i < outputByteLen) {
+        if (idx == rate_in_bytes) {
             keccak_F1600_state_permute(state);
             idx = 0;
         }
-        output[--outputByteLen] = state[idx++];
+        output[i++] = static_cast<T>(state[idx++]);
     }
 }
 
-void keccak_sponge::squeeze(char* const output, size_t outputByteLen) noexcept {
-    if(absorb_phase) {
-        assert(idx < 200);
-        state[idx] ^= 0x1F;
-        state[rate_in_bytes-1] ^= 0x80;
-        keccak_F1600_state_permute(state);
-        absorb_phase = false;
-        idx = 0;
-    }
-    while(outputByteLen > 0) {
-        if(idx==rate_in_bytes) {
-            keccak_F1600_state_permute(state);
-            idx = 0;
-        }
-        output[--outputByteLen] = static_cast<char>(state[idx++]);
-    }
-}
+template void keccak_sponge::absorb<unsigned char>(const unsigned char* const, size_t);
+template void keccak_sponge::absorb<char>(const char* const, size_t);
 
+template void keccak_sponge::squeeze<char>(char* const, size_t);
+template void keccak_sponge::squeeze<unsigned char>(unsigned char* const, size_t);
 
 uint64_t ROL64(uint64_t a, uint64_t offset) noexcept {
     assert(offset<64);
-    return (a<<offset)^(a>>(64-offset));
+    assert(offset>0);
+    return (a<<offset)|(a>>(64-offset));
 }
 
 uint64_t read_lane(const std::array<uint8_t, 200>& state, int x, int y) noexcept {
@@ -193,7 +173,8 @@ void keccak_F1600_state_permute(std::array<uint8_t,200>& state) noexcept {
 
 int LFSR86540(uint8_t& LFSR) noexcept {
     int result = (LFSR & 0x01) != 0;
-    LFSR = (LFSR & 0x80) ? LFSR << 1 : (LFSR << 1) ^ 0x71;
+    int set = ((LFSR & 0x80) != 0) * 0x71;
+    LFSR = (LFSR << 1) ^ set;
     return result;
 }
 

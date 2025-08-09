@@ -87,12 +87,12 @@ public:
     void client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message);
     void client_handshake_finished13_record(const std::vector<uint8_t>& handshake_message);
 
-    tls_record server_handshake_finished12_record();
+    tls_record server_handshake_finished12_record() const;
     tls_record server_handshake_finished13_record();
 
 private:
-    void hello_extensions(tls_record& buffer);
-    void hello_retry_extensions(tls_record& record);
+    void hello_extensions(tls_record& buffer, const key_share& server_keyshare) const;
+    void hello_retry_extensions(tls_record& record) const;
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 

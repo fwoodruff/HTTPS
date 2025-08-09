@@ -394,6 +394,15 @@ tls_record handshake_ctx::server_hello_record() {
     // server random
     m_server_random = make_hello_random(*p_tls_version, server_hello_type == ServerHelloType::hello_retry);
 
+    key_share server_keyshare;
+    if(server_hello_type == ServerHelloType::diffie_hellman or server_hello_type == ServerHelloType::preshared_key_dh) {
+        auto [ shared_secret, srv_keyshare ] = process_client_key_share(client_public_key);
+        tls13_shared_secret = shared_secret;
+        server_keyshare = srv_keyshare;
+    } else {
+        tls13_shared_secret = std::vector<uint8_t>();
+    }
+
     hello_record.write1(HandshakeType::server_hello);
     
     hello_record.start_size_header(3);
@@ -415,7 +424,7 @@ tls_record handshake_ctx::server_hello_record() {
     if(server_hello_type == ServerHelloType::hello_retry) {
         hello_retry_extensions(hello_record);
     } else {
-        hello_extensions(hello_record);
+        hello_extensions(hello_record, server_keyshare);
     }
 
     hello_record.end_size_header();
@@ -590,7 +599,7 @@ tls_record handshake_ctx::server_hello_done_record() {
     return record;
 }
 
-tls_record handshake_ctx::server_handshake_finished12_record() {
+tls_record handshake_ctx::server_handshake_finished12_record() const {
     tls_record out(ContentType::Handshake);
     out.write1(HandshakeType::finished);
     out.start_size_header(3);
@@ -606,7 +615,7 @@ tls_record handshake_ctx::server_handshake_finished12_record() {
     return out;
 }
 
-void handshake_ctx::hello_retry_extensions(tls_record& record) {
+void handshake_ctx::hello_retry_extensions(tls_record& record) const {
     assert(p_tls_version != nullptr);
     assert(*p_tls_version == TLS13);
     assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
@@ -618,17 +627,13 @@ void handshake_ctx::hello_retry_extensions(tls_record& record) {
     record.end_size_header();
 }
 
-void handshake_ctx::hello_extensions(tls_record& record) {
+void handshake_ctx::hello_extensions(tls_record& record, const key_share& server_keyshare) const {
     record.start_size_header(2);
     if(*p_tls_version == TLS13) {
         if(server_hello_type == ServerHelloType::diffie_hellman or server_hello_type == ServerHelloType::preshared_key_dh) {
             assert(client_hello.parsed_extensions.contains(ExtensionType::key_share));
             assert(!client_public_key.key.empty());
-            auto [ shared_secret, server_keyshare ] = process_client_key_share(client_public_key);
-            tls13_shared_secret = shared_secret;
             write_key_share(record, server_keyshare);
-        } else {
-            tls13_shared_secret = std::vector<uint8_t>();
         }
     }
     if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {

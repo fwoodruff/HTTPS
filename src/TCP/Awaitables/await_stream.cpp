@@ -10,6 +10,7 @@
 #include "../../Runtime/executor.hpp"
 
 #include <sys/socket.h>
+#include <liburing.h>
 #include <span>
 
 using namespace std::chrono_literals;
@@ -28,57 +29,28 @@ bool readable::await_ready() const noexcept {
 bool readable::await_suspend(std::coroutine_handle<> continuation) {
     assert(m_fd != -1);
     assert(m_buffer);
-    ssize_t succ = ::recv(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
-    if(succ == 0) {
-        m_bytes_read = m_buffer->subspan(0, succ);
+    this_coro = continuation;
+    io_uring_sqe* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) {
         m_res = stream_result::closed;
         return false;
     }
-    if(succ < 0) {
-        if(errno == EWOULDBLOCK or errno == EAGAIN) {
-            if(m_millis == 0ms) {
-                m_res = stream_result::read_timeout;
-                return false;
-            }
-            auto& exec = executor_singleton();
-            exec.m_reactor.add_task(m_fd, continuation, IO_direction::Read, m_millis);
-            m_res = stream_result::awaiting;
-            return true;
-        }
-        m_bytes_read = m_buffer->subspan(0, succ);
-        m_res = stream_result::closed;
-        return false;
+    io_uring_prep_recv(sqe, m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
+    uint64_t user_data = std::bit_cast<uint64_t>(this);
+    sqe->user_data = user_data;
+
+    if(m_millis) {
+        __kernel_timespec ts;
+        ts.tv_sec = m_millis->count() / 1000;
+        ts.tv_nsec = (m_millis->count() % 1000) * 1'000'000;
+        io_uring_prep_link_timeout(ts_sqe, &ts, 0);
+        ts_sqe->user_data = user_data;
     }
-    if(succ > 0) {
-        m_bytes_read = m_buffer->subspan(0, succ);
-        m_res = stream_result::ok;
-        return false;
-    }
-    assert(false);
+    io_uring_submit(&m_ring);
+    return true;
 }
 
 std::pair<std::span<uint8_t>, stream_result> readable::await_resume() {
-    if(m_res != stream_result::awaiting) {
-        return {m_bytes_read, m_res};
-    }
-    assert(m_fd != -1);
-    assert(m_buffer);
-    ssize_t succ = ::recv(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
-    if(succ == 0) {
-        return {std::span<uint8_t>(), stream_result::closed };
-    }
-    if(succ < 0) {
-        if(errno == EWOULDBLOCK or errno == EAGAIN) {
-            return { std::span<uint8_t>(), stream_result::read_timeout };
-        }
-        return { std::span<uint8_t>(), stream_result::closed };
-    }
-    if(succ > 0) {
-        m_bytes_read = m_buffer->subspan(0, succ);
-        *m_buffer = m_buffer->subspan(succ);
-        m_res = stream_result::ok;
-        return { m_bytes_read, m_res};
-    }
     return {m_bytes_read, m_res};
 }
 
@@ -90,68 +62,32 @@ bool writeable::await_ready() const noexcept {
 }
 
 bool writeable::await_suspend(std::coroutine_handle<> continuation) {
-    // process a few records before moving onto the next client
-    //static std::atomic<size_t> fail_sometimes = 1;
-    //size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
-    //local_value %= 10;
-    //if(local_value == 0) {
-    //    m_res = stream_result::awaiting;
-    //    auto& exec = executor_singleton();
-    //    exec.m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
-    //    return true;
-    //}
     assert(m_fd != -1);
     assert(m_buffer);
-    ssize_t succ = ::send(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
-    if(succ == 0) {
-        m_bytes_written = m_buffer->subspan(0, 0);
+    this_coro = continuation;
+    io_uring_sqe* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) {
         m_res = stream_result::closed;
         return false;
     }
-    if(succ < 0) {
-        if(errno == EWOULDBLOCK or errno == EAGAIN) {
-            m_res = stream_result::awaiting;
-            auto& exec = executor_singleton();
-            exec.m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
-            return true;
-        }
-        
-        m_bytes_written = m_buffer->subspan(0, 0);
-        m_res = stream_result::closed;
-        return false;
+    io_uring_prep_send(sqe, m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
+    uint64_t user_data = std::bit_cast<uint64_t>(this);
+    sqe->user_data = user_data;
+
+    if(m_millis) {
+        __kernel_timespec ts;
+        ts.tv_sec = m_millis->count() / 1000;
+        ts.tv_nsec = (m_millis->count() % 1000) * 1'000'000;
+        io_uring_prep_link_timeout(ts_sqe, &ts, 0);
+        ts_sqe->user_data = user_data;
     }
-    if(succ > 0) {
-        m_bytes_written = m_buffer->subspan(0, succ);
-        *m_buffer = m_buffer->subspan(succ);
-        m_res = stream_result::ok;
-        return false;
-    }
-    assert(false);
+    io_uring_submit(&m_ring);
+    return true;
+
 }
 
 std::pair<std::span<const uint8_t>, stream_result> writeable::await_resume() {
-    
-    if(m_res != stream_result::awaiting) {
-        return {m_bytes_written, m_res};
-    }
-    assert(m_buffer);
-    ssize_t succ = ::send(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
-    if(succ == 0) {
-        return { std::span<uint8_t>(), stream_result::closed };
-    }
-    if(succ < 0) {
-        if(errno == EWOULDBLOCK or errno == EAGAIN) {
-            return { std::span<uint8_t>(), stream_result::write_timeout };
-        }
-        return { std::span<uint8_t>(), stream_result::closed };
-    }
-    if(succ > 0) {
-        m_bytes_written = m_buffer->subspan(0, succ);
-        *m_buffer = m_buffer->subspan(succ);
-        m_res = stream_result::ok;
-        return { m_bytes_written, m_res };
-    }
-    assert(false);
+    return { m_bytes_written, m_res };
 }
 
 } // namespace

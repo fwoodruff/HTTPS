@@ -12,6 +12,8 @@
 #include <cassert>
 #include "fcntl.h"
 
+#include <liburing.h>
+
 reactor::reactor() {
     int rw[2];
     int err = ::pipe(rw);
@@ -95,86 +97,30 @@ reactor::wakeup_timeouts( const time_point<steady_clock> &now) {
 }
 
 std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
-    auto now = steady_clock::now();
-    auto [first_wake, out] = wakeup_timeouts(now);
-    if(!out.empty()) {
-        return out;
-    }
+    std::vector<std::coroutine_handle<>> handles;
     
-    std::optional<milliseconds> timeout_duration = std::nullopt;
-    
-    if(first_wake) {
-        timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
+    io_uring_cqe* cqe = nullptr;
+    while (io_uring_peek_cqe(&m_ring, &cqe) == 0 && cqe) {
+        uint64_t ud = cqe->user_data;
+        int res = cqe->res;
+        io_uring_cqe_seen(&m_ring, cqe);
+        awaitable* aw = reinterpret_cast<awaitable*>(ud);
+        aw->m_res = res;
+        std::coroutine_handle<> coro = aw->this_coro;
+        handles.push_back(coro);
     }
-    if(noblock) {
-        timeout_duration = 0ms;
+    if(!handles.empty() || noblock) {
+        return handles;
     }
-    
-    std::vector<pollfd> to_poll;
-    {
-        std::scoped_lock lk { m_mut };
-        for(const auto& [fd, hand] : park_map) {
-            pollfd poll_fd {};
-            poll_fd.fd = fd;
-            assert(hand.fd == fd);
-            poll_fd.events = (hand.handle[0] != nullptr ? POLLIN  : 0) | (hand.handle[1] != nullptr ? POLLOUT : 0) ;
-            assert(poll_fd.events != 0);
-            poll_fd.revents = 0;
-            to_poll.push_back(poll_fd);
-        }
+    int ret = io_uring_wait_cqe(&m_ring, &cqe);
+    if (ret == 0 && cqe) {
+        uint64_t ud = cqe->user_data;
+        int res = cqe->res;
+        io_uring_cqe_seen(&m_ring, cqe);
+        awaitable* aw = reinterpret_cast<awaitable*>(ud);
+        aw->m_res = res;
+        std::coroutine_handle<> coro = aw->this_coro;
+        handles.push_back(coro);
     }
-    pollfd pipepoll;
-    pipepoll.fd = m_pipe_read; // const after constructor syscall
-    pipepoll.events = POLLIN;
-    pipepoll.revents = 0;
-    to_poll.push_back(pipepoll);
-
-    int num_descriptors = ::poll(to_poll.data(), (int) to_poll.size(), timeout_duration? (int) timeout_duration->count() : -1);
-    if(num_descriptors == -1) {
-        if(errno == EINTR) {
-            return out;
-        } else {
-            assert(false);
-        }
-    }
-    if(to_poll.back().revents & POLLIN) {
-        char buff;
-        do {
-            ssize_t succ = ::read(m_pipe_read, &buff, 1); // unclog pipe
-            if(succ < 0) {
-                if(errno == EINTR) {
-                    continue;
-                } else if (errno == EPIPE) {
-                    ;
-                } else {
-                    assert(false);
-                }
-            }
-        } while(false);
-    }
-    to_poll.pop_back(); // exclude the pipe
-    
-    {
-        std::scoped_lock lk { m_mut };
-        for(auto& fdd : to_poll) {
-            auto& handle = park_map[fdd.fd].handle;
-            auto& wakeup = park_map[fdd.fd].wake_up;
-            auto IOevent = std::array{POLLIN, POLLOUT};
-            for(int i = 0; i < 2; i++) {
-                assert(!(fdd.revents & POLLNVAL));
-                if(fdd.revents & (IOevent[i] | POLLHUP | POLLERR)) {
-                    if (handle[i] != nullptr) {
-                        out.push_back(handle[i]);
-                    }
-                    handle[i] = nullptr;
-                    wakeup[i] = std::nullopt;
-                }
-            }
-            if (handle[0] == nullptr and handle[1] == nullptr) {
-                auto res = park_map.erase(fdd.fd);
-                assert(res == 1);
-            }
-        }
-    }
-    return out;
+    return handles;
 }

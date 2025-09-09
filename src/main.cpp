@@ -110,29 +110,32 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
 task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
         for(;;) {
-            if(auto client = co_await listener.accept()) {
-                assert(ip_connections != nullptr);
-                assert(ip_connections != nullptr);
-                std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
-                if (!ip_ban.is_open()) {
-                    throw std::runtime_error("failed to open ip ban file");
+            auto client = co_await listener.accept();
+            assert(ip_connections != nullptr);
+            if(!client) {
+                bool retriable = co_await ip_connections->wait_until_retriable();
+                if(!retriable) {
+                    break;
                 }
-
-                auto timestamp = fbw::build_iso_8601_current_timestamp();
-                auto ip = client->get_ip();
-                std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
-                ip_ban.flush();
-
-                auto conn = ip_connections->add_connection(client->m_ip);
-                if(conn == std::nullopt) [[unlikely]] {
-                    continue;
-                }
-
-                auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
-                auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
-                
-                async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
+                continue;
             }
+            std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
+            if (!ip_ban.is_open()) {
+                throw std::runtime_error("failed to open ip ban file");
+            }
+
+            auto timestamp = fbw::build_iso_8601_current_timestamp();
+            auto ip = client->get_ip();
+            std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
+            ip_ban.flush();
+            auto conn = co_await ip_connections->add_connection(client->m_ip);
+            if(conn == std::nullopt) [[unlikely]] {
+                continue;
+            }
+            auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
+            auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
+            
+            async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
         }
     } catch(const std::exception& e) {
         std::println(stderr, "{}\n", e.what());
@@ -142,28 +145,32 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
 task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
     try {
         for(;;) {
-            if(auto client = co_await listener.accept()) {
-                assert(ip_connections != nullptr);
-                assert(client != std::nullopt);
-                assert(ip_connections != nullptr);
-                assert(client != std::nullopt);
-
-                std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
-                if (!ip_ban.is_open()) {
-                    throw std::runtime_error("failed to open ip ban file");
+            auto client = co_await listener.accept();
+            assert(ip_connections != nullptr);
+            if(!client) {
+                bool retriable = co_await ip_connections->wait_until_retriable();
+                if(!retriable) {
+                    break;
                 }
-                auto timestamp = fbw::build_iso_8601_current_timestamp();
-                auto ip = client->get_ip();
-                std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
-                ip_ban.flush();
-
-                auto conn = ip_connections->add_connection(client->m_ip);
-                if(conn == std::nullopt) [[unlikely]] {
-                    continue;
-                }
-                auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
-                async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
+                continue;
             }
+
+            std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
+            if (!ip_ban.is_open()) {
+                throw std::runtime_error("failed to open ip ban file");
+            }
+            auto timestamp = fbw::build_iso_8601_current_timestamp();
+            auto ip = client->get_ip();
+            std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
+            ip_ban.flush();
+
+            auto conn = co_await ip_connections->add_connection(client->m_ip);
+            if(conn == std::nullopt) [[unlikely]] {
+                continue;
+            }
+            auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
+            async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
+            
         }
     } catch(const std::exception& e ) {
         std::println(stderr, "{}\n", e.what());

@@ -23,6 +23,8 @@
 #include <unordered_map>
 #include <print>
 
+#include <liburing.h>
+
 // Wishlist:
 
 // Features:
@@ -75,6 +77,9 @@
 // ideas:
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
+
+
+struct io_uring m_ring;
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
@@ -213,6 +218,9 @@ int main(int argc, const char * argv[]) {
         auto https_listener = fbw::tcplistener::bind(https_port);
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
+
+        int io_uring_queue_init(128, &m_ring, 0);
+
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {
         std::println(stderr, "main: {}\n", e.what());

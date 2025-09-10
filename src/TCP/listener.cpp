@@ -125,10 +125,10 @@ int get_listener_socket(const std::string &service) {
         throw std::runtime_error("listen: failed");
     }
 
-    if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
-        close(sockfd);
-        throw std::runtime_error("fcntl: failed to set non-blocking");
-    }
+    //if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
+    //    close(sockfd);
+    //    throw std::runtime_error("fcntl: failed to set non-blocking");
+    //}
     return sockfd;
 }
 

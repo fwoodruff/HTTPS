@@ -19,6 +19,7 @@
 #include <optional>
 
 #include <coroutine>
+#include <liburing.h>
 
 
 std::pair<std::string, uint16_t> get_ip_port(const struct sockaddr& sa) {
@@ -47,8 +48,8 @@ std::optional<tcp_stream> acceptable::await_resume() {
     }
     auto [ip, port] = get_ip_port((struct sockaddr &)client_address);
     std::string stip = ip;
-    int res = ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
-    assert(res == 0);
+    //int res = ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
+    //assert(res == 0);
     return {{client_fd, ip, port}};
 }
 
@@ -59,8 +60,17 @@ bool acceptable::await_ready() const noexcept {
 }
 
 void acceptable::await_suspend(std::coroutine_handle<> coroutine) noexcept {
-    auto& exec = executor_singleton();
-    exec.m_reactor.add_task(m_server_fd, coroutine, IO_direction::Read);
+    io_uring_sqe* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) {
+        m_res = stream_result::closed;
+        return false;
+    }
+
+    struct sockaddr_storage client_address;
+    socklen_t shrink_address_size = sizeof client_address;
+    io_uring_prep_accept(sqe, m_server_fd, (struct sockaddr *)&client_address,  &shrink_address_size, 0);
+    sqe->user_data = this;
+    
 }
 
 } // namespace

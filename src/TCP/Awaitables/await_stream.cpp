@@ -35,10 +35,14 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
         m_res = stream_result::closed;
         return false;
     }
+    io_uring_sqe* ts_sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) {
+        m_res = stream_result::closed;
+        return false;
+    }
     io_uring_prep_recv(sqe, m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
     uint64_t user_data = std::bit_cast<uint64_t>(this);
     sqe->user_data = user_data;
-
     if(m_millis) {
         __kernel_timespec ts;
         ts.tv_sec = m_millis->count() / 1000;
@@ -81,7 +85,6 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
         io_uring_prep_link_timeout(ts_sqe, &ts, 0);
         ts_sqe->user_data = user_data;
     }
-    io_uring_submit(&m_ring);
     return true;
 
 }

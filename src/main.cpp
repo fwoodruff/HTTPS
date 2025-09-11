@@ -76,6 +76,8 @@
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
+int global_value = 12;
+
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {
@@ -107,7 +109,8 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
-task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
+task<void> https_server(int* mr, std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
+    std::cout << "entering https server" << std::endl;
     try {
         for(;;) {
             auto client = co_await listener.accept();
@@ -188,7 +191,7 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         std::println("HTTPS running on port {}", https_port);
 
         auto ip_connections = std::make_shared<limiter>();
-        async_spawn(https_server(ip_connections, std::move(https_listener)));
+        async_spawn(https_server(&global_value, ip_connections, std::move(https_listener)));
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {

@@ -20,7 +20,9 @@
 
 #include <coroutine>
 
+#include <iostream>
 
+extern int global_value;
 
 // pared down from Lewis Baker's cppcoro
 template<class T> class task;
@@ -41,6 +43,27 @@ public:
     void unhandled_exception() {
         m_exception = std::current_exception();
     }
+
+    static void* operator new(std::size_t sz) {
+        std::cout << "promise::operator new size=" << sz << "\n";
+        return ::operator new(sz);
+    }
+    template<class... Rest>
+    static void* operator new(std::size_t sz, int* mr, Rest const&...) noexcept {
+        std::cout << "promise::operator new with mr=" << *mr
+                  << ", size=" << sz << "\n";
+        // just delegate to the plain global operator new
+        return ::operator new(sz);
+    }
+
+    template<class... Rest>
+    static void operator delete(void* p, std::size_t sz, int* mr, Rest const&...) noexcept {
+        ::operator delete(p);
+    }
+    static void operator delete(void* p, std::size_t sz) noexcept {
+        ::operator delete(p);
+    }
+
 protected:
     std::exception_ptr m_exception = nullptr;
 private:
@@ -50,7 +73,12 @@ private:
 template<typename T>
 class task_promise final : public task_promise_base {
 public:
-    task_promise() noexcept {};
+    //task_promise() noexcept {};
+    explicit task_promise(int* mr = &global_value) noexcept
+        : m_mr(mr) {
+        std::cout << "promise constructed with mr=" << m_mr << "\n";
+    }
+
     ~task_promise() noexcept {
         if (init) {
             m_value.~T();
@@ -75,6 +103,7 @@ private:
         T m_value;
     };
     bool init = false;
+    int* m_mr;
 };
 
 template<>
@@ -87,6 +116,12 @@ public:
         }
     }
     task<void> get_return_object() noexcept;
+
+    task_promise(int* mr = &global_value) noexcept
+        : m_mr(mr) {
+        std::cout << "promise constructed with mr=" << *m_mr << "\n";
+    }
+    int* m_mr;
 };
 
 template<typename T>

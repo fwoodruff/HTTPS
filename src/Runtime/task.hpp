@@ -22,6 +22,54 @@
 
 #include <iostream>
 
+struct arena {
+    std::size_t offset = 0;
+    std::size_t capacity;
+    std::byte buffer[];
+
+    arena(std::size_t cap) : capacity(cap) {}
+
+    void* allocate(std::size_t n, std::size_t alignment) {
+        std::size_t aligned = (offset + alignment - 1) & ~(alignment - 1);
+        if (aligned + n > capacity) throw std::bad_alloc{};
+        void* p = buffer + aligned;
+        offset = aligned + n;
+        return p;
+    }
+};
+
+template<class T>
+struct arena_allocator {
+    using value_type = T;
+    std::shared_ptr<arena> backing;
+
+    arena_allocator(std::shared_ptr<arena> a) noexcept : backing(a) {}
+    template<class U>
+    arena_allocator(const arena_allocator<U>& other) noexcept : backing(other.backing) {}
+
+    T* allocate(std::size_t n) {
+        std::cout << "arena alloc" << std::endl;
+        return static_cast<T*>(backing->allocate(n * sizeof(T), alignof(T)));
+    }
+    void deallocate(T*, std::size_t) noexcept {
+        std::cout << "arena dealloc" << std::endl;
+        // no-op (bump allocator)
+    }
+};
+
+inline std::shared_ptr<arena> make_arena(std::size_t cap) {
+    std::size_t total = sizeof(arena) + cap * sizeof(std::byte);
+    void* raw = ::operator new(total, std::nothrow);
+    if (!raw) {
+        return nullptr; // failed allocation
+    }
+    arena* a = new (raw) arena(cap);
+    return std::shared_ptr<arena>(a, [](arena* p) {
+        p->~arena();
+        ::operator delete(p);
+    });
+}
+
 // pared down from Lewis Baker's cppcoro
 template<class T> class task;
 
@@ -40,14 +88,6 @@ public:
     void set_continuation(std::coroutine_handle<> continuation) { m_continuation = continuation; }
     void unhandled_exception() {
         m_exception = std::current_exception();
-    }
-
-    template<class... Rest>
-    static void operator delete(void* p, std::size_t sz, int* mr, Rest const&...) noexcept {
-        ::operator delete(p);
-    }
-    static void operator delete(void* p, std::size_t sz) noexcept {
-        ::operator delete(p);
     }
 
 protected:
@@ -98,6 +138,33 @@ public:
     }
     task<void> get_return_object() noexcept;
 
+    template<typename... ARGS>
+    void* operator new(std::size_t size, std::allocator_arg_t, arena_allocator<std::byte>& ba, ARGS& ... args) {
+        void* raw = ba.allocate(size + sizeof(arena_allocator<std::byte>) + sizeof(char));
+        *reinterpret_cast<arena_allocator<std::byte>*>(static_cast<std::byte*>(raw) + size) = ba;
+        *(static_cast<char*>(raw) + size + 1) = 1;
+        return raw;
+    }
+
+    template<typename... ARGS>
+    void* operator new(std::size_t size, ARGS& ... args) {
+        void* raw = ::operator new(size + sizeof(arena_allocator<std::byte>));
+        *(static_cast<char*>(raw) + size + 1) = 0;
+        return raw;
+    }
+
+    void operator delete(void* p, std::size_t size) noexcept {
+        auto ba_ind = (static_cast<char*>(p) + size + 1);
+        auto ba_ptr = reinterpret_cast<arena_allocator<std::byte>*>(static_cast<std::byte*>(p) + size);
+        if(*ba_ind == 0) {
+            ::operator delete(p);
+            return;
+        }
+        ba_ptr->deallocate(static_cast<std::byte*>(p), size);
+        return;
+
+    }
+    
     task_promise() noexcept {}
 };
 

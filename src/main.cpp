@@ -92,25 +92,38 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_to
     }
 }
 
-task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
-    assert(client_stream != nullptr);
-    auto res = co_await client_stream->await_hello();
-    if(res != fbw::stream_result::ok) {
-        co_return;
+task<void> tls_client(std::allocator_arg_t, arena_allocator<std::byte> ba, std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
+    try {
+        assert(client_stream != nullptr);
+        auto res = co_await client_stream->await_hello();
+        if(res != fbw::stream_result::ok) {
+            co_return;
+        }
+        std::string alpn = client_stream->alpn();
+        if(alpn.empty()) {
+            co_return;
+        }
+
+        auto int_alloc = std::allocator_traits<arena_allocator<std::byte>>::template rebind_alloc<int>(ba);
+        std::vector<int, decltype(int_alloc)> vec(int_alloc);
+        for(int i = 0; i < 500; i++) {
+            std::cout << "push" << std::endl;
+            vec.push_back(1);
+        }
+        std::cout << "end";
+        std::cout << vec.back();
+        co_await http_client(std::move(client_stream), std::move(ip_connections), alpn, fbw::application_handler);
+    } catch(const std::exception& e) {
+        std::println(stderr, "tls exception: {}\n", e.what());
     }
-    std::string alpn = client_stream->alpn();
-    if(alpn.empty()) {
-        co_return;
-    }
-    co_await http_client(std::move(client_stream), std::move(ip_connections), alpn, fbw::application_handler);
 }
 
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
 task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
-    try {
-        for(;;) {
+    for(;;) {
+        try {
             auto client = co_await listener.accept();
             assert(ip_connections != nullptr);
             if(!client) {
@@ -136,16 +149,18 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
             auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
             
-            async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
+            auto area = make_arena(400);
+            arena_allocator<std::byte> my_alloc(area);
+            async_spawn(tls_client(std::allocator_arg, my_alloc, std::move(tls_stream), std::move(*conn)));
+        } catch(const std::exception& e) {
+            std::println(stderr, "{}\n", e.what());
         }
-    } catch(const std::exception& e) {
-        std::println(stderr, "{}\n", e.what());
     }
 }
 
 task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
-    try {
-        for(;;) {
+    for(;;) {
+        try {
             auto client = co_await listener.accept();
             assert(ip_connections != nullptr);
             if(!client) {
@@ -172,9 +187,9 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
             async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
             
+        } catch(const std::exception& e ) {
+            std::println(stderr, "{}\n", e.what());
         }
-    } catch(const std::exception& e ) {
-        std::println(stderr, "{}\n", e.what());
     }
 }
 

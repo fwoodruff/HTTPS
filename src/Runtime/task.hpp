@@ -42,14 +42,6 @@ public:
         m_exception = std::current_exception();
     }
 
-    template<class... Rest>
-    static void operator delete(void* p, std::size_t sz, int* mr, Rest const&...) noexcept {
-        ::operator delete(p);
-    }
-    static void operator delete(void* p, std::size_t sz) noexcept {
-        ::operator delete(p);
-    }
-
 protected:
     std::exception_ptr m_exception = nullptr;
 private:

@@ -20,7 +20,6 @@
 
 #include <coroutine>
 
-#include <iostream>
 
 // pared down from Lewis Baker's cppcoro
 template<class T> class task;
@@ -41,7 +40,6 @@ public:
     void unhandled_exception() {
         m_exception = std::current_exception();
     }
-
 protected:
     std::exception_ptr m_exception = nullptr;
 private:
@@ -52,7 +50,6 @@ template<typename T>
 class task_promise final : public task_promise_base {
 public:
     task_promise() noexcept {};
-
     ~task_promise() noexcept {
         if (init) {
             m_value.~T();
@@ -89,8 +86,6 @@ public:
         }
     }
     task<void> get_return_object() noexcept;
-
-    task_promise() noexcept {}
 };
 
 template<typename T>

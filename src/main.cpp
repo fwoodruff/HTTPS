@@ -36,6 +36,10 @@
 //      consume bytes on h2 context for protocol switching
 //      at max connections await an async semaphore rather than the tcp listener
 
+// per-thread semaphore
+// io_uring option
+// non-allocating executor
+
 // Correctness:
 //      Check that poly1305 is constant-time
 //      go through RFC 9113 ensuring correct handling of everything
@@ -75,7 +79,6 @@
 // ideas:
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
-
 
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
@@ -205,6 +208,9 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
     }
     co_return;
 }
+
+
+
 
 int main(int argc, const char * argv[]) {
     try {

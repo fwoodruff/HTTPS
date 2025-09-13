@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <memory>
+#include <queue>
+#include <coroutine>
 
 class limiter;
 
@@ -35,6 +37,31 @@ class limiter : public std::enable_shared_from_this<limiter> {
     std::unordered_map<std::string, int> ip_map;
     friend class connection_token;
 public:
-    std::optional<connection_token> add_connection(std::string ip);
+    struct acquirable;
+private:
+    struct waiter {
+        std::coroutine_handle<> handle;
+        acquirable* bp;
+    };
+    std::queue<std::coroutine_handle<>> retriable;
+    std::queue<waiter> blocked;
+public:
+    ~limiter();
+    struct acquirable {
+        std::shared_ptr<limiter> lim;
+        std::string ip;
+        std::optional<connection_token> token;
+        bool await_ready();
+        bool await_suspend(std::coroutine_handle<> h);
+        std::optional<connection_token> await_resume();
+    };
+    struct fallible {
+        std::shared_ptr<limiter> lim;
+        bool await_ready();
+        void await_suspend(std::coroutine_handle<> h);
+        bool await_resume();
+    };
+    acquirable add_connection(std::string ip);
+    fallible wait_until_retriable();
 };
 

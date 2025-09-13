@@ -35,10 +35,9 @@
 //      websockets need an awaitable sleep function
 //      consume bytes on h2 context for protocol switching
 //      at max connections await an async semaphore rather than the tcp listener
-
-// per-thread semaphore
-// io_uring option
-// non-allocating executor
+//      per-thread semaphore for executor
+//      io_uring option for reactor
+//      non-allocating executor
 
 // Correctness:
 //      Check that poly1305 is constant-time

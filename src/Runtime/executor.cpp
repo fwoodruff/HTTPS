@@ -22,21 +22,65 @@ void executor::notify_runtime() {
     m_reactor.notify();
 }
 
+void executor::mark_done() {
+    std::scoped_lock lk {thread_mut};
+    num_active_threads.fetch_sub(1, std::memory_order_relaxed);
+    m_zombies.push_back(std::this_thread::get_id());
+}
+
+void executor::reap_done() {
+    std::vector<std::thread::id> zombies;
+    {
+        std::scoped_lock lk {thread_mut};
+        zombies.swap(m_zombies);
+    }
+    if (zombies.empty()) {
+        return;
+    }
+    std::vector<std::thread> to_join;
+    {
+        std::scoped_lock lk {thread_mut};
+        auto is_zombie = [&](const std::thread& t) {
+            return std::find(zombies.begin(), zombies.end(), t.get_id()) != zombies.end();
+        };
+        for (size_t i = 0; i < m_threadpool.size(); ) {
+            if (is_zombie(m_threadpool[i])) {
+                to_join.emplace_back(std::move(m_threadpool[i]));
+                m_threadpool[i] = std::move(m_threadpool.back());
+                m_threadpool.pop_back();
+            } else {
+                i++;
+            }
+        }
+    }
+    for (auto &t : to_join) {
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+}
+
 void executor::thread_function() {
     for(;;) {
         auto task = m_ready.try_pop();
         if(task) {
             if(*task == nullptr) {
                 notify_runtime();
+                mark_done();
                 return;
             }
             task->resume();
             continue;
         }
+        if(num_tasks.load() <= num_active_threads.load(std::memory_order_relaxed)) {
+            mark_done();
+            return;
+        }
         try_poll();
         auto task_b = m_ready.pop();
         if(!task_b) {
             notify_runtime();
+            mark_done();
             return;
         }
         task_b.resume();
@@ -53,19 +97,6 @@ void executor::try_poll() {
         }
         m_ready.push_bulk(std::move(wakeable_coroutines));
     }
-}
-
-int executor::try_resume_task() {
-    auto task = m_ready.try_pop();
-    if (!task) {
-        return 0;
-    }
-    if (*task == nullptr) {
-        notify_runtime();
-        return -1;
-    }
-    task->resume();
-    return 1;
 }
 
 void executor::block_until_ready() {
@@ -87,8 +118,16 @@ void executor::main_thread_function() {
         }
         if (*task == nullptr) {
             notify_runtime();
+            reap_done();
             return;
         }
+        auto active = num_active_threads.load(std::memory_order::relaxed);
+        if(num_tasks.load() > active + 3 && active < long(NUM_THREADS)) {
+            std::scoped_lock lk {thread_mut};
+            num_active_threads.fetch_add(1, std::memory_order_relaxed);
+            m_threadpool.emplace_back(&executor::thread_function, this);
+        }
+        reap_done();
         task->resume();
     }
 }
@@ -99,13 +138,7 @@ void executor::run() {
     // When machine cores are not dedicated to this program, all threads make haphazard attempts to interact with both the task queue and the reactor.
     // When idle, the main thread blocks on the reactor, and other threads block on the task queue.
     assert(NUM_THREADS > 0);
-    for(unsigned i = 0; i < NUM_THREADS - 1; i++) {
-        m_threadpool.emplace_back(&executor::thread_function, this);
-    }
     main_thread_function();
-    for(auto& thd : m_threadpool) {
-        thd.join();
-    }
 }
 
 root_task make_root_task(task<void> task) {

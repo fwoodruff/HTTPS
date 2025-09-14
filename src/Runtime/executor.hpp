@@ -37,9 +37,12 @@ public:
     
     reactor m_reactor;
 private:
+    std::atomic<long> num_active_threads{1};
     executor() = default;
     blocking_queue<std::coroutine_handle<>> m_ready;
+    std::mutex thread_mut;
     std::vector<std::thread> m_threadpool;
+    std::vector<std::thread::id> m_zombies;
     std::atomic<int> num_tasks;
     std::mutex can_poll_wait;
     
@@ -50,8 +53,9 @@ private:
     void main_thread_function();
     void try_poll();
     void notify_runtime();
-    int try_resume_task();
     void block_until_ready();
+    void mark_done();
+    void reap_done();
     friend struct yield_coroutine;
 };
 

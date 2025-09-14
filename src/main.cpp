@@ -193,17 +193,20 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
         std::println("Redirect running on port {}", http_port);
         std::println("HTTPS running on port {}", https_port);
+        std::fflush(stdout);
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
+        auto default_key_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.key_file;
+        auto default_certificate_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.certificate_file;
         std::println(stderr, "{}", e.what());
         std::println(stderr, "{}", e.what());
-        std::println(stderr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).c_str());
-        std::println(stderr, "Key file: {}", std::filesystem::absolute(fbw::project_options.key_file).c_str());
-        std::println(stderr, "Certificate file: {}", std::filesystem::absolute(fbw::project_options.certificate_file).c_str());
+        std::println(stderr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).lexically_normal().string());
+        std::println(stderr, "Key file: {}", std::filesystem::absolute(default_key_file).lexically_normal().string());
+        std::println(stderr, "Certificate file: {}", std::filesystem::absolute(default_certificate_file).lexically_normal().string());
     }
     co_return;
 }
@@ -213,7 +216,8 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
 int main(int argc, const char * argv[]) {
     try {
-        fbw::init_options();
+        std::string config_path = fbw::get_config_path(argc, argv);
+        fbw::init_options(config_path);
         auto http_port = fbw::project_options.redirect_port ;
         auto http_listener = fbw::tcplistener::bind(http_port);
         auto https_port = fbw::project_options.server_port;

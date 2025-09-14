@@ -37,6 +37,9 @@
 //      websockets need an awaitable sleep function
 //      consume bytes on h2 context for protocol switching
 //      at max connections await an async semaphore rather than the tcp listener
+//      per-thread semaphore for executor
+//      io_uring option for reactor
+//      non-allocating executor
 
 // Correctness:
 //      Check that poly1305 is constant-time
@@ -98,23 +101,27 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_to
 
 task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token ip_connections) {
     assert(client_stream != nullptr);
-    auto res = co_await client_stream->await_hello();
-    if(res != fbw::stream_result::ok) {
-        co_return;
+    try {
+        auto res = co_await client_stream->await_hello();
+        if(res != fbw::stream_result::ok) {
+            co_return;
+        }
+        std::string alpn = client_stream->alpn();
+        if(alpn.empty()) {
+            co_return;
+        }
+        co_await http_client(std::move(client_stream), std::move(ip_connections), alpn, fbw::application_handler);
+    } catch(const std::exception& e) {
+        std::println(stderr, "TLS client exception: {}\n", e.what());
     }
-    std::string alpn = client_stream->alpn();
-    if(alpn.empty()) {
-        co_return;
-    }
-    co_await http_client(std::move(client_stream), std::move(ip_connections), alpn, fbw::application_handler);
 }
 
 // accepts connections and spins up per-client asynchronous tasks
 // if the server socket would block on accept, we suspend the coroutine and park the connection over at the reactor
 // when the task wakes we push it to the server
 task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
-    try {
-        for(;;) {
+    for(;;) {
+        try {
             auto client = co_await listener.accept();
             assert(ip_connections != nullptr);
             if(!client) {
@@ -141,15 +148,15 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
             
             async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
+        } catch(const std::exception& e) {
+            std::println(stderr, "{}\n", e.what());
         }
-    } catch(const std::exception& e) {
-        std::println(stderr, "{}\n", e.what());
     }
 }
 
 task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistener listener) {
-    try {
-        for(;;) {
+    for(;;) {
+        try {
             auto client = co_await listener.accept();
             assert(ip_connections != nullptr);
             if(!client) {
@@ -176,9 +183,9 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
             async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
             
+        } catch(const std::exception& e ) {
+            std::println(stderr, "{}\n", e.what());
         }
-    } catch(const std::exception& e ) {
-        std::println(stderr, "{}\n", e.what());
     }
 }
 
@@ -191,17 +198,20 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
         std::println("Redirect running on port {}", http_port);
         std::println("HTTPS running on port {}", https_port);
+        std::fflush(stdout);
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
+        auto default_key_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.key_file;
+        auto default_certificate_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.certificate_file;
         std::println(stderr, "{}", e.what());
         std::println(stderr, "{}", e.what());
-        std::println(stderr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).c_str());
-        std::println(stderr, "Key file: {}", std::filesystem::absolute(fbw::project_options.key_file).c_str());
-        std::println(stderr, "Certificate file: {}", std::filesystem::absolute(fbw::project_options.certificate_file).c_str());
+        std::println(stderr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).lexically_normal().string());
+        std::println(stderr, "Key file: {}", std::filesystem::absolute(default_key_file).lexically_normal().string());
+        std::println(stderr, "Certificate file: {}", std::filesystem::absolute(default_certificate_file).lexically_normal().string());
     }
     co_return;
 }
@@ -211,7 +221,8 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
 int main(int argc, const char * argv[]) {
     try {
-        fbw::init_options();
+        std::string config_path = fbw::get_config_path(argc, argv);
+        fbw::init_options(config_path);
         auto http_port = fbw::project_options.redirect_port ;
         auto http_listener = fbw::tcplistener::bind(http_port);
         auto https_port = fbw::project_options.server_port;

@@ -52,7 +52,7 @@ struct options {
 };
 
 extern options project_options;
-void init_options();
+void init_options(std::filesystem::path config_file);
 std::string build_iso_8601_current_timestamp();
 
 template<typename T>
@@ -113,6 +113,8 @@ inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
     seed ^= hasher(v) + 0x9e3779b9 + (seed<<6) + (seed>>2);
     hash_combine(seed, rest...);
 }
+
+std::filesystem::path get_config_path(int argc, const char* argv[]);
 
 void remove_whitespace(std::string& str);
 

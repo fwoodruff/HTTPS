@@ -121,8 +121,8 @@ void executor::main_thread_function() {
             reap_done();
             return;
         }
-        if(num_tasks.load() > num_active_threads.load(std::memory_order::relaxed) + 3 && 
-                num_active_threads.load(std::memory_order::relaxed) < NUM_THREADS) {
+        auto active = num_active_threads.load(std::memory_order::relaxed);
+        if(num_tasks.load() > active + 3 && active < long(NUM_THREADS)) {
             std::scoped_lock lk {thread_mut};
             num_active_threads.fetch_add(1, std::memory_order_relaxed);
             m_threadpool.emplace_back(&executor::thread_function, this);

@@ -38,7 +38,7 @@ public:
 
     reactor m_reactor;
 private:
-    std::atomic<int> num_active_threads{1};
+    std::atomic<long> num_active_threads{1};
     executor() = default;
     blocking_queue<std::coroutine_handle<>> m_ready;
     std::mutex thread_mut;

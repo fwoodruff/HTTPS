@@ -12,6 +12,10 @@ else
 	CXXFLAGS +=
 endif
 
+ifeq ($(STATIC),1)
+	LDFLAGS += -static -static-libstdc++ -static-libgcc
+endif
+
 # Directories
 SRC_DIR := src
 OBJ_DIR := objects

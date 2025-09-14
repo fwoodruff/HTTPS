@@ -149,13 +149,16 @@ std::filesystem::path get_config_path(int argc, const char* argv[]) {
             config_path = env;
         }
     }
-    if(config_path.empty()) {
-        config_path = "/etc/codeymccodeface/config.txt";
-    }
     if (config_path.empty()) {
         std::filesystem::path exec_path = argv[0];
         auto config_dir = (exec_path / ".."/ "..").lexically_normal();
-        config_path = config_dir / "config.txt";
+        auto path = config_dir / "config.txt";
+        if(std::filesystem::exists(path)) {
+            config_path = config_dir / "config.txt";
+        }
+    }
+    if(config_path.empty()) {
+        config_path = "/etc/codeymccodeface/config.txt";
     }
     return config_path;
 }

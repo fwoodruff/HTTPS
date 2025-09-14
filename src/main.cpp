@@ -193,6 +193,7 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
 
         std::println("Redirect running on port {}", http_port);
         std::println("HTTPS running on port {}", https_port);
+        std::fflush(stdout);
 
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));

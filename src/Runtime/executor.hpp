@@ -20,7 +20,6 @@
 #include <queue>
 #include <optional>
 #include <span>
-#include <list>
 #include "blocking_queue.hpp"
 
 using namespace std::chrono;
@@ -35,7 +34,7 @@ public:
     friend void run(task<void> main_task);
     friend root_task make_root_task(task<void> task);
     friend executor& executor_singleton();
-
+    
     reactor m_reactor;
 private:
     std::atomic<long> num_active_threads{1};

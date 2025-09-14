@@ -72,7 +72,7 @@ void executor::thread_function() {
             task->resume();
             continue;
         }
-        if(num_tasks.load() + 1 < num_active_threads) {
+        if(num_tasks.load() <= num_active_threads.load(std::memory_order_relaxed)) {
             mark_done();
             return;
         }

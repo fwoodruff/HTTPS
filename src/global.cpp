@@ -47,12 +47,19 @@ std::vector<std::string> split(const std::string& line, const std::string& delim
 
 options project_options;
 
-void init_options() {
-    const std::filesystem::path config_file = "config.txt"; // todo: make this a command line argument
-    
+std::filesystem::path relative_to(std::filesystem::path query_path, std::filesystem::path relative_to_this) {
+    auto abs_path = std::filesystem::absolute(relative_to_this).lexically_normal();
+    if(query_path.is_relative()) {
+        query_path = abs_path.parent_path() / query_path;
+        query_path = std::filesystem::relative(query_path, std::filesystem::current_path());
+    }
+    return query_path.lexically_normal();
+}
+
+void init_options(std::filesystem::path config_file) {
     auto file = std::ifstream(config_file);
     if(!file.is_open()) {
-        throw std::runtime_error("no config.txt file at " + (std::filesystem::current_path()/config_file.relative_path()).string());
+        throw std::runtime_error("no config.txt file at " + config_file.string());
     }
     std::string key;
     std::string value;
@@ -62,20 +69,25 @@ void init_options() {
         remove_whitespace(value);
         option_map.insert({key, value});
     }
-    // todo: catch errors here
+
     project_options.redirect_port = option_map.at("REDIRECT_PORT");
     project_options.server_port = option_map.at("SERVER_PORT");
     project_options.domain_names = split(option_map.at("DOMAIN_NAMES"), ",");
-    project_options.key_folder = option_map.at("KEY_FOLDER");
+    project_options.default_subfolder = option_map.at("DEFAULT_SUBFOLDER");
+    project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
     project_options.certificate_file = option_map.at("CERTIFICATE_FILE");
     project_options.key_file = option_map.at("KEY_FILE");
-    project_options.webpage_folder = option_map.at("WEBPAGE_FOLDER");
-    project_options.default_subfolder = option_map.at("DEFAULT_SUBFOLDER");
-    project_options.tld_file = option_map.at("TLD_FILE");
-    project_options.mime_folder = option_map.at("MIME_FOLDER");
-    project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
-    project_options.ip_ban_file = (option_map.at( "IP_BAN_PATH"));
 
+    auto mime_dir = option_map.at("MIME_FOLDER");
+    project_options.mime_folder = relative_to(mime_dir, config_file);
+    auto webroot = option_map.at("WEBPAGE_FOLDER");
+    project_options.webpage_folder = relative_to(webroot, config_file);
+    auto tld_file = option_map.at("TLD_FILE");
+    project_options.tld_file = relative_to(tld_file, config_file);
+    auto key_folder = option_map.at("KEY_FOLDER");
+    project_options.key_folder = relative_to(key_folder, config_file);
+    auto ip_log_file = option_map.at( "IP_BAN_PATH");
+    project_options.ip_ban_file = relative_to(ip_log_file, config_file);
 
     using namespace std::chrono_literals;
     // static configurables
@@ -122,5 +134,30 @@ std::string build_iso_8601_current_timestamp() {
     return ts.str();
 }
 
+std::filesystem::path get_config_path(int argc, const char* argv[]) {
+    std::string config_path {};
+    for(int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--config" && i + 1 < argc) {
+            config_path = argv[i+1];
+            i++;
+        }
+    }
+    if(config_path.empty()) {
+        const char* env = std::getenv("CODEYMCCODEFACE_CONFIG");
+        if (env != nullptr) {
+            config_path = env;
+        }
+    }
+    if(config_path.empty()) {
+        config_path = "/etc/codeymccodeface/config.txt";
+    }
+    if (config_path.empty()) {
+        std::filesystem::path exec_path = argv[0];
+        auto config_dir = (exec_path / ".."/ "..").lexically_normal();
+        config_path = config_dir / "config.txt";
+    }
+    return config_path;
+}
 
 }

@@ -124,8 +124,7 @@ void HTTP2::handle_frame(h2frame& frame) {
 }
 
 task<stream_result> HTTP2::send_outbox(bool flush, bool blocking_reader) {
-    guard g(&m_async_mut);
-    co_await m_async_mut.lock();
+    auto guard = co_await m_async_mut.lock();
     {
         // if the event loop is still running hot, defer flushing write buffer
         // this contends with resume_back_pressure()

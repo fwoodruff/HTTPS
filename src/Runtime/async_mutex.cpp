@@ -12,9 +12,11 @@
 
 namespace fbw {
 
-async_mutex::lockable async_mutex::lock() {
-    return lockable {this};
+async_mutex::scope_guard async_mutex::lock() {
+    return scope_guard {this};
 }
+
+async_mutex::scope_guard::scope_guard(async_mutex* ctx) : m_ctx(ctx) {}
 
 void async_mutex::unlock() {
     std::coroutine_handle<> atask = nullptr;
@@ -34,17 +36,18 @@ void async_mutex::unlock() {
     atask.resume();
 }
 
-async_mutex::lockable::lockable(async_mutex* ctx) : m_ctx(ctx) {}
-
-async_mutex::lockable::~lockable() {
+async_mutex::scope_guard::~scope_guard() {
     assert(!is_enqueued);
+    if(m_ctx) {
+        m_ctx->unlock();
+    }
 }
 
-bool async_mutex::lockable::await_ready() const noexcept {
+bool async_mutex::scope_guard::await_ready() const noexcept {
     return false;
 }
 
-bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) noexcept {
+bool async_mutex::scope_guard::await_suspend(std::coroutine_handle<> coroutine) noexcept {
     std::scoped_lock lk { m_ctx->m_mut };
     if(std::exchange(m_ctx->locked, true)) {
         m_ctx->m_queue.push(coroutine);
@@ -54,24 +57,19 @@ bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) noe
     return false;
 }
 
-async_mutex::scope_guard async_mutex::lockable::await_resume() {
+async_mutex::scope_guard async_mutex::scope_guard::await_resume() {
     is_enqueued = false;
-    return scope_guard(m_ctx);
+    return std::move(*this);
 }
 
-async_mutex::scope_guard::scope_guard(async_mutex* ctx) : m_ctx(ctx) {}
-async_mutex::scope_guard::~scope_guard() {
-    if(m_ctx) {
-        m_ctx->unlock();
-    }
-}
-
-async_mutex::scope_guard::scope_guard(scope_guard&& other) {
+async_mutex::scope_guard::scope_guard(scope_guard&& other) noexcept {
+    is_enqueued = std::exchange(other.is_enqueued, false);
     m_ctx = std::exchange(other.m_ctx, nullptr);
 }
 
-async_mutex::scope_guard& async_mutex::scope_guard::operator=(scope_guard&& other) {
+async_mutex::scope_guard& async_mutex::scope_guard::operator=(scope_guard&& other) noexcept {
     if (this != &other) {
+        is_enqueued = std::exchange(other.is_enqueued, false);
         m_ctx = std::exchange(other.m_ctx, nullptr);
     }
     return *this;

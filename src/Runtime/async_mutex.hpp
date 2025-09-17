@@ -16,32 +16,25 @@ namespace fbw {
 
 class async_mutex {
 public:
-    class lockable;
     class scope_guard {
     public:
         scope_guard(const scope_guard&) = delete;
         scope_guard& operator=(const scope_guard&) = delete;
-        scope_guard(scope_guard&&);
-        scope_guard& operator=(scope_guard&&);
+        scope_guard(scope_guard&&) noexcept;
+        scope_guard& operator=(scope_guard&&) noexcept;
         ~scope_guard();
-    private:
-        friend class lockable;
-        scope_guard(async_mutex*);
-        async_mutex* m_ctx = nullptr;
-    };
 
-    class lockable {
-    public:
-        lockable(async_mutex* ctx);
-        ~lockable();
+        scope_guard(async_mutex* m_ctx);
+
         bool await_ready() const noexcept;
         bool await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
         scope_guard await_resume();
     private:
+        friend class lockable;
+        async_mutex* m_ctx = nullptr;
         bool is_enqueued = false;
-        async_mutex* m_ctx;
     };
-    [[nodiscard("should co_await")]] lockable lock();
+    [[nodiscard("should co_await")]] scope_guard lock();
 private:
     void unlock();
     bool locked = false;

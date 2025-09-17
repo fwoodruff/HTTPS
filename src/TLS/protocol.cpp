@@ -102,8 +102,8 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
         if(read_res != stream_result::ok) {
             co_return read_res;
         }
-        if(co_await bail_if_http(input_data) != stream_result::ok) {
-            co_return read_res;
+        if(auto bail_res = co_await bail_if_http(input_data) != stream_result::ok) {
+            co_return bail_res;
         }
         m_engine.process_net_read(output, early_data_buffer, input_data, project_options.handshake_timeout);
         auto bio_res = co_await net_write_all();

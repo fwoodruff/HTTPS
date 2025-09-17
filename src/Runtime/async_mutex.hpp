@@ -38,7 +38,7 @@ public:
         bool await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
         scope_guard await_resume();
     private:
-        [[maybe_unused]] bool is_enqueued = false;
+        bool is_enqueued = false;
         async_mutex* m_ctx;
     };
     [[nodiscard("should co_await")]] lockable lock();

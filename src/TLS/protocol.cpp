@@ -35,8 +35,7 @@ std::string TLS::get_ip() {
 TLS::TLS(std::unique_ptr<stream> output_stream) : m_client(std::move(output_stream) ) {}
 
 task<stream_result> TLS::read_append_common(std::deque<uint8_t>& data, std::optional<milliseconds> timeout, bool return_early) {
-    guard g { &m_async_read_mut };
-    co_await m_async_read_mut.lock();
+    auto guard = co_await m_async_read_mut.lock();
     auto initial_size = data.size();
     if(!early_data_buffer.empty()) {
         data.insert(data.end(), early_data_buffer.begin(), early_data_buffer.end());
@@ -88,8 +87,7 @@ task<stream_result> TLS::bail_if_http(const std::deque<uint8_t>& input_data) {
 }
 
 task<stream_result> TLS::await_message(HandshakeStage stage) {
-    guard g { &m_async_read_mut };
-    co_await m_async_read_mut.lock();
+    auto guard = co_await m_async_read_mut.lock();
     for(;;) {
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return stream_result::closed;
@@ -102,8 +100,8 @@ task<stream_result> TLS::await_message(HandshakeStage stage) {
         if(read_res != stream_result::ok) {
             co_return read_res;
         }
-        if(co_await bail_if_http(input_data) != stream_result::ok) {
-            co_return read_res;
+        if(auto bail_res = co_await bail_if_http(input_data); bail_res != stream_result::ok) {
+            co_return bail_res;
         }
         m_engine.process_net_read(output, early_data_buffer, input_data, project_options.handshake_timeout);
         auto bio_res = co_await net_write_all();
@@ -170,8 +168,7 @@ task<void> TLS::close_notify() {
     if(res != stream_result::ok) {
         co_return;
     }
-    guard g { &m_async_read_mut };
-    co_await m_async_read_mut.lock();
+    auto guard = co_await m_async_read_mut.lock();
     do {
         std::deque<uint8_t> input_data;
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {

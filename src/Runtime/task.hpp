@@ -139,8 +139,7 @@ public:
             if (m_coroutine) {
                 m_coroutine.destroy();
             }
-            m_coroutine = other.m_coroutine;
-            other.m_coroutine = nullptr;
+            m_coroutine = std::exchange(other.m_coroutine, nullptr);
         }
         return *this;
     }

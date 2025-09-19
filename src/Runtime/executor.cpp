@@ -156,13 +156,15 @@ root_task make_root_task(task<void> task) {
 // enqueues an asynchronous task for the executor to run when resources are available
 void executor::spawn(task<void> taskob) {
     auto root = make_root_task(std::move(taskob));
-    num_tasks.fetch_add(1, std::memory_order_relaxed);
+    auto affinity = num_tasks.fetch_add(1, std::memory_order_relaxed);
+    root.m_coroutine.promise().id = affinity;
     m_ready.push(root.m_coroutine);
 }
 
 void executor::commence(task<void> taskob) {
     auto root = make_root_task(std::move(taskob));
-    num_tasks.fetch_add(1, std::memory_order_relaxed);
+    auto affinity = num_tasks.fetch_add(1, std::memory_order_relaxed);
+    root.m_coroutine.promise().id = affinity;
     root.m_coroutine.resume();
 }
 

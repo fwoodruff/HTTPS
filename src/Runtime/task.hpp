@@ -20,12 +20,16 @@
 
 #include <coroutine>
 
+struct promise_metadata {
+    virtual ~promise_metadata() = default;
+    int id = 0;
+};
 
 
 // pared down from Lewis Baker's cppcoro
 template<class T> class task;
 
-class task_promise_base {
+class task_promise_base : public promise_metadata {
 public:
     struct final_awaitable {
         bool await_ready() const noexcept { return false; }
@@ -37,7 +41,13 @@ public:
     };
     std::suspend_always initial_suspend() noexcept { return {}; }
     final_awaitable final_suspend() noexcept { return {}; }
-    void set_continuation(std::coroutine_handle<> continuation) { m_continuation = continuation; }
+    template<typename PROMISE>
+    void set_continuation(std::coroutine_handle<PROMISE> continuation) noexcept {
+        if constexpr (std::derived_from<PROMISE, promise_metadata>) {
+            id = continuation.promise().id;
+        }
+        m_continuation = continuation;
+    }
     void unhandled_exception() {
         m_exception = std::current_exception();
     }
@@ -110,7 +120,8 @@ public:
     using promise_type = task_promise<T>;
     struct awaitable {
         bool await_ready() const noexcept { return !m_coroutine || m_coroutine.done(); }
-        std::coroutine_handle<> await_suspend( std::coroutine_handle<> awaiting_coroutine ) noexcept {
+        template<class Promise>
+        std::coroutine_handle<> await_suspend( std::coroutine_handle<Promise> awaiting_coroutine ) noexcept {
             m_coroutine.promise().set_continuation( awaiting_coroutine );
             return m_coroutine;
         }
@@ -168,7 +179,7 @@ task<T&> task_promise<T&>::get_return_object() noexcept {
 // within <experimental/coroutines>
 class root_task {
 public:
-    struct promise_type {
+    struct promise_type : public promise_metadata {
         root_task get_return_object() noexcept {
             return root_task { std::coroutine_handle<promise_type>::from_promise(*this) };
         }

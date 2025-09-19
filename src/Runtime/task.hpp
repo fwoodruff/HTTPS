@@ -19,12 +19,19 @@
 #include <exception>
 #include <utility>
 #include <coroutine>
+#include <thread>
 
 struct promise_metadata {
     virtual ~promise_metadata() = default;
-    int affinity = 0;
+    std::thread::id affinity {};
 };
 
+inline std::coroutine_handle<promise_metadata> upcast(std::coroutine_handle<> h) noexcept {
+    auto meta = std::coroutine_handle<promise_metadata>::from_address(h.address());
+    promise_metadata& base = meta.promise();
+    assert(dynamic_cast<promise_metadata*>(&base));
+    return meta;
+}
 
 // pared down from Lewis Baker's cppcoro
 template<class T> class task;

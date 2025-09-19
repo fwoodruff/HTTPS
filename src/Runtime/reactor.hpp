@@ -17,6 +17,7 @@
 #include <mutex>
 #include <array>
 #include <map>
+#include <queue>
 
 #include <coroutine>
 
@@ -64,6 +65,16 @@ private:
     std::mutex m_mut;
     std::unordered_map<int, io_handle> park_map;
     std::priority_queue<timer_entry, std::vector<timer_entry>, timer_cmp> m_timers;
+};
+
+class wait_for {
+public:
+    wait_for(milliseconds duration);
+    bool await_ready() const noexcept;
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
+    void await_resume();
+private:
+    milliseconds m_duration;
 };
 
 #endif // reactor_hpp

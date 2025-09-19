@@ -35,7 +35,7 @@ public:
         lockable(async_mutex* ctx);
         ~lockable();
         bool await_ready() const noexcept;
-        bool await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
+        bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
         scope_guard await_resume();
     private:
         [[maybe_unused]] bool is_enqueued = false;

@@ -11,6 +11,7 @@
 #include <thread>
 #include <cassert>
 #include "fcntl.h"
+#include "executor.hpp"
 
 reactor::reactor() {
     int rw[2];
@@ -226,4 +227,17 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     }
 
     return out;
+}
+
+wait_for::wait_for(milliseconds duration) : m_duration(duration) {}
+
+bool wait_for::await_ready() const noexcept {
+    return false;
+}
+bool  wait_for::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+    auto& global_executor = executor_singleton();
+    global_executor.m_reactor.sleep_for(awaiting_coroutine, m_duration);
+}
+void wait_for::await_resume() {
+
 }

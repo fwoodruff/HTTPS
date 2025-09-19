@@ -45,6 +45,18 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
     notify();
 }
 
+void reactor::sleep_for(std::coroutine_handle<> handle, milliseconds dur) {
+    if (!handle) {
+        return;
+    }
+    const auto when = steady_clock::now() + dur;
+    {
+        std::scoped_lock lk{m_mut};
+        m_timers.emplace(when, handle);
+    }
+    notify();
+}
+
 void reactor::notify() {
     char buff = '\0';
     do {
@@ -63,7 +75,7 @@ void reactor::notify() {
 
 size_t reactor::task_count() {
     std::scoped_lock lk { m_mut };
-    return park_map.size();
+    return park_map.size() + m_timers.size();
 }
 
 std::pair<std::optional<time_point<steady_clock>>, std::vector<std::coroutine_handle<>>>
@@ -94,15 +106,45 @@ reactor::wakeup_timeouts( const time_point<steady_clock> &now) {
     return { first_wake, out };
 }
 
+std::pair<std::optional<time_point<steady_clock>>, std::vector<std::coroutine_handle<>>>
+reactor::wakeup_timers(const time_point<steady_clock>& now) {
+
+    std::vector<std::coroutine_handle<>> out;
+    std::optional<time_point<steady_clock>> next_deadline = std::nullopt;
+
+    std::scoped_lock lk {m_mut};
+    while (!m_timers.empty() and m_timers.top().when <= now) {
+        out.push_back(m_timers.top().handle);
+        m_timers.pop();
+    }
+    if (!m_timers.empty()) {
+        next_deadline = m_timers.top().when;
+    }
+    return { next_deadline, out };
+}
+
+template<typename T>
+std::optional<T> max_optional(std::optional<T> a, std::optional<T> b) {
+    if (a && b) {
+        return std::max(*a, *b);
+    }
+    return a ? a : b;
+}
+
 std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     auto now = steady_clock::now();
-    auto [first_wake, out] = wakeup_timeouts(now);
+    auto [first_wake_fd, out] = wakeup_timeouts(now);
+    auto [first_wake_timer, out_timers] = wakeup_timers(now);
+    if (!out_timers.empty()) {
+        out.insert(out.end(), out_timers.begin(), out_timers.end());
+    }
     if(!out.empty()) {
         return out;
     }
     
     std::optional<milliseconds> timeout_duration = std::nullopt;
     
+    auto first_wake = max_optional(first_wake_fd, first_wake_timer);
     if(first_wake) {
         timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
     }
@@ -176,5 +218,12 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
             }
         }
     }
+
+    const auto after = steady_clock::now();
+    auto [_, wakeups_after] = wakeup_timers(after);
+    if (!wakeups_after.empty()) {
+        out.insert(out.end(), wakeups_after.begin(), wakeups_after.end());
+    }
+
     return out;
 }

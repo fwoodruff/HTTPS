@@ -157,14 +157,14 @@ root_task make_root_task(task<void> task) {
 void executor::spawn(task<void> taskob) {
     auto root = make_root_task(std::move(taskob));
     auto affinity = num_tasks.fetch_add(1, std::memory_order_relaxed);
-    root.m_coroutine.promise().id = affinity;
+    root.m_coroutine.promise().affinity = affinity;
     m_ready.push(root.m_coroutine);
 }
 
 void executor::commence(task<void> taskob) {
     auto root = make_root_task(std::move(taskob));
     auto affinity = num_tasks.fetch_add(1, std::memory_order_relaxed);
-    root.m_coroutine.promise().id = affinity;
+    root.m_coroutine.promise().affinity = affinity;
     root.m_coroutine.resume();
 }
 

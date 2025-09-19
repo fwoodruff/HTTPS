@@ -22,7 +22,7 @@
 
 struct promise_metadata {
     virtual ~promise_metadata() = default;
-    int id = 0;
+    int affinity = 0;
 };
 
 
@@ -44,7 +44,7 @@ public:
     template<typename PROMISE>
     void set_continuation(std::coroutine_handle<PROMISE> continuation) noexcept {
         if constexpr (std::derived_from<PROMISE, promise_metadata>) {
-            id = continuation.promise().id;
+            affinity = continuation.promise().affinity;
         }
         m_continuation = continuation;
     }

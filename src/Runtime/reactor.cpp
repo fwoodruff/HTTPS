@@ -136,9 +136,9 @@ reactor::wakeup_timers(const time_point<steady_clock>& now) {
 }
 
 template<typename T>
-std::optional<T> max_optional(std::optional<T> a, std::optional<T> b) {
+std::optional<T> min_optional(std::optional<T> a, std::optional<T> b) {
     if (a && b) {
-        return std::max(*a, *b);
+        return std::min(*a, *b);
     }
     return a ? a : b;
 }
@@ -156,7 +156,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     
     std::optional<milliseconds> timeout_duration = std::nullopt;
     
-    auto first_wake = max_optional(first_wake_fd, first_wake_timer);
+    auto first_wake = min_optional(first_wake_fd, first_wake_timer);
     if(first_wake) {
         timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
     }

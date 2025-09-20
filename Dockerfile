@@ -1,4 +1,6 @@
 FROM gcc:14 AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    liburing-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /
 COPY src/ src/
 COPY makefile .

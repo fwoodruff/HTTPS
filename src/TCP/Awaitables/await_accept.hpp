@@ -14,20 +14,23 @@
 
 #include <coroutine>
 
+#include <sys/socket.h>
 
+#include "await_stream.hpp"
 
 namespace fbw {
 
 class tcp_stream;
 
-class acceptable {
+class acceptable : awaitable_base {
 public:
     acceptable(int sfd);
     bool await_ready() const noexcept;
-    void await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
     std::optional<tcp_stream> await_resume();
 private:
     int m_server_fd;
+    struct ::sockaddr_storage m_client_address;
 };
 }
 

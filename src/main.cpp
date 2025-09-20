@@ -147,7 +147,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
             auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
             
-            async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
+            fbw::async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
         } catch(const std::exception& e) {
             std::println(stderr, "{}\n", e.what());
         }
@@ -181,7 +181,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
                 continue;
             }
             auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
-            async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
+            fbw::async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
             
         } catch(const std::exception& e ) {
             std::println(stderr, "{}\n", e.what());
@@ -201,8 +201,8 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         std::fflush(stdout);
 
         auto ip_connections = std::make_shared<limiter>();
-        async_spawn(https_server(ip_connections, std::move(https_listener)));
-        async_spawn(redirect_server(ip_connections, std::move(http_listener)));
+        fbw::async_spawn(https_server(ip_connections, std::move(https_listener)));
+        fbw::async_spawn(redirect_server(ip_connections, std::move(http_listener)));
 
     } catch(const std::exception& e) {
         auto default_key_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.key_file;
@@ -230,9 +230,12 @@ int main(int argc, const char * argv[]) {
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
 
-        int io_uring_queue_init(128, &m_ring, 0);
+        int succ = io_uring_queue_init(128, &m_ring, 0);
+        if(succ != 0) {
+            std::println(stderr, "io_uring error: {}\n", succ);
+        }
 
-        run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
+        fbw::run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {
         std::println(stderr, "main: {}\n", e.what());
     }

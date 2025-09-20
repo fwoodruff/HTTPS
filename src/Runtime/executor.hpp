@@ -25,7 +25,7 @@
 using namespace std::chrono;
 using namespace std::chrono_literals;
 
-
+namespace fbw {
 class executor {
 public:
     friend void async_spawn(task<void> subtask);
@@ -77,5 +77,7 @@ struct yield_coroutine {
     }
     void await_resume() noexcept { }
 };
+
+}
 
 #endif // executor_hpp

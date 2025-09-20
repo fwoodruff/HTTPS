@@ -12,12 +12,18 @@
 #include <sys/socket.h>
 #include <liburing.h>
 #include <span>
+#include "../../Runtime/reactor.hpp"
 
 using namespace std::chrono_literals;
 using namespace std::chrono;
 
 namespace fbw {
 
+
+stream_result to_stream_result(int res) {
+    if(res >= 0) return stream_result::ok;        // successful read/write
+    return stream_result::closed;
+}
 
 readable::readable(int fd, std::span<uint8_t>& bytes, std::optional<milliseconds> millis ) :
     m_fd(fd), m_buffer(&bytes), m_millis(millis) {}
@@ -32,12 +38,12 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
     this_coro = continuation;
     io_uring_sqe* sqe = io_uring_get_sqe(&m_ring);
     if (!sqe) {
-        m_res = stream_result::closed;
+        m_res = -ECONNREFUSED; // if this fails, store the sqe in thread_local
         return false;
     }
     io_uring_sqe* ts_sqe = io_uring_get_sqe(&m_ring);
-    if (!sqe) {
-        m_res = stream_result::closed;
+    if (!ts_sqe) {
+        m_res = -ECONNRESET;
         return false;
     }
     io_uring_prep_recv(sqe, m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
@@ -55,7 +61,7 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
 }
 
 std::pair<std::span<uint8_t>, stream_result> readable::await_resume() {
-    return {m_bytes_read, m_res};
+    return {m_bytes_read, to_stream_result(m_res)};
 }
 
 writeable::writeable(int fd, std::span<const uint8_t>& bytes, std::optional<milliseconds> millis )
@@ -71,7 +77,20 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
     this_coro = continuation;
     io_uring_sqe* sqe = io_uring_get_sqe(&m_ring);
     if (!sqe) {
-        m_res = stream_result::closed;
+        m_res = -ECONNRESET;
+        return false;
+    }
+    io_uring_sqe* ts_sqe = io_uring_get_sqe(&m_ring);
+    if (!ts_sqe) {
+        m_res = -ECONNRESET;
+        if (!ts_sqe) {
+            io_uring_prep_nop(sqe);
+            uint64_t user_data = std::bit_cast<uint64_t>(this);
+            sqe->user_data = user_data;
+            // We intentionally submit the NOP so the completion loop will run and resume the coroutine.
+            (void)io_uring_submit(&m_ring);
+            return true; // suspended — completion handler should resume this_coro
+        }
         return false;
     }
     io_uring_prep_send(sqe, m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
@@ -90,7 +109,7 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
 }
 
 std::pair<std::span<const uint8_t>, stream_result> writeable::await_resume() {
-    return { m_bytes_written, m_res };
+    return { m_bytes_written, to_stream_result(m_res) };
 }
 
 } // namespace

@@ -13,6 +13,8 @@
 #include <cassert>
 #include <utility>
 
+namespace fbw {
+
 static const size_t NUM_THREADS = std::thread::hardware_concurrency();
 using namespace std::chrono;
 using namespace std::chrono_literals;
@@ -193,4 +195,4 @@ executor& executor_singleton() {
     return global_executor;
 }
 
-
+}

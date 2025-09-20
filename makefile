@@ -13,7 +13,7 @@ else
 endif
 
 ifeq ($(STATIC),1)
-	LDFLAGS += -static -static-libstdc++ -static-libgcc
+	LDFLAGS += -static -static-libstdc++ -static-libgcc -luring
 endif
 
 # Directories

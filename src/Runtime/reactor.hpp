@@ -19,10 +19,14 @@
 #include <queue>
 
 #include <coroutine>
+#include <liburing.h>
+
+namespace fbw {
 
 using namespace std::chrono;
 enum class IO_direction { Read, Write };
 
+extern struct ::io_uring m_ring;
 
 class reactor {
 public:
@@ -76,5 +80,7 @@ public:
 private:
     milliseconds m_duration;
 };
+
+}
 
 #endif // reactor_hpp

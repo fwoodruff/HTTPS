@@ -44,7 +44,7 @@ bool async_mutex::lockable::await_ready() const noexcept {
     return false;
 }
 
-bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) noexcept {
+bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) {
     std::scoped_lock lk { m_ctx->m_mut };
     if(std::exchange(m_ctx->locked, true)) {
         m_ctx->m_queue.push(coroutine);

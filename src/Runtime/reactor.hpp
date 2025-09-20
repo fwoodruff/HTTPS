@@ -31,6 +31,7 @@ public:
                   std::optional<milliseconds> timeout = std::nullopt);
 
     void sleep_for(std::coroutine_handle<> handle, milliseconds duration);
+    void sleep_until(std::coroutine_handle<> handle, time_point<steady_clock> when);
     
     size_t task_count();
     void notify();
@@ -70,7 +71,7 @@ class wait_for {
 public:
     wait_for(milliseconds duration);
     bool await_ready() const noexcept;
-    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
+    void await_suspend(std::coroutine_handle<> awaiting_coroutine);
     void await_resume();
 private:
     milliseconds m_duration;

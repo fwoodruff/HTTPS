@@ -58,6 +58,17 @@ void reactor::sleep_for(std::coroutine_handle<> handle, milliseconds dur) {
     notify();
 }
 
+void reactor::sleep_until(std::coroutine_handle<> handle, time_point<steady_clock> when) {
+    if (!handle) {
+        return;
+    }
+    {
+        std::scoped_lock lk{m_mut};
+        m_timers.emplace(when, handle);
+    }
+    notify();
+}
+
 void reactor::notify() {
     char buff = '\0';
     do {
@@ -234,7 +245,7 @@ wait_for::wait_for(milliseconds duration) : m_duration(duration) {}
 bool wait_for::await_ready() const noexcept {
     return false;
 }
-bool  wait_for::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+void  wait_for::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
     auto& global_executor = executor_singleton();
     global_executor.m_reactor.sleep_for(awaiting_coroutine, m_duration);
 }

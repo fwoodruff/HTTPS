@@ -69,6 +69,7 @@ void executor::thread_function() {
                 mark_done();
                 return;
             }
+            upcast(*task).promise().affinity = std::this_thread::get_id();
             task->resume();
             continue;
         }
@@ -83,6 +84,7 @@ void executor::thread_function() {
             mark_done();
             return;
         }
+        upcast(task_b).promise().affinity = std::this_thread::get_id();
         task_b.resume();
     }
 }
@@ -128,6 +130,7 @@ void executor::main_thread_function() {
             m_threadpool.emplace_back(&executor::thread_function, this);
         }
         reap_done();
+        upcast(*task).promise().affinity = std::this_thread::get_id();
         task->resume();
     }
 }
@@ -163,6 +166,7 @@ void executor::spawn(task<void> taskob) {
 void executor::commence(task<void> taskob) {
     auto root = make_root_task(std::move(taskob));
     num_tasks.fetch_add(1, std::memory_order_relaxed);
+    root.m_coroutine.promise().affinity = std::this_thread::get_id();
     root.m_coroutine.resume();
 }
 

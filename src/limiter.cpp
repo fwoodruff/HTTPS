@@ -16,8 +16,10 @@ connection_token::connection_token(connection_token&& other) : lim(other.lim), i
     other.lim.reset();
 };
 connection_token& connection_token::operator=(connection_token&& other) {
-    lim = std::exchange(other.lim, std::weak_ptr<limiter>{});
-    ip = std::move(other.ip);
+    if(this != &other) {
+        lim = std::exchange(other.lim, std::weak_ptr<limiter>{});
+        ip = std::move(other.ip);
+    }
     return *this;
 }
 

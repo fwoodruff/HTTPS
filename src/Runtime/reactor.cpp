@@ -67,3 +67,16 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     }
     return handles;
 }
+
+wait_for::wait_for(milliseconds duration) : m_duration(duration) {}
+
+bool wait_for::await_ready() const noexcept {
+    return false;
+}
+void  wait_for::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+    auto& global_executor = executor_singleton();
+    global_executor.m_reactor.sleep_for(awaiting_coroutine, m_duration);
+}
+void wait_for::await_resume() {
+
+}

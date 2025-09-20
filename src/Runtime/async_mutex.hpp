@@ -16,31 +16,37 @@ namespace fbw {
 
 class async_mutex {
 public:
-    class lockable {
-        public:
-        lockable(async_mutex* ctx);
-        bool await_ready() const noexcept;
-        bool await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
-        void await_resume();
+    class lockable;
+    class scope_guard {
+    public:
+        scope_guard(const scope_guard&) = delete;
+        scope_guard& operator=(const scope_guard&) = delete;
+        scope_guard(scope_guard&&);
+        scope_guard& operator=(scope_guard&&);
+        ~scope_guard();
     private:
+        friend class lockable;
+        scope_guard(async_mutex*);
+        async_mutex* m_ctx = nullptr;
+    };
+
+    class lockable {
+    public:
+        lockable(async_mutex* ctx);
+        ~lockable();
+        bool await_ready() const noexcept;
+        bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
+        scope_guard await_resume();
+    private:
+        [[maybe_unused]] bool is_enqueued = false;
         async_mutex* m_ctx;
     };
-    lockable lock();
-    void maybe_unlock(); // multiple calls to maybe_unlock() acceptable
+    [[nodiscard("should co_await")]] lockable lock();
 private:
+    void unlock();
     bool locked = false;
     std::mutex m_mut;
     std::queue<std::coroutine_handle<>> m_queue;
-};
-
-class guard {
-public:
-    guard(const guard&) = delete;
-    guard& operator=(const guard&) = delete;
-    guard(async_mutex*);
-    ~guard();
-private:
-    async_mutex* m_ctx = nullptr;
 };
 
 }

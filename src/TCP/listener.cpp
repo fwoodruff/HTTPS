@@ -146,7 +146,9 @@ tcplistener::tcplistener(tcplistener&& other) : m_fd(std::exchange(other.m_fd, -
 }
 
 tcplistener& tcplistener::operator=(tcplistener&& other) {
-    this->m_fd = std::exchange(other.m_fd, -1);
+    if(this != &other) {
+        this->m_fd = std::exchange(other.m_fd, -1);
+    }
     return *this;
 }
 

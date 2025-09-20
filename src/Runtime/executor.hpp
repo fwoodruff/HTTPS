@@ -70,7 +70,8 @@ struct yield_coroutine {
     bool await_ready() const noexcept {
         return false;
     }
-    void await_suspend(std::coroutine_handle<> handle) noexcept {
+    template<typename PROMISE> requires std::derived_from<PROMISE, promise_metadata>
+    void await_suspend(std::coroutine_handle<PROMISE> handle) noexcept {
         auto& global_executor = executor_singleton();
         global_executor.m_ready.push(handle);
     }

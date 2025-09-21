@@ -1,3 +1,4 @@
+# docker build -t test .
 FROM gcc:14 AS builder
 WORKDIR /
 COPY src/ src/

@@ -44,7 +44,7 @@ struct std::hash<fbw::entry_t> {
 
 namespace fbw {
 
-class http_ctx {
+class http_ctx : public std::enable_shared_from_this<http_ctx> {
 public:
     virtual std::vector<entry_t> get_headers() = 0;
     virtual task<std::pair<stream_result, bool>> append_http_data(std::deque<uint8_t>& buffer) = 0; // bool end

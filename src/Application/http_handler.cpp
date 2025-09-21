@@ -7,6 +7,7 @@
 
 #include "http_handler.hpp"
 #include "../Runtime/task.hpp"
+#include "../Runtime/reactor.hpp"
 #include "../HTTP/common/HTTP.hpp"
 #include "../HTTP/common/string_utils.hpp"
 #include "../HTTP/common/mimemap.hpp"
@@ -286,6 +287,23 @@ std::string get_host(const std::vector<entry_t>& request_headers) {
     return dir_host;
 }
 
+task<void> websocket_handling(http_ctx& connection, const std::vector<fbw::entry_t>& request_headers) {
+    websocket_handler ws_handler(connection.shared_from_this());
+    ws_handler.on_text_message = [](std::string message) {};
+    
+    if(auto res = co_await ws_handler.listen(request_headers); res != stream_result::ok) {
+        co_return;
+    }
+    while(true) {
+        auto res = co_await ws_handler.send_text_message("hello world");
+        if(res != stream_result::ok) {
+            co_return;
+        }
+        co_await wait_for(500ms);
+    }
+    co_return;
+}
+
 task<bool> handle_request(http_ctx& connection) {
     const std::vector<entry_t> request_headers = connection.get_headers();
     const auto method = find_header(request_headers, ":method");
@@ -302,7 +320,7 @@ task<bool> handle_request(http_ctx& connection) {
     ip_ban.flush();
     
     if(is_websocket_upgrade(request_headers)) {
-        co_await handle_websocket(connection, request_headers);
+        co_await websocket_handling(connection, request_headers);
         co_return false;
     }
 

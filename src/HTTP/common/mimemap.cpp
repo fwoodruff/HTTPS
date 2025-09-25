@@ -13,7 +13,6 @@
 #include <unordered_map>
 #include <string>
 #include <fstream>
-#include <sstream>
 #include <vector>
 #include <mutex>
 
@@ -30,16 +29,17 @@ std::unordered_map<std::string,std::string> MIME_csv_to_map(const std::filesyste
     std::string line;
     std::unordered_map<std::string,std::string> MIME_types;
     while(std::getline(file, line)) {
-        std::istringstream s(line);
-        std::string field;
-        std::vector<std::string> fields;
-        while (std::getline(s, field,',')) {
-            fields.push_back(field);
+        auto pos = line.find(',');
+        if (pos == std::string::npos) {
+            continue;
         }
-        if(fields.size() < 2) {
-            throw std::logic_error("failed to read MIMEs");
+        auto pos2 = line.find(',', pos+1);
+        if (pos2 == std::string::npos) {
+            continue;
         }
-        MIME_types.insert({fields[0],fields[1]});
+        auto key = line.substr(0, pos);
+        auto value = line.substr(pos + 1, pos2 - pos - 1);
+        MIME_types.insert({key,value});
     }
     return MIME_types;
 }

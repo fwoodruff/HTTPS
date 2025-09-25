@@ -9,6 +9,8 @@
 
 #include "../../Runtime/executor.hpp"
 
+#include <iostream>
+
 namespace fbw {
 
 bool HTTP1::is_done() {
@@ -17,7 +19,8 @@ bool HTTP1::is_done() {
 
 std::string convert_response_to_http1_headers(const std::vector<entry_t>& headers) {
     std::string status;
-    std::ostringstream out;
+    std::string out;
+    out.reserve(256);
     try {
         for (const auto& h : headers) {
             if (h.name == ":status") {
@@ -26,15 +29,23 @@ std::string convert_response_to_http1_headers(const std::vector<entry_t>& header
         }
         auto code = std::stoll(status);
         auto msg = http_code_map.at(code);
-        out << "HTTP/1.1 " << status << " " << msg << "\r\n";
+        out.append("HTTP/1.1 ");
+        out.append(status);
+        out.append(" ");
+        out.append(msg);
+        out.append("\r\n");
         for (const auto& h : headers) {
             if (h.name.starts_with(":")) {
                 continue;
             }
-            out << h.name << ": " << h.value << "\r\n";
+            out.append(h.name);
+            out.append(": ");
+            out.append(h.value);
+            out.append("\r\n");
         }
-        out << "\r\n";
-        return out.str();
+        out.append("\r\n");
+        std::cout << out.size() << std::endl;
+        return out;
     } catch(const std::exception& e) {
         return {};
     }

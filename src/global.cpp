@@ -9,7 +9,6 @@
 
 #include <string>
 #include <fstream>
-#include <sstream>
 #include <unordered_map>
 #include <mutex>
 #include <algorithm>
@@ -19,6 +18,7 @@
 
 #include <iomanip>
 #include <ctime>
+#include <format>
 
 #include <filesystem>
 
@@ -126,12 +126,15 @@ std::string base64_encode(const std::vector<uint8_t>& data) {
 
 std::string build_iso_8601_current_timestamp() {
     auto now = std::chrono::system_clock::now();
-    auto tt = std::chrono::system_clock::to_time_t(now);
+    auto tt  = std::chrono::system_clock::to_time_t(now);
     std::tm tm = *std::gmtime(&tt);
-    auto t = std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    std::ostringstream ts;
-    ts << t;
-    return ts.str();
+    return std::format("{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z",
+                       tm.tm_year + 1900,
+                       tm.tm_mon + 1,
+                       tm.tm_mday,
+                       tm.tm_hour,
+                       tm.tm_min,
+                       tm.tm_sec);
 }
 
 std::filesystem::path get_config_path(int argc, const char* argv[]) {
@@ -161,6 +164,20 @@ std::filesystem::path get_config_path(int argc, const char* argv[]) {
         config_path = "/etc/codeymccodeface/config.txt";
     }
     return config_path;
+}
+
+std::string to_hex(uint64_t value) {
+    if (value == 0) {
+        return "0";
+    }
+    static constexpr char digits[]  = "0123456789abcdef";
+    char buf[16];
+    int pos = 16;
+    while (value > 0) {
+        buf[--pos] = digits[value & 0xF];
+        value >>= 4;
+    }
+    return std::string(&buf[pos], 16 - pos);
 }
 
 }

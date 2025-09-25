@@ -122,6 +122,9 @@ std::vector<std::string> split(const std::string& line, const std::string& delim
 
 std::string base64_encode(const std::vector<uint8_t>& data);
 
+
+std::string to_hex(uint64_t value);
+
 } // namespace fbw
 
 #endif // global_hpp

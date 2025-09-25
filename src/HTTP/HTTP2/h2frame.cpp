@@ -8,7 +8,6 @@
 #include "h2frame.hpp"
 #include "../../global.hpp"
 
-#include <sstream>
 
 namespace fbw {
 
@@ -242,28 +241,27 @@ std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const std::vector<uint
 }
 
 std::string pretty_flags(uint8_t flags, bool can_ack) {
-    std::stringstream out;
+    std::string out;
     if(flags & h2_flags::END_HEADERS) {
-        out << " END_HEADERS";
+        out.append(" END_HEADERS");
     }
     if(flags & (h2_flags::END_STREAM | h2_flags::ACK)) {
         if(can_ack) {
-            out << " ACK";
+            out.append(" ACK");
         } else {
-            out << " END_STREAM";
+            out.append(" END_STREAM");
         }
     }
     if(flags & h2_flags::PADDED) {
-        out << " PADDED";
+        out.append(" PADDED");
     }
     if(flags & h2_flags::PRIORITY) {
-        out << " PRIORITY";
+        out.append(" PRIORITY");
     }
-    return out.str();
+    return out;
 }
 
 std::vector<uint8_t> h2frame::serialise_common(size_t reserved) const {
-    // std::cout << "sent:     " << pretty() << std::endl;
     std::vector<uint8_t> out;
     out.reserve(reserved);
     out.insert(out.end(), {0,0,0});
@@ -286,26 +284,14 @@ std::vector<uint8_t> h2_data::serialise() const {
 }
 
 std::string h2_data::pretty() const {
-    std::stringstream out;
-    out << "type: DATA,          stream id: " << stream_id << " data size: " << contents.size();
-    /*
-    out << " data: ";
-    uint32_t non_ascii_char_count = 0;
-    for(uint8_t c : contents) {
-        if((c >= 32 and c <= 126) or c == 10) {
-            out << char(c);
-        } else {
-            non_ascii_char_count++;
-            out << '.';
-            if(non_ascii_char_count > 10) {
-                out << " ... etc. binary data";
-                break;
-            }
-        }
-    }
-    */
-    out << pretty_flags(flags, false);
-    return out.str();
+    std::string out;
+    out.reserve(72);
+    out.append("type: DATA,          stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" data size: ");
+    out.append(std::to_string(contents.size()));
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 std::vector<uint8_t> h2_headers::serialise() const { 
@@ -326,14 +312,17 @@ std::vector<uint8_t> h2_headers::serialise() const {
 }
 
 std::string h2_headers::pretty() const {
-    std::stringstream out;
-    out << "type: HEADERS,       stream id: " << stream_id;
-    out << " field block fragment size: " << field_block_fragment.size();
+    std::string out;
+    out.reserve(128);
+    out.append("type: HEADERS,       stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" field block fragment size: ");
+    out.append(std::to_string(field_block_fragment.size()));
     if(exclusive) {
-        out << " exclusive";
+        out.append(" exclusive");
     }
-    out << pretty_flags(flags, false);
-    return out.str();
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 std::vector<uint8_t> h2_priority::serialise() const {
@@ -347,12 +336,14 @@ std::vector<uint8_t> h2_priority::serialise() const {
 }
 
 std::string h2_priority::pretty() const {
-    std::stringstream out;
-    out << "type: PRIORITY" << pretty_flags(flags, false);
+    std::string out;
+    out.reserve(64);
+    out.append("type: PRIORITY");
+    out.append(pretty_flags(flags, false));
     if(exclusive) {
-        out << " exclusive";
+        out.append(" exclusive");
     }
-    return out.str();
+    return out;
 }
 
 std::vector<uint8_t> h2_rst_stream::serialise() const {
@@ -364,9 +355,14 @@ std::vector<uint8_t> h2_rst_stream::serialise() const {
 }
 
 std::string h2_rst_stream::pretty() const {
-    std::stringstream out;
-    out << "type: RST_STREAM,           id: " << stream_id << " " << "error code: " << std::hex << unsigned(error_code) << pretty_flags(flags, false);
-    return out.str();
+    std::string out;
+    out.reserve(64);
+    out.append("type: RST_STREAM,           id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" error code: ");
+    out.append(to_hex(unsigned(error_code)));
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 std::vector<uint8_t> h2_settings::serialise() const {
@@ -381,16 +377,22 @@ std::vector<uint8_t> h2_settings::serialise() const {
 }
 
 std::string h2_settings::pretty() const {
-    std::stringstream out;
-    out << "type: SETTINGS,      stream id: " << stream_id;
+    std::string out;
+    out.reserve(128);
+    out.append("type: SETTINGS,      stream id: ");
+    out.append(std::to_string(stream_id));
     if(!settings.empty()) {
-        out << " settings:";
+        out.append(" settings:");
     }
     for(auto setting : settings) {
-        out << " id: " << unsigned(setting.identifier) << " v: " << unsigned(setting.value) << ",";
+        out.append(" id: ");
+        out.append(std::to_string(unsigned(setting.identifier)));
+        out.append(" v: ");
+        out.append(std::to_string(unsigned(setting.value)));
+        out.append(",");
     }
-    out << pretty_flags(flags, true);
-    return out.str();
+    out.append(pretty_flags(flags, true));
+    return out;
 }
 
 std::vector<uint8_t> h2_push_promise::serialise() const { 
@@ -408,9 +410,12 @@ std::vector<uint8_t> h2_push_promise::serialise() const {
 
 
 std::string h2_push_promise::pretty() const {
-    std::stringstream out;
-    out << "type: PUSH PROMISE,  stream id: " << stream_id << " " << pretty_flags(flags, false);
-    return out.str();
+    std::string out;
+    out.reserve(72);
+    out.append("type: PUSH PROMISE,  stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 std::vector<uint8_t> h2_ping::serialise() const { 
@@ -422,9 +427,13 @@ std::vector<uint8_t> h2_ping::serialise() const {
 }
 
 std::string h2_ping::pretty() const {
-    std::stringstream out;
-    out << "type: PING,          stream id: " << stream_id << " opaque: " << opaque << pretty_flags(flags, true);
-    return out.str();
+    std::string out;
+    out.reserve(72);
+    out.append( "type: PING,          stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" opaque: ");
+    out.append(pretty_flags(flags, true));
+    return out;
 }
 
 std::vector<uint8_t> h2_goaway::serialise() const { 
@@ -439,14 +448,20 @@ std::vector<uint8_t> h2_goaway::serialise() const {
 }
 
 std::string h2_goaway::pretty() const {
-    std::stringstream out;
-    out << "type: GOAWAY,        stream id: " << stream_id << " error code: " << unsigned(error_code);
-    out << " last stream id: " << last_stream_id;
+    std::string out;
+    out.reserve(72);
+    out.append("type: GOAWAY,        stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" error code: ");
+    out.append(std::to_string(unsigned(error_code)));
+    out.append(" last stream id: ");
+    out.append(std::to_string(last_stream_id));
     if(!additional_debug_data.empty()) {
-        out << " error: " << additional_debug_data;
+        out.append(" error: ");
+        out.append(additional_debug_data);
     }
-    out << pretty_flags(flags, false);
-    return out.str();
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 std::vector<uint8_t> h2_window_update::serialise() const { 
@@ -458,9 +473,14 @@ std::vector<uint8_t> h2_window_update::serialise() const {
 }
 
 std::string h2_window_update::pretty() const {
-    std::stringstream out;
-    out << "type: WINDOW UPDATE, stream id: " << stream_id << " increment: " << window_size_increment << pretty_flags(flags, false);
-    return out.str();
+    std::string out;
+    out.reserve(72);
+    out.append("type: WINDOW UPDATE, stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" increment: ");
+    out.append(std::to_string(window_size_increment));
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 std::vector<uint8_t> h2_continuation::serialise() const {
@@ -471,13 +491,16 @@ std::vector<uint8_t> h2_continuation::serialise() const {
 }
 
 std::string h2_continuation::pretty() const {
-    std::stringstream out;
-    out << "type: CONTINUATION, stream id: " << stream_id << " field block fragment:";
-    for(unsigned c : field_block_fragment) {
-        out << ' ' << std::hex << std::setfill(' ') << std::setw(2) << c;
+    std::string out;
+    out.reserve(256);
+    out.append("type: CONTINUATION, stream id: ");
+    out.append(std::to_string(stream_id));
+    out.append(" field block fragment:");
+    for (unsigned c : field_block_fragment) {
+        out += std::format(" {:02x}", c & 0xff);
     }
-    out << pretty_flags(flags, false);
-    return out.str();
+    out.append(pretty_flags(flags, false));
+    return out;
 }
 
 void set_base_frame_values(h2frame& frame, const std::vector<uint8_t>& frame_bytes) {

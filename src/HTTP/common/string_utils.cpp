@@ -15,7 +15,6 @@
 #include <ctime>
 #include <iomanip>
 #include <unordered_set>
-#include <sstream>
 #include <cassert>
 #include <algorithm>
 #include <deque>
@@ -342,24 +341,6 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
 
 
 
-std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header) {
-    std::ostringstream oss;
-    oss << "HTTP/1.1 " << status << "\r\n";
-    size_t content_size = 0;
-    for(auto [k, v] : header) {
-        if(k == "Content-Length") {
-            content_size = std::stol(v);
-        }
-        oss << k << ": " << v << "\r\n";
-    }
-    std::string head = oss.str();
-    const std::string pad = "paddingpadding";
-    size_t padding_length = ((content_size + head.size()) % (pad.size() - 1)) + 1;
-    head += "X-Padding: " + std::string(pad.c_str(), padding_length);
-    head += "\r\n\r\n";
-
-    return to_unsigned(head);
-}
 
 std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_t, ssize_t>& range) {
     ssize_t begin;
@@ -391,14 +372,18 @@ std::string error_to_html(int status, std::string message) {
     if(it != http_code_map.end()) {
         standard_msg = it->second;
     }
-    std::ostringstream oss;
-    oss << "<!DOCTYPE html>\n"
-        << "<html>\n"
-        << "<head><title>\n" << status << " " << standard_msg << "\n"
-        << "</title></head>\n"
-        << "\t<body><h1>\n" << status << " " << message << "</h1></body>\n" 
-        << "</html>";
-    return oss.str();
+    std::string oss;
+    oss.reserve(256);
+    oss.append("<!DOCTYPE html>\n<html>\n<head><title>\n");
+    oss.append(std::to_string(status));
+    oss.append(" ");
+    oss.append(standard_msg);
+    oss.append("\n</title></head>\n\t<body><h1>\n");
+    oss.append(std::to_string(status));
+    oss.append(" ");
+    oss.append(message);
+    oss.append("</h1></body>\n</html>");
+    return oss;
 }
 
 

@@ -203,7 +203,6 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         auto default_key_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.key_file;
         auto default_certificate_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.certificate_file;
         std::println(stderr, "{}", e.what());
-        std::println(stderr, "{}", e.what());
         std::println(stderr, "Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).lexically_normal().string());
         std::println(stderr, "Key file: {}", std::filesystem::absolute(default_key_file).lexically_normal().string());
         std::println(stderr, "Certificate file: {}", std::filesystem::absolute(default_certificate_file).lexically_normal().string());

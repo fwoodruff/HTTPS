@@ -11,7 +11,6 @@
 #include <cassert>
 #include <string>
 #include <array>
-#include <fstream>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -124,6 +123,8 @@ std::string base64_encode(const std::vector<uint8_t>& data);
 
 
 std::string to_hex(uint64_t value);
+
+std::optional<std::string> file_to_string(std::filesystem::path filename);
 
 } // namespace fbw
 

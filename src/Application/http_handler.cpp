@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <string>
+#include <fstream>
 
 namespace fbw {
 

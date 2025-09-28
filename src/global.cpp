@@ -180,4 +180,19 @@ std::string to_hex(uint64_t value) {
     return std::string(&buf[pos], 16 - pos);
 }
 
+std::optional<std::string> file_to_string(std::filesystem::path filename) {
+    auto sz = std::filesystem::file_size(filename);
+    FILE* f = std::fopen(filename.string().c_str(), "rb");
+    if (!f) {
+        return std::nullopt;
+    }
+    std::string file(sz, '\0');
+    if (std::fread(file.data(), 1, sz, f) != static_cast<size_t>(sz)) {
+        std::fclose(f);
+        return std::nullopt;
+    }
+    std::fclose(f);
+    return file;
+}
+
 }

@@ -18,6 +18,7 @@
 #include <cassert>
 #include <algorithm>
 #include <deque>
+#include <fstream>
 
 namespace fbw {
 

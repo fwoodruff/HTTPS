@@ -18,7 +18,6 @@
 
 namespace fbw {
 
-ssize_t get_file_size(std::filesystem::path filename);
 std::string moved_301();
 
 } // namespace fbw

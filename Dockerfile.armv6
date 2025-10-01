@@ -6,16 +6,37 @@ FROM debian:sid-20250428
 
 RUN dpkg --add-architecture amd64 && apt-get update && \
     apt-get install -y libc6:amd64 libstdc++6:amd64 curl \
-        crossbuild-essential-armel libstdc++-14-dev-armel-cross build-essential libc6-armel-cross
+        crossbuild-essential-armel libstdc++-14-dev-armel-cross build-essential libc6-armel-cross \
+        xz-utils ca-certificates
 
-RUN curl -L https://github.com/tttapa/toolchains/releases/download/1.1.0/x-tools-armv6-rpi-linux-gnueabihf-gcc15.tar.xz | tar -xJ -C /opt
+RUN dpkg --add-architecture armhf && apt-get update
 
+RUN curl -L https://github.com/tttapa/toolchains/releases/download/1.1.0/x-tools-armv6-rpi-linux-gnueabihf-gcc15.tar.xz \
+    | tar -xJ -C /opt
 ENV PATH="/opt/x-tools/armv6-rpi-linux-gnueabihf/bin:${PATH}"
+
+RUN mkdir -p /lib64 && ln -sf /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2 || true
+
+RUN set -eux; \
+    cd /tmp; \
+    (apt-get download linux-libc-dev:armhf || apt-get download linux-libc-dev); \
+    dpkg-deb -x linux-libc-dev_*.deb \
+      /opt/x-tools/armv6-rpi-linux-gnueabihf/armv6-rpi-linux-gnueabihf/sysroot/; \
+    rm -f linux-libc-dev_*.deb
+
+RUN apt-get update && apt-get install -y liburing-dev:armhf liburing2:armhf
+
+RUN set -eux; \
+    cd /tmp; \
+    apt-get download liburing-dev:armhf liburing2:armhf; \
+    for deb in *.deb; do \
+        dpkg-deb -x $deb /opt/x-tools/armv6-rpi-linux-gnueabihf/armv6-rpi-linux-gnueabihf/sysroot/; \
+    done; \
+    rm -f *.deb
 
 WORKDIR /
 COPY src/ src/
 COPY makefile .
 
-RUN make PLATFORM=armv6 -j$(nproc)
-
+RUN make PLATFORM=armv6 -j"$(nproc)"
 RUN readelf -A /target/codeymccodeface | grep Tag_

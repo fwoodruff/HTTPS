@@ -1,7 +1,7 @@
 PLATFORM ?= native
 
-CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2
-LDFLAGS :=
+CXXFLAGS := -std=c++23 -Wall -Wno-psabi -MMD -MP -O2 -luring
+LDFLAGS := -luring
 
 ifeq ($(PLATFORM),armv6)
 	CXX := armv6-rpi-linux-gnueabihf-g++

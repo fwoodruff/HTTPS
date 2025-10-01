@@ -1,4 +1,5 @@
 FROM gcc:14 AS builder
+RUN apt-get update && apt-get install -y liburing-dev
 WORKDIR /
 COPY src/ src/
 COPY makefile .

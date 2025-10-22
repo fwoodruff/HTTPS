@@ -66,7 +66,7 @@ private:
     void client_handshake_record_sync(std::queue<packet_timed>& output, tls_record record);
     void client_handshake_message_sync(std::queue<packet_timed>& output, const std::vector<uint8_t>& handshake_message);
     void client_alert_sync(std::queue<packet_timed>& output, const tls_record& record, std::optional<milliseconds> timeout);
-    void client_heartbeat(std::queue<packet_timed>& output, tls_record client_record, std::optional<milliseconds> timeout);
+    void client_heartbeat(std::queue<packet_timed>& output, const tls_record& client_record, std::optional<milliseconds> timeout);
     void client_hello(const std::vector<uint8_t>& handshake_message);
     void client_key_exchange(const std::vector<uint8_t>& key_exchange);
     void client_handshake_finished12(const std::vector<uint8_t>& finish); 

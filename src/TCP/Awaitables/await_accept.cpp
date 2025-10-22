@@ -38,16 +38,16 @@ std::pair<std::string, uint16_t> get_ip_port(const struct sockaddr& sa) {
 
 namespace fbw {
 
-std::optional<tcp_stream> acceptable::await_resume() {
+std::optional<tcp_stream> acceptable::await_resume() const {
     struct sockaddr_storage client_address;
     socklen_t shrink_address_size = sizeof client_address;
-    int client_fd = ::accept(m_server_fd, (struct sockaddr *)&client_address, &shrink_address_size);
+    int const client_fd = ::accept(m_server_fd, (struct sockaddr *)&client_address, &shrink_address_size);
     if(client_fd == -1) {
         return std::nullopt;
     }
     auto [ip, port] = get_ip_port((struct sockaddr &)client_address);
-    std::string stip = ip;
-    int res = ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
+    std::string const stip = ip;
+    int const res = ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
     assert(res == 0);
     return {{client_fd, ip, port}};
 }
@@ -58,7 +58,7 @@ bool acceptable::await_ready() const noexcept {
     return false;
 }
 
-void acceptable::await_suspend(std::coroutine_handle<> coroutine) noexcept {
+void acceptable::await_suspend(std::coroutine_handle<> coroutine) const noexcept {
     auto& exec = executor_singleton();
     exec.m_reactor.add_task(m_server_fd, coroutine, IO_direction::Read);
 }

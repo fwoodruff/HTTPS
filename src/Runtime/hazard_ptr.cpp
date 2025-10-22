@@ -45,10 +45,10 @@ struct hazard_pointer_batch {
     }
     
     ~hazard_pointer_batch() {
-        auto lnext = m_next.load(relaxed);
-        if(lnext != nullptr) {
+        auto *lnext = m_next.load(relaxed);
+        
             delete lnext;
-        }
+        
     }
 };
 
@@ -71,16 +71,17 @@ std::atomic<size_t> max_hp_idx = 0;
 
 void update_max(std::atomic<size_t>& atom, size_t value) {
     auto current = atom.load(relaxed); // atom never decreases
-    while (current < value and !atom.compare_exchange_weak(current, value, seq_cst, relaxed));
+    while (current < value and !atom.compare_exchange_weak(current, value, seq_cst, relaxed)) {;
+}
 }
 
 
 class hp_owner {
-    hazard_pointer_data* hp;
+    hazard_pointer_data* hp{nullptr};
 public:
     hp_owner(hp_owner const&) = delete;
     hp_owner& operator=(hp_owner const&) = delete;
-    hp_owner(): hp(nullptr) {
+    hp_owner() {
         hazard_pointer_batch* current_batch = &hazard_pointers;
         size_t idx = 0;
         for(unsigned i = 0;; i++) {
@@ -136,12 +137,13 @@ std::atomic<retired_data*> nodes_to_reclaim;
 
 void add_to_garbage(retired_data* node) {
     node->next = nodes_to_reclaim.load(relaxed);
-    while(!nodes_to_reclaim.compare_exchange_weak(node->next, node, release, relaxed));
+    while(!nodes_to_reclaim.compare_exchange_weak(node->next, node, release, relaxed)) {;
+}
 }
 
 void delete_nodes_with_no_hazards() {
     retired_data* current = nodes_to_reclaim.exchange(nullptr, acq_rel);
-    while(current) {
+    while(current != nullptr) {
         retired_data* const next = current->next;
         if(!outstanding_hazard_pointers_for(current->data)) {
             delete current;

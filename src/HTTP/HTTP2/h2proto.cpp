@@ -16,6 +16,7 @@
 #include "h2stream.hpp"
 #include "../../TLS/protocol.hpp"
 #include <print>
+#include <utility>
 
 namespace fbw {
 
@@ -55,7 +56,7 @@ task<void> HTTP2::client_inner() {
         if(res != stream_result::ok) {
             co_return;
         }
-        std::scoped_lock lk(m_coro_mut);
+        std::scoped_lock const lk(m_coro_mut);
         is_blocking_read = false;
     }
 }
@@ -65,7 +66,7 @@ void HTTP2::client_cleanup() {
     std::deque<std::coroutine_handle<void>> m_writers_local;
     h2_ctx.close_connection();
     {
-        std::scoped_lock lk(m_coro_mut);
+        std::scoped_lock const lk(m_coro_mut);
         m_coros_local = std::exchange(m_coros, {});
         m_writers_local = std::exchange(m_writers, {});
     }
@@ -99,7 +100,7 @@ void HTTP2::handle_frame(h2frame& frame) {
         if(strm.m_action == wake_action::new_stream) {
             sync_spawn(handle_stream(weak_from_this(), strm.stream_id));
         } else {
-            std::scoped_lock lk { m_coro_mut };
+            std::scoped_lock const lk { m_coro_mut };
             auto it = m_coros.find(strm.stream_id);
             if(it != m_coros.end()) {
                 if(!it->second.is_reader) {
@@ -120,15 +121,14 @@ void HTTP2::handle_frame(h2frame& frame) {
     for(auto handle : waking) {
         handle.resume();
     }
-    return;
-}
+    }
 
 task<stream_result> HTTP2::send_outbox(bool flush, bool blocking_reader) {
     auto guard = co_await m_async_mut.lock();
     {
         // if the event loop is still running hot, defer flushing write buffer
         // this contends with resume_back_pressure()
-        std::scoped_lock lk { m_coro_mut };
+        std::scoped_lock const lk { m_coro_mut };
         if(!is_blocking_read and !blocking_reader) {
             flush = false;
         }
@@ -153,7 +153,7 @@ task<stream_result> HTTP2::send_outbox(bool flush, bool blocking_reader) {
 task<bool> HTTP2::connection_startup() {
     assert(m_stream);
     while (m_read_buffer.size() < connection_init.size()) {
-        stream_result res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
+        stream_result const res = co_await read_append_maybe_early(m_stream.get(), m_read_buffer, project_options.session_timeout);
         if (res == stream_result::closed) {
             co_return false;
         }
@@ -171,7 +171,7 @@ task<bool> HTTP2::connection_startup() {
 bool HTTP2::resume_back_pressure() {
     std::coroutine_handle<> handle = nullptr;
     {
-        std::scoped_lock lk { m_coro_mut };
+        std::scoped_lock const lk { m_coro_mut };
         if(m_writers.empty()) {
             is_blocking_read = true;
             return false;
@@ -214,13 +214,13 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
         co_await hcx->write_data(std::span<uint8_t> {}, true);
     }
     
-    std::scoped_lock lk { conn->m_coro_mut };
+    std::scoped_lock const lk { conn->m_coro_mut };
     conn->m_coros.erase(stream_id);
     co_return;
 }
 
 HTTP2::HTTP2(std::unique_ptr<stream> stream, callback handler) :
-    m_stream(std::move(stream)), m_handler(handler) {}
+    m_stream(std::move(stream)), m_handler(std::move(handler)) {}
 
 HTTP2::~HTTP2() {
     assert(m_writers.empty());

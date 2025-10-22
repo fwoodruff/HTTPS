@@ -20,12 +20,12 @@ static_assert(CHAR_BIT == 8, "CHAR_BIT != 8");
 
 thread_local cprng randomgen;
 
-void keccak_F1600_state_permute(std::array<uint8_t,200>& state) noexcept;
-int LFSR86540(uint8_t& LFSR) noexcept;
-uint64_t ROL64(uint64_t a, uint64_t offset) noexcept ;
-uint64_t read_lane(const std::array<uint8_t, 200>& state, int x, int y) noexcept;
-void write_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noexcept;
-void xor_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noexcept;
+static void keccak_F1600_state_permute(std::array<uint8_t,200>& state) noexcept;
+static int LFSR86540(uint8_t& LFSR) noexcept;
+static uint64_t ROL64(uint64_t a, uint64_t offset) noexcept ;
+static uint64_t read_lane(const std::array<uint8_t, 200>& state, int x, int y) noexcept;
+static void write_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noexcept;
+static void xor_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noexcept;
 
 
 keccak_sponge::keccak_sponge(size_t capacity_, uint8_t domain_separator) noexcept {
@@ -100,7 +100,7 @@ uint64_t ROL64(uint64_t a, uint64_t offset) noexcept {
 
 uint64_t read_lane(const std::array<uint8_t, 200>& state, int x, int y) noexcept {
     uint64_t out = 0;
-    size_t addr = 8*(x + 5*y);
+    size_t const addr = 8*(x + 5*y);
     for(int i=7; i>=0; --i) {
         out <<= 8;
         assert(addr+i < 200);
@@ -132,7 +132,8 @@ void xor_lane(std::array<uint8_t, 200>& state,  int x, int y, uint64_t val) noex
 void keccak_F1600_state_permute(std::array<uint8_t,200>& state) noexcept {
     uint8_t LFSRstate { 0x01 };
     for(int round=0; round<24; round++) {
-        uint64_t C[5] {}, D =0;
+        uint64_t C[5] {};
+        uint64_t D =0;
         for(int i=0; i<5; i++) {
             C[i] = 0;
             for(int j=0; j<5; j++) {
@@ -141,39 +142,43 @@ void keccak_F1600_state_permute(std::array<uint8_t,200>& state) noexcept {
         }
         for(int i=0; i<5; i++) {
             D = C[(i+4)%5] ^ ROL64(C[(i+1)%5], 1);
-            for (int j=0; j<5; j++)
+            for (int j=0; j<5; j++) {
                 xor_lane(state, i, j, D);
+}
         }
            
         unsigned int x = 1;
         unsigned int y = 0;
         uint64_t current = read_lane(state, x, y);
         for(int t=0; t<24; t++) {
-            unsigned int r = ((t+1)*(t+2)/2)%64;
-            unsigned int Y = (2*x+3*y)%5; x = y; y = Y;
-            uint64_t temp = read_lane(state, x, y);
+            unsigned int const r = ((t+1)*(t+2)/2)%64;
+            unsigned int const Y = (2*x+3*y)%5; x = y; y = Y;
+            uint64_t const temp = read_lane(state, x, y);
             write_lane(state, x, y, ROL64(current, r));
             current = temp;
         }
         uint64_t temp[5] {};
         for(int j=0; j<5; j++) {
-            for(int i=0; i<5; i++)
+            for(int i=0; i<5; i++) {
                 temp[i] = read_lane(state, i, j);
-            for(int i=0; i<5; i++)
+}
+            for(int i=0; i<5; i++) {
                 write_lane(state, i, j, temp[i] ^((~temp[(i+1)%5]) & temp[(i+2)%5]));
+}
         }
         for(int j=0; j<7; j++) {
-            unsigned int bitPosition = (1<<j)-1;
-            if (LFSR86540(LFSRstate))
+            unsigned int const bitPosition = (1<<j)-1;
+            if (LFSR86540(LFSRstate) != 0) {
                 xor_lane(state,0, 0, 1ULL<<bitPosition);
+}
         }
         
     }
 }
 
 int LFSR86540(uint8_t& LFSR) noexcept {
-    int result = (LFSR & 0x01) != 0;
-    int set = ((LFSR & 0x80) != 0) * 0x71;
+    int const result = static_cast<int>((LFSR & 0x01) != 0);
+    int const set = static_cast<int>((LFSR & 0x80) != 0) * 0x71;
     LFSR = (LFSR << 1) ^ set;
     return result;
 }

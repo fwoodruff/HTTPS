@@ -103,7 +103,7 @@ std::unique_ptr<h2_data> deserialise_DATA(const std::vector<uint8_t>& frame_byte
     assert(size + H2_FRAME_HEADER_SIZE == frame_bytes.size());
     auto frame = std::make_unique<h2_data>();
     set_base_frame_values(*frame, frame_bytes);
-    if(frame->flags & h2_flags::PADDED) {
+    if((frame->flags & h2_flags::PADDED) != 0) {
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
         auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE+1;
         frame->contents.assign(begin, begin + size-1 - frame->pad_length);
@@ -120,16 +120,16 @@ std::unique_ptr<h2_headers> deserialise_HEADERS(const std::vector<uint8_t>& fram
     auto frame = std::make_unique<h2_headers>();
     set_base_frame_values(*frame, frame_bytes);
     size_t idx = 0;
-    if(frame->flags & h2_flags::PADDED) {
+    if((frame->flags & h2_flags::PADDED) != 0) {
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
         idx += 1;
     } else {
         frame->pad_length = 0;
     }
-    if(frame->flags & h2_flags::PRIORITY) {
+    if((frame->flags & h2_flags::PRIORITY) != 0) {
         const uint32_t dep_ex = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 4);
-        frame->stream_dependency = dep_ex & ~(1u << 31);
-        frame->exclusive = (dep_ex & (1u << 31)) != 0;
+        frame->stream_dependency = dep_ex & ~(1U << 31);
+        frame->exclusive = (dep_ex & (1U << 31)) != 0;
         frame->weight = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx + 4, 1);
         idx += 5;
     }
@@ -144,8 +144,8 @@ std::unique_ptr<h2_priority> deserialise_PRIORITY(const std::vector<uint8_t>& fr
     auto frame = std::make_unique<h2_priority>();
     set_base_frame_values(*frame, frame_bytes);
     const uint32_t dep_ex = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
-    frame->stream_dependency = dep_ex & ~(1u << 31);
-    frame->exclusive = (dep_ex & (1u << 31)) != 0;
+    frame->stream_dependency = dep_ex & ~(1U << 31);
+    frame->exclusive = (dep_ex & (1U << 31)) != 0;
     frame->weight = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 4, 1);
     if(size != 5) {
         throw h2_error("malformed PRIORITY frame", h2_code::FRAME_SIZE_ERROR);
@@ -168,7 +168,7 @@ std::unique_ptr<h2_settings> deserialise_SETTINGS(const std::vector<uint8_t>& fr
     auto size = uint32_t(try_bigend_read(frame_bytes, 0, 3));
     auto frame = std::make_unique<h2_settings>();
     set_base_frame_values(*frame, frame_bytes);
-    if(frame->flags & h2_flags::ACK and size != 0) {
+    if(((frame->flags & h2_flags::ACK) != 0) and size != 0) {
         throw h2_error("malformed SETTINGS ack frame", h2_code::FRAME_SIZE_ERROR);
     }
     if(size % 6 != 0) {
@@ -191,7 +191,7 @@ std::unique_ptr<h2_push_promise> deserialise_PUSH_PROMISE(const std::vector<uint
     auto frame = std::make_unique<h2_push_promise>();
     set_base_frame_values(*frame, frame_bytes);
     size_t idx = 0;
-    if(frame->flags & h2_flags::PADDED) {
+    if((frame->flags & h2_flags::PADDED) != 0) {
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 1);
         idx += 1;
     }
@@ -216,7 +216,7 @@ std::unique_ptr<h2_goaway> deserialise_GOAWAY(const std::vector<uint8_t>& frame_
     auto frame = std::make_unique<h2_goaway>();
     set_base_frame_values(*frame, frame_bytes);
     const uint32_t lastidres = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
-    frame->last_stream_id = lastidres & ~(1u << 31);
+    frame->last_stream_id = lastidres & ~(1U << 31);
     frame->error_code = (h2_code)try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + 4, 4);
     frame->additional_debug_data.assign(frame_bytes.begin() + H2_FRAME_HEADER_SIZE + 8, frame_bytes.end());
     return frame;
@@ -230,7 +230,7 @@ std::unique_ptr<h2_window_update> deserialise_WINDOW_UPDATE(const std::vector<ui
     auto frame = std::make_unique<h2_window_update>();
     set_base_frame_values(*frame, frame_bytes);
     const uint32_t incres = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 4);
-    frame->window_size_increment = incres & ~(1u << 31);
+    frame->window_size_increment = incres & ~(1U << 31);
     return frame;
 }
 
@@ -243,20 +243,20 @@ std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const std::vector<uint
 
 std::string pretty_flags(uint8_t flags, bool can_ack) {
     std::stringstream out;
-    if(flags & h2_flags::END_HEADERS) {
+    if((flags & h2_flags::END_HEADERS) != 0) {
         out << " END_HEADERS";
     }
-    if(flags & (h2_flags::END_STREAM | h2_flags::ACK)) {
+    if((flags & (h2_flags::END_STREAM | h2_flags::ACK)) != 0) {
         if(can_ack) {
             out << " ACK";
         } else {
             out << " END_STREAM";
         }
     }
-    if(flags & h2_flags::PADDED) {
+    if((flags & h2_flags::PADDED) != 0) {
         out << " PADDED";
     }
-    if(flags & h2_flags::PRIORITY) {
+    if((flags & h2_flags::PRIORITY) != 0) {
         out << " PRIORITY";
     }
     return out.str();
@@ -276,7 +276,7 @@ std::vector<uint8_t> h2frame::serialise_common(size_t reserved) const {
 
 std::vector<uint8_t> h2_data::serialise() const { 
     std::vector<uint8_t> out = serialise_common();
-    if(flags & h2_flags::PADDED) {
+    if((flags & h2_flags::PADDED) != 0) {
         out.push_back(pad_length);
     }
     out.insert(out.end(), contents.begin(), contents.end());
@@ -310,10 +310,10 @@ std::string h2_data::pretty() const {
 
 std::vector<uint8_t> h2_headers::serialise() const { 
     std::vector<uint8_t> out = serialise_common();
-    if(flags & h2_flags::PADDED) {
+    if((flags & h2_flags::PADDED) != 0) {
         out.push_back(pad_length);
     }
-    if(flags & h2_flags::PRIORITY) {
+    if((flags & h2_flags::PRIORITY) != 0) {
         out.insert(out.end(), {0,0,0,0});
         checked_bigend_write(stream_dependency, out, out.size() - 4, 4);
         out[out.size() - 4] |= (uint8_t(exclusive) << 7);
@@ -370,11 +370,11 @@ std::string h2_rst_stream::pretty() const {
 }
 
 std::vector<uint8_t> h2_settings::serialise() const {
-    std::vector<uint8_t> out = serialise_common(9 + settings.size() * 6);
+    std::vector<uint8_t> out = serialise_common(9 + (settings.size() * 6));
     for(auto setting : settings) {
         out.insert(out.end(), {0,0,0,0,0,0});
         checked_bigend_write(uint32_t(setting.identifier), out, out.size() - 6, 2);
-        checked_bigend_write(uint32_t(setting.value), out, out.size() - 4, 4);
+        checked_bigend_write(setting.value, out, out.size() - 4, 4);
     }
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
@@ -395,7 +395,7 @@ std::string h2_settings::pretty() const {
 
 std::vector<uint8_t> h2_push_promise::serialise() const { 
     std::vector<uint8_t> out = serialise_common();
-    if(flags & h2_flags::PADDED) {
+    if((flags & h2_flags::PADDED) != 0) {
         out.push_back(pad_length);
     }
     out.insert(out.end(), {0,0,0,0});
@@ -473,7 +473,7 @@ std::vector<uint8_t> h2_continuation::serialise() const {
 std::string h2_continuation::pretty() const {
     std::stringstream out;
     out << "type: CONTINUATION, stream id: " << stream_id << " field block fragment:";
-    for(unsigned c : field_block_fragment) {
+    for(unsigned const c : field_block_fragment) {
         out << ' ' << std::hex << std::setfill(' ') << std::setw(2) << c;
     }
     out << pretty_flags(flags, false);
@@ -484,7 +484,7 @@ void set_base_frame_values(h2frame& frame, const std::vector<uint8_t>& frame_byt
     frame.type = (h2_type)try_bigend_read(frame_bytes, 3, 1);
     frame.flags = try_bigend_read(frame_bytes, 4, 1);
     const uint32_t idres = try_bigend_read(frame_bytes, 5, 4);
-    frame.stream_id  = idres & ~(1u << 31);
+    frame.stream_id  = idres & ~(1U << 31);
 }
 
 h2_settings construct_settings_frame(setting_values desired_settings, setting_values current_settings) {
@@ -505,10 +505,10 @@ h2_settings construct_settings_frame(setting_values desired_settings, setting_va
         server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_MAX_HEADER_LIST_SIZE, desired_settings.max_header_size});
     }
     if(desired_settings.push_promise_enabled != current_settings.push_promise_enabled) {
-        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, desired_settings.push_promise_enabled});
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, static_cast<uint32_t>(desired_settings.push_promise_enabled)});
     }
     if(desired_settings.no_rfc7540_priorities != current_settings.no_rfc7540_priorities) {
-        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, desired_settings.no_rfc7540_priorities});
+        server_settings_frame.settings.push_back({h2_settings_code::SETTINGS_ENABLE_PUSH, static_cast<uint32_t>(desired_settings.no_rfc7540_priorities)});
     }
     return server_settings_frame;
 }

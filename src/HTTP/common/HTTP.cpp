@@ -19,7 +19,7 @@
 
 namespace fbw {
 
-ssize_t get_file_size(std::filesystem::path filename) {
+ssize_t get_file_size(const std::filesystem::path& filename) {
     std::ifstream t(filename, std::ifstream::ate | std::ifstream::binary);
     if(t.fail()) {
         throw http_error(404, "Not Found");
@@ -27,8 +27,8 @@ ssize_t get_file_size(std::filesystem::path filename) {
     return t.tellg();
 }
 
-std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string domain) {
-    auto time = std::time(0);
+std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, const std::string& MIME, std::string domain) {
+    auto time = std::time(nullptr);
     if(static_cast<std::time_t>(-1) == time) {
         throw http_error(500, "Internal Server Error");
     }
@@ -36,7 +36,7 @@ std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_
     std::unordered_map<std::string, std::string> headers {
         {"Date", timestring(time)},
         {"Expires", timestring(time + day)},
-        {"Content-Type", MIME + (MIME.substr(0, 4) == "text" ? "; charset=UTF-8" : "")},
+        {"Content-Type", MIME + (MIME.starts_with("text") ? "; charset=UTF-8" : "")},
         {"Content-Length", std::to_string(file_size)},
         {"Connection", "Keep-Alive"},
         {"Keep-Alive", "timeout=" + std::to_string(project_options.keep_alive.count())},

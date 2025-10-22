@@ -41,11 +41,11 @@ struct key_schedule {
     std::vector<uint8_t> resumption_master_secret;
 };
 
-std::vector<uint8_t> compute_binder(const hash_base& base, std::vector<uint8_t> resumption_psk, std::span<const uint8_t> hello_prefix);
-void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> psk, std::vector<uint8_t> client_hello_hash);
-void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> ecdh, std::vector<uint8_t> server_hello_hash);
-void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> server_finished_hash);
-void tls13_resumption_key_calc(const hash_base& base, key_schedule& key_sch, std::vector<uint8_t> client_finished_hash);
+std::vector<uint8_t> compute_binder(const hash_base& base, const std::vector<uint8_t>& resumption_psk, std::span<const uint8_t> hello_prefix);
+void tls13_early_key_calc(const hash_base& base, key_schedule& key_sch, const std::vector<uint8_t>& psk, const std::vector<uint8_t>& client_hello_hash);
+void tls13_handshake_key_calc(const hash_base& base, key_schedule& key_sch, const std::vector<uint8_t>& ecdh, const std::vector<uint8_t>& server_hello_hash);
+void tls13_application_key_calc(const hash_base& base, key_schedule& key_sch, const std::vector<uint8_t>& server_finished_hash);
+void tls13_resumption_key_calc(const hash_base& base, key_schedule& key_sch, const std::vector<uint8_t>& client_finished_hash);
 
 template<typename T>
 std::vector<uint8_t> P_hash(const hash_base& hash_ctor, const T& secret, const std::vector<uint8_t>& seed, size_t len) {

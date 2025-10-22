@@ -22,7 +22,7 @@ namespace fbw {
 
 [[nodiscard]] std::unordered_map<std::string,std::string> MIME_csv_to_map(const std::filesystem::path& filename);
 [[nodiscard]] std::unordered_map<std::string,std::string> MIMES(const std::filesystem::path& directory_name);
-[[nodiscard]] std::string get_MIME(std::string extension);
+[[nodiscard]] std::string get_MIME(const std::string& extension);
 [[nodiscard]] std::string extension_from_path(const std::filesystem::path& path);
 std::string Mime_from_file(const std::filesystem::path &filename);
 

@@ -45,34 +45,33 @@ constexpr ct_u256 RR_Q = "0x66e12d94f3d956202845b2392b6bec594699799c49bd6fa68324
 constexpr ct_u256 aMontyP = "0xfffffffc00000004000000000000000000000003fffffffffffffffffffffffc"_xl;
 
 // computes a such that T = a * R mod N
-constexpr ct_u256 REDC(ct_u512 T) noexcept {
-    ct_u256 m = ct_u256(ct_u256(T) * MagicP);
-    ct_u512 t = ct_u512((ct_u768(T) + ct_u768(m*secp256r1_p))>>256);
-    ct_u256 pri = secp256r1_p;
+static constexpr ct_u256 REDC(ct_u512 T) noexcept {
+    ct_u256 const m = ct_u256(ct_u256(T) * MagicP);
+    ct_u512 const t = ct_u512((ct_u768(T) + ct_u768(m*secp256r1_p))>>256);
+    ct_u256 const pri = secp256r1_p;
     const auto prime = ct_u512(pri);
     if(t >= prime) {
         return ct_u256(t - prime);
-    } else {
-        return ct_u256(t);
-    }
+    }         return ct_u256(t);
+   
 }
 
-constexpr ct_u256 REDCQ(ct_u512 T) noexcept {
-    ct_u256 m = ct_u256(ct_u256(T) * MagicQ);
-    ct_u512 t = ct_u512((ct_u768(T) + ct_u768(m*secp256r1_q))>>256);
-    ct_u256 pri = secp256r1_q;
+static constexpr ct_u256 REDCQ(ct_u512 T) noexcept {
+    ct_u256 const m = ct_u256(ct_u256(T) * MagicQ);
+    ct_u512 const t = ct_u512((ct_u768(T) + ct_u768(m*secp256r1_q))>>256);
+    ct_u256 const pri = secp256r1_q;
     const auto prime = ct_u512(pri);
     const auto diff = t - prime;
-    auto mask = -(diff >> (sizeof(diff) * CHAR_BIT - 1)); // todo: don't use full 512 bit width, also slightly silly
+    auto mask = -(diff >> ((sizeof(diff) * CHAR_BIT) - 1)); // todo: don't use full 512 bit width, also slightly silly
     auto res = (diff & ~mask) | (t & mask);
     return ct_u256(res);
 }
 
 
 
-constexpr jacobian_point256 POINT_AT_INFINITY { secp256r1_p, secp256r1_p, "0x0"_xl};
+constexpr jacobian_point256 POINT_AT_INFINITY { .xcoord=secp256r1_p, .ycoord=secp256r1_p, .zcoord="0x0"_xl};
 
-ct_u256 add_mod(ct_u256 x, ct_u256 y , ct_u256 mod) noexcept {
+static ct_u256 add_mod(ct_u256 x, ct_u256 y , ct_u256 mod) noexcept {
     assert(x < mod);
     assert(y < mod);
     auto sum = x + y;
@@ -82,20 +81,20 @@ ct_u256 add_mod(ct_u256 x, ct_u256 y , ct_u256 mod) noexcept {
     return sum;
 }
 
-ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
+static ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
     assert(x < mod);
     assert(y < mod);
     ct_u256 mask{};
-    mask.v[0] = x > y;
+    mask.v[0] = static_cast<uint64_t>(x > y);
     mask -= "0x1"_xl;
     return ((x - y) & ~mask) | (((mod - y) + x) & mask);
 }
 
 // computes a' such that a * a' = 1 mod P
-constexpr ct_u256 modular_inverse(const ct_u256& a) noexcept {
+static constexpr ct_u256 modular_inverse(const ct_u256& a) noexcept {
     auto ladder = R_P;
     auto aR = REDC(a*RR_P);
-    for(int i = sizeof(ct_u256)*CHAR_BIT-1; i >=0; i--) {
+    for(int i = (sizeof(ct_u256)*CHAR_BIT)-1; i >=0; i--) {
         auto prime_shift = (secp256r1_p-"0x2"_xl) >> i;
         if(prime_shift == "0x0"_xl) {
             continue;
@@ -108,28 +107,7 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) noexcept {
     return REDC(ct_u512(ladder));
 }
 
-
-constexpr ct_u256 invQ(const ct_u256& a) noexcept {
-    auto th = "0x1"_xl;
-    for (int i = 255; i >= 0; i--) {
-        auto es = (secp256r1_q-"0x2"_xl)>>i;
-        if(es == "0x0"_xl) {
-            continue;
-        }
-        auto thh = th * th;
-        auto t = thh % secp256r1_q;
-        auto y = t * a;
-        bool cond = es.v[0] != 0;
-        ct_u512 mask{};
-        mask.v[0] = cond;
-        mask -= "0x1"_xll;
-        auto oth = (y & mask) | (thh & ~mask);
-        th = oth % secp256r1_q;
-    }
-    return th;
-}
-
-constexpr ct_u256 MontyinvQ(const ct_u256& a) noexcept {
+static constexpr ct_u256 MontyinvQ(const ct_u256& a) noexcept {
     auto th = REDCQ(ct_u512(RR_Q));
     for (int i = 255; i >= 0; i--) {
         auto es = (secp256r1_q-"0x2"_xl)>>i;
@@ -138,19 +116,19 @@ constexpr ct_u256 MontyinvQ(const ct_u256& a) noexcept {
         }
         auto t = REDCQ(th * th);
         auto y = REDCQ(t * a);
-        bool cond = (es.v[0] & 1) != 0;
+        bool const cond = (es.v[0] & 1) != 0;
         ct_u256 mask{};
-        mask.v[0] = cond;
+        mask.v[0] = static_cast<uint64_t>(cond);
         mask -= "0x1"_xl;
         th = (y & ~mask) | (t & mask);
     }
     return th;
 }
 
-jacobian_point256 point_double(const jacobian_point256& P) noexcept;
+static jacobian_point256 point_double(const jacobian_point256& P) noexcept;
 // finds point R, on the line through P and Q
 // The y coordinate is inferred from the base point.
-jacobian_point256 point_add(const jacobian_point256& P, const jacobian_point256& Q) noexcept {
+static jacobian_point256 point_add(const jacobian_point256& P, const jacobian_point256& Q) noexcept {
     if(P.zcoord == "0x0"_xl) [[unlikely]] {
         return Q;
     }
@@ -170,9 +148,8 @@ jacobian_point256 point_add(const jacobian_point256& P, const jacobian_point256&
     if(U1 == U2) [[unlikely]] {
         if(S1 != S2) {
             return POINT_AT_INFINITY;
-        } else {
-            return point_double(P);
-        }
+        }             return point_double(P);
+       
     }
     
     auto H = sub_mod(U2, U1, secp256r1_p);
@@ -228,7 +205,7 @@ jacobian_point256 point_double(const jacobian_point256& P) noexcept {
     return out;
 }
 
-jacobian_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
+static jacobian_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
     assert(secret <= secp256r1_q);
     assert(secret != "0x0"_xl);
     
@@ -241,8 +218,8 @@ jacobian_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_
 
     for (int i = 0; i < 256; i++) {
         auto S = point_add(P, out);
-        ct_u256 bitmask = (secret >> i) & ct_u256{"0x1"_xl};
-        ct_u256 mask = "0x0"_xl - bitmask;
+        ct_u256 const bitmask = (secret >> i) & ct_u256{"0x1"_xl};
+        ct_u256 const mask = "0x0"_xl - bitmask;
         out.xcoord = (S.xcoord & mask) | (out.xcoord & ~mask);
         out.ycoord = (S.ycoord & mask) | (out.ycoord & ~mask);
         out.zcoord = (S.zcoord & mask) | (out.zcoord & ~mask);
@@ -251,14 +228,14 @@ jacobian_point256 point_multiply_affine(const ct_u256& secret, const ct_u256& x_
     return out;
 }
 
-std::pair<ct_u256,ct_u256> project_to_affine(jacobian_point256 P) noexcept {
+static std::pair<ct_u256,ct_u256> project_to_affine(jacobian_point256 P) noexcept {
     if(P.zcoord == POINT_AT_INFINITY.zcoord) [[unlikely]] { 
         return { "0x0"_xl, "0x0"_xl };
     }
     auto zz = REDC(P.zcoord * P.zcoord);
     auto zzz = REDC(P.zcoord * zz);
-    ct_u256 invzz = modular_inverse(REDC(ct_u512(zz)));
-    ct_u256 invzzz = modular_inverse(REDC(ct_u512(zzz)));
+    ct_u256 const invzz = modular_inverse(REDC(ct_u512(zz)));
+    ct_u256 const invzzz = modular_inverse(REDC(ct_u512(zzz)));
     auto v = REDC(P.xcoord * invzz);
     auto w = REDC(P.ycoord * invzzz);
     return {v, w };
@@ -267,11 +244,11 @@ std::pair<ct_u256,ct_u256> project_to_affine(jacobian_point256 P) noexcept {
 // computes P + P + ... + P (N times) and returns the x coordinate.
 // x_coord is the x coordinate of P, and N is some secret number.
 // note that we assume that the y coordinate of P is the same as G's.
-std::pair<ct_u256,ct_u256> point_multiply(ct_u256 secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
+static std::pair<ct_u256,ct_u256> point_multiply(ct_u256 secret, const ct_u256& x_coord, const ct_u256& y_coord) noexcept {
     if(secret > secp256r1_q) [[unlikely]] {
         secret = secret - secp256r1_q;
     }
-    jacobian_point256 out = point_multiply_affine(secret, x_coord, y_coord);
+    jacobian_point256 const out = point_multiply_affine(secret, x_coord, y_coord);
     return project_to_affine(out);
 }
 
@@ -307,32 +284,8 @@ struct ECDSA_signature {
     ct_u256 s;
 };
 
-// unoptimised
-// treat as a debug tool
-bool verify_signature(const ct_u256& h,
-                      const ct_u256& r,
-                      const ct_u256& s,
-                      const ct_u256& pub_x,
-                      const ct_u256& pub_y) {
-    if(r == "0x0"_xl or s == "0x0"_xl) {
-        return false;
-    }
-    if(r >= secp256r1_q or s >= secp256r1_q) {
-        return false;
-    }
-    auto s1 = invQ(s);
-    // note P, Q, R are in Montgomery Jacobian coordinates
-    auto P = point_multiply_affine( (h * s1) % secp256r1_q, secp256r1_gx, secp256r1_gy);
-    auto Q = point_multiply_affine( (r * s1) % secp256r1_q, pub_x, pub_y);
-    auto R = point_add(P, Q);
-    auto [x,y] = project_to_affine(R); // converts back to cartesian coordinates
-    return (x == r);
-}
 
-
-
-
-ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const ct_u256& private_key) {
+static ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const ct_u256& private_key) {
     if(k_random == "0x0"_xl) [[unlikely]] {
         throw ssl_error("bad random", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
@@ -364,19 +317,7 @@ ECDSA_signature ECDSA_impl(const ct_u256& k_random, const ct_u256& digest, const
     //auto [pubx, puby] = point_multiply(ct_u256(private_key), secp256r1_gx, secp256r1_gy);
     //assert(verify_signature(digest,r, s, pubx, puby));
     
-    return {r, s};
-}
-
-std::vector<uint8_t> raw_ECDSA(std::array<uint8_t,32> k_random,
-                     std::array<uint8_t,32> digest,
-                     std::array<uint8_t,32> private_key) {
-    auto signature = ECDSA_impl(std::move(k_random), std::move(digest), std::move(private_key));
-    auto r = signature.r.serialise();
-    auto s = signature.s.serialise();
-    std::vector<uint8_t> out;
-    out.insert(out.end(), r.begin(), r.end());
-    out.insert(out.end(), s.begin(), s.end());
-    return out;
+    return {.r=r, .s=s};
 }
 
 std::vector<uint8_t> DER_ECDSA(
@@ -392,14 +333,14 @@ std::vector<uint8_t> DER_ECDSA(
     std::vector<uint8_t> out;
     out.insert(out.end(), {0x30,0x00, 0x02});
     
-    if(r[0]&0x80) {
+    if((r[0]&0x80) != 0) {
         out.insert(out.end(), {0x21,0x00});
     } else {
         out.insert(out.end(),{0x20});
     }
     out.insert(out.end(),r.cbegin(),r.cend());
     out.insert(out.end(), {0x02});
-    if(s[0]&0x80) {
+    if((s[0]&0x80) != 0) {
         out.insert(out.end(), {0x21,0x00});
     } else {
         out.insert(out.end(), {0x20});

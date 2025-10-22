@@ -30,7 +30,7 @@ task<stream_result> accept_upgrade(http_ctx& connection, std::string sec_ws_key)
     response_headers.push_back({"connection", "Upgrade"});
     response_headers.push_back({"sec-websocket-accept", websocket_accept});
 
-    stream_result res = co_await connection.write_headers(response_headers);
+    stream_result const res = co_await connection.write_headers(response_headers);
 
     
     co_return res;
@@ -53,8 +53,8 @@ bool is_websocket_upgrade(const std::vector<entry_t>& headers) {
     auto method     = find_header(headers, ":method");
     auto protocol   = find_header(headers, ":protocol");
 
-    bool want_http1 = upgrade and (*upgrade) == "websocket" and connection;
-    bool want_http2 = method and to_lower(*method) == "CONNECT" and protocol and to_lower(*protocol) == "websocket";
+    bool const want_http1 = upgrade and (*upgrade) == "websocket" and connection;
+    bool const want_http2 = method and to_lower(*method) == "CONNECT" and protocol and to_lower(*protocol) == "websocket";
 
     if (want_http1) {
         bool conn_ok = false;

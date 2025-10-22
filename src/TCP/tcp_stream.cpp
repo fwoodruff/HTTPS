@@ -26,7 +26,7 @@ task<stream_result> tcp_stream::read_append(std::deque<uint8_t>& abuffer, std::o
 
 task<stream_result> tcp_stream::write(std::vector<uint8_t> abuffer, std::optional<milliseconds> timeout) {
     std::span<const uint8_t> remaining_buffer = {abuffer.data(), abuffer.size()};
-    while(remaining_buffer.size() != 0) {
+    while(!remaining_buffer.empty()) {
         auto [_, status] = co_await write_some(remaining_buffer, timeout);
         if (status != stream_result::ok) [[unlikely]] {
             co_return std::move(status);
@@ -35,26 +35,26 @@ task<stream_result> tcp_stream::write(std::vector<uint8_t> abuffer, std::optiona
     co_return stream_result::ok;
 }
 
-tcp_stream::tcp_stream(int fd, std::string ip, uint16_t port) : stream(), m_ip(ip), m_port(port), m_fd(fd) { }
+tcp_stream::tcp_stream(int fd, std::string ip, uint16_t port) :  m_ip(std::move(ip)), m_port(port), m_fd(fd) { }
 
-readable tcp_stream::read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout) {
+readable tcp_stream::read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout) const {
     return readable { m_fd, bytes, timeout };
 }
 
-writeable tcp_stream::write_some(std::span<const uint8_t>& bytes, std::optional<milliseconds> timeout) {
+writeable tcp_stream::write_some(std::span<const uint8_t>& bytes, std::optional<milliseconds> timeout) const {
     return writeable { m_fd, bytes, timeout };
 }
 
 tcp_stream::~tcp_stream() {
     if(m_fd != -1) {
-        int err = ::close(m_fd);
+        int const err = ::close(m_fd);
         assert(err == 0);
     } // moved from otherwise
 }
 
 task<void> tcp_stream::close_notify() {
     if(m_fd != -1) {
-        int err = ::close(m_fd);
+        int const err = ::close(m_fd);
         assert(err == 0);
         m_fd = -1;
     } // moved from otherwise

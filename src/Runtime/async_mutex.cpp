@@ -19,7 +19,7 @@ async_mutex::lockable async_mutex::lock() {
 void async_mutex::unlock() {
     std::coroutine_handle<> atask = nullptr;
     {
-        std::scoped_lock lk {m_mut};
+        std::scoped_lock const lk {m_mut};
         if(!locked) {
             return;
         }
@@ -45,7 +45,7 @@ bool async_mutex::lockable::await_ready() const noexcept {
 }
 
 bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) {
-    std::scoped_lock lk { m_ctx->m_mut };
+    std::scoped_lock const lk { m_ctx->m_mut };
     if(std::exchange(m_ctx->locked, true)) {
         m_ctx->m_queue.push(coroutine);
         is_enqueued = true;
@@ -56,12 +56,12 @@ bool async_mutex::lockable::await_suspend(std::coroutine_handle<> coroutine) {
 
 async_mutex::scope_guard async_mutex::lockable::await_resume() {
     is_enqueued = false;
-    return scope_guard(m_ctx);
+    return {m_ctx};
 }
 
 async_mutex::scope_guard::scope_guard(async_mutex* ctx) : m_ctx(ctx) {}
 async_mutex::scope_guard::~scope_guard() {
-    if(m_ctx) {
+    if(m_ctx != nullptr) {
         m_ctx->unlock();
     }
 }

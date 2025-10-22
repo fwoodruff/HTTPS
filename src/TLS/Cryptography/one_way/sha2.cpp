@@ -22,49 +22,49 @@ namespace fbw {
 
 
 template<typename T>
-T rotate_right(T a, size_t b) noexcept {
-    size_t m = CHAR_BIT * sizeof(T);
+static T rotate_right(T a, size_t b) noexcept {
+    size_t const m = CHAR_BIT * sizeof(T);
     assert(b < m);
     return (a >> b) | (a << (m - b));
 }
 
 template<typename T>
-T CH(T x, T y, T z) noexcept {
+static T CH(T x, T y, T z) noexcept {
     return (x & y) ^ (~x & z);
 }
 template<typename T>
-T MAJ(T x, T y, T z) noexcept {
+static T MAJ(T x, T y, T z) noexcept {
     return (x & y) ^ (x & z) ^ (y & z);
 }
 
-uint32_t EP0(uint32_t x) noexcept {
+static uint32_t EP0(uint32_t x) noexcept {
     return rotate_right(x, 2) ^ rotate_right(x, 13) ^ rotate_right(x, 22);
 }
 
-uint32_t EP1(uint32_t x) noexcept {
+static uint32_t EP1(uint32_t x) noexcept {
     return rotate_right(x, 6) ^ rotate_right(x, 11) ^ rotate_right(x, 25);
 }
 
-uint32_t SIG0(uint32_t x) noexcept {
+static uint32_t SIG0(uint32_t x) noexcept {
     return rotate_right(x, 7) ^ rotate_right(x, 18) ^ (x >> 3);
 }
 
-uint32_t SIG1(uint32_t x) noexcept {
+static uint32_t SIG1(uint32_t x) noexcept {
     return rotate_right(x, 17) ^ rotate_right(x, 19) ^ (x >> 10);
 }
 
-uint64_t EP0(uint64_t x) noexcept {
+static uint64_t EP0(uint64_t x) noexcept {
     return rotate_right(x, 28) ^ rotate_right(x, 34) ^ rotate_right(x, 39);
 }
 
-uint64_t EP1(uint64_t x) noexcept {
+static uint64_t EP1(uint64_t x) noexcept {
     return rotate_right(x, 14) ^ rotate_right(x, 18) ^ rotate_right(x, 41);
 }
 
-uint64_t SIG0(uint64_t x) noexcept {
+static uint64_t SIG0(uint64_t x) noexcept {
     return rotate_right(x,  1) ^ rotate_right(x,  8) ^ (x >> 7);
 }
-uint64_t SIG1(uint64_t x) noexcept {
+static uint64_t SIG1(uint64_t x) noexcept {
     return rotate_right(x, 19) ^ rotate_right(x, 61) ^ (x >> 6);
 }
 
@@ -74,7 +74,7 @@ consteval double sq_root(double x) noexcept {
     double guess = 1;
     double diff = 1;
     while(diff > small or diff < -small) {
-        double root = 0.5 * (guess + x/guess);
+        double const root = 0.5 * (guess + x/guess);
         diff = guess - root;
         guess = root;
     }
@@ -106,7 +106,7 @@ constexpr std::array<uint64_t,80> prime_cbrts {
 
 
 template<typename RADIX, size_t BLOCK_SIZE, size_t INTERNAL_STATE_SIZE>
-void sha2_transform(std::array<RADIX, 8 >& state, const std::array<uint8_t, BLOCK_SIZE>& data) noexcept {
+static void sha2_transform(std::array<RADIX, 8 >& state, const std::array<uint8_t, BLOCK_SIZE>& data) noexcept {
     std::array<RADIX, INTERNAL_STATE_SIZE> m{};
     constexpr auto init_blocks = BLOCK_SIZE/sizeof(RADIX);
     for(size_t i = 0; i < init_blocks; i++) {
@@ -135,7 +135,7 @@ void sha2_transform(std::array<RADIX, 8 >& state, const std::array<uint8_t, BLOC
 }
 
 template<typename RADIX, size_t BLOCK_SIZE, size_t HASH_SIZE, size_t COUNTER_SIZE, size_t INTERNAL_STATE_SIZE>
-std::vector<uint8_t> hash_impl(std::array<uint8_t, BLOCK_SIZE> data, std::array<RADIX, 8> state, uint64_t bitlen, size_t datalen) {
+static std::vector<uint8_t> hash_impl(std::array<uint8_t, BLOCK_SIZE> data, std::array<RADIX, 8> state, uint64_t bitlen, size_t datalen) {
     bitlen += datalen * CHAR_BIT;
     std::vector<uint8_t> hash;
     hash.resize(HASH_SIZE);
@@ -152,26 +152,15 @@ std::vector<uint8_t> hash_impl(std::array<uint8_t, BLOCK_SIZE> data, std::array<
 
     for(size_t i = 0; i < HASH_SIZE/ sizeof(RADIX); i ++) {
         for(size_t j = 0; j < sizeof(RADIX); j++) {
-            hash[i * sizeof(RADIX) + j] = state[i] >> ((sizeof(RADIX) - 1 - j) * CHAR_BIT);
+            hash[(i * sizeof(RADIX)) + j] = state[i] >> ((sizeof(RADIX) - 1 - j) * CHAR_BIT);
         }
     }
     return hash;
 }
 
 
-
-void sha384_transform(std::array<uint64_t,8>& state, const std::array<uint8_t, sha384::block_size> data) noexcept {
-    return sha2_transform<uint64_t, sha384::block_size, 80>(state, data);
-}
-
-void sha256_transform(std::array<uint32_t,8>& state, const std::array<uint8_t,sha256::block_size> data) noexcept {
-    return sha2_transform<uint32_t, sha256::block_size, 64>(state, data);
-}
-
-
-
 template<typename RADIX, size_t BLOCK_SIZE, size_t HASH_SIZE, size_t INTERNAL_STATE_SIZE>
-void update_internal(std::array<uint8_t, BLOCK_SIZE>& data, std::array<RADIX, 8>& state, uint64_t& bitlen, size_t& datalen, 
+static void update_internal(std::array<uint8_t, BLOCK_SIZE>& data, std::array<RADIX, 8>& state, uint64_t& bitlen, size_t& datalen, 
         const uint8_t* const begin, size_t size) {
 
     for (size_t i = 0; i < size; ++i) {
@@ -230,7 +219,7 @@ sha384::sha384() noexcept {
     m_data.fill(0);
 }
 
-sha256::sha256() noexcept  : datalen(0),  bitlen(0), m_data() {
+sha256::sha256() noexcept  :  m_data() {
     constexpr auto state0 = []() consteval {
         int idx = 0;
         std::array<uint32_t,8> kl {};

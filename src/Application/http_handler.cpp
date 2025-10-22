@@ -46,11 +46,11 @@ void write_body(std::string body) {
     body = replace_all(std::move(body), ">", "&gt;");
     body.append("</p>");
     body.insert(0,"<p>");
-    fout << body << std::endl;
+    fout << body << '\n';
 }
 
-std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool full = true) {
-    auto time = std::time(0);
+std::vector<entry_t> headers_to_send(ssize_t file_size, const std::string& mime, bool full = true) {
+    auto time = std::time(nullptr);
     constexpr time_t day = 24*60*60;
     std::vector<entry_t> out;
     std::string status_code;
@@ -69,7 +69,7 @@ std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool f
     }
     out.push_back({"date", timestring(time)});
     out.push_back({"expires", timestring(time + day)});
-    auto content_type = mime + (mime.substr(0, 4) == "text" ? "; charset=UTF-8" : "");
+    auto content_type = mime + (mime.starts_with("text") ? "; charset=UTF-8" : "");
     out.push_back({"content-type", content_type});
     out.push_back({"server", make_server_name()});
     
@@ -122,12 +122,12 @@ task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize
     std::array<uint8_t, 28> entropy;
     randomgen.randgen(entropy);
     std::string boundary_string;
-    for(unsigned c : entropy) {
-        boundary_string.push_back('A' + c % 26);
+    for(unsigned const c : entropy) {
+        boundary_string.push_back('A' + (c % 26));
     }
     
-    std::string mid_bound =  "--" + boundary_string + "\r\nContent-Type: " + mime + "\r\n";
-    std::string end_bound = "--" + boundary_string + "--\r\n";
+    std::string const mid_bound =  "--" + boundary_string + "\r\nContent-Type: " + mime + "\r\n";
+    std::string const end_bound = "--" + boundary_string + "--\r\n";
 
     auto content_size = 0;
     for(auto& range : ranges) {
@@ -152,12 +152,12 @@ task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize
             if(result != stream_result::ok) {
                 co_return;
             }
-            if(send_body) {
+            
                 result = co_await send_body_slice(conn, file, range.first, range.second + 1, false);
                 if(result != stream_result::ok) {
                     co_return;
                 }
-            }
+            
             auto endda = to_unsigned("\r\n");
             result = co_await conn.write_data(endda);
             if(result != stream_result::ok) {
@@ -197,8 +197,8 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
     if(file.fail()) {
         throw http_error(404, "Not Found");
     }
-    ssize_t file_size = file.tellg();
-    std::string mime = Mime_from_file(file_path);
+    ssize_t const file_size = file.tellg();
+    std::string const mime = Mime_from_file(file_path);
     auto range_hdr = find_header(headers, "range");
     if (range_hdr) {
         auto ranges = parse_range_header(*range_hdr, file_size);
@@ -230,7 +230,7 @@ task<stream_result> read_all(http_ctx& connection, std::deque<uint8_t>& request_
 
 task<void> handle_post_request(http_ctx& connection, const std::filesystem::path& file_path, const std::vector<entry_t>& headers) {
 
-    std::string mime = Mime_from_file(file_path);
+    std::string const mime = Mime_from_file(file_path);
 
     auto content_length = find_header(headers, "content-length");
     if(!content_length) {
@@ -251,14 +251,14 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
     if(co_await read_all(connection, request_body) != stream_result::ok) {
         co_return;
     }
-    std::string body(request_body.begin(), request_body.end());
+    std::string const body(request_body.begin(), request_body.end());
     write_body(body);
 
     std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
     if(file.fail()) {
         throw http_error(404, "Not Found");
     }
-    ssize_t file_size = file.tellg();
+    ssize_t const file_size = file.tellg();
 
     co_await send_full_response(connection, file, file_size, mime, true);
     co_return;
@@ -310,7 +310,7 @@ task<bool> handle_request(http_ctx& connection) {
         throw http_error(400, "Bad Request");
     }
 
-    std::filesystem::path safe_path = fix_filename(*path);
+    std::filesystem::path const safe_path = fix_filename(*path);
     auto webroot = project_options.webpage_folder;
 
     auto dir_host = get_host(request_headers);
@@ -352,12 +352,12 @@ task<bool> handle_redirect(http_ctx& connection) {
     if(authority->starts_with("localhost")) {
         authority = project_options.default_subfolder;
     }
-    size_t colon = domain.rfind(':');
+    size_t const colon = domain.rfind(':');
     if (colon != std::string::npos) {
         domain = domain.substr(0, colon);
     }
 
-    std::filesystem::path a_path = *path;
+    std::filesystem::path const a_path = *path;
 
     if (*method == "GET" && a_path.string().starts_with("/.well-known/acme-challenge/")) {
         auto webroot = project_options.webpage_folder;
@@ -371,33 +371,33 @@ task<bool> handle_redirect(http_ctx& connection) {
         co_return true;
     }
 
-    std::string body = moved_301();
+    std::string const body = moved_301();
     
-    std::filesystem::path safe_path = fix_filename(*path);
-    std::string MIME = Mime_from_file(safe_path);
+    std::filesystem::path const safe_path = fix_filename(*path);
+    std::string const MIME = Mime_from_file(safe_path);
     
-    std::string https_port = project_options.server_port;
-    std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
-    std::string location_resource = a_path == "/" ? "" : a_path;
+    std::string const https_port = project_options.server_port;
+    std::string const optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
+    std::string const location_resource = a_path == "/" ? "" : a_path;
     std::vector<entry_t> out;
 
-    std::string location = "https://" + domain + optional_port + location_resource;
+    std::string const location = "https://" + domain + optional_port + location_resource;
     
     out.push_back({":status", "301"});
     out.push_back({"location", location});
-    auto content_type = MIME + (MIME.substr(0, 4) == "text" ? "; charset=UTF-8" : "");
+    auto content_type = MIME + (MIME.starts_with("text") ? "; charset=UTF-8" : "");
     out.push_back({"content-type", content_type});
     out.push_back({"server", make_server_name()});
     out.push_back({"content-length", std::to_string(body.size())});
     out.push_back({"server", make_server_name()});
 
-    stream_result res = co_await connection.write_headers(out);
+    stream_result const res = co_await connection.write_headers(out);
     if(res != stream_result::ok) {
         co_return false;
     }
 
     auto sbody = to_unsigned(body);
-    std::span<uint8_t> d { sbody.begin(), sbody.end() };
+    std::span<uint8_t> const d { sbody.begin(), sbody.end() };
     co_await connection.write_data(d, true);
     co_return false;
 }

@@ -48,7 +48,7 @@ void AES_CBC_SHA::set_key_material_12(std::vector<uint8_t> expanded_master)  {
 }
 
 
-std::vector<uint8_t> pad_message(std::vector<uint8_t> message) {
+static std::vector<uint8_t> pad_message(std::vector<uint8_t> message) {
     const auto blocksize = 16;
     const auto padmax = 256;
     
@@ -59,7 +59,7 @@ std::vector<uint8_t> pad_message(std::vector<uint8_t> message) {
     const auto max_padded_message_size = ((message.size() / padmax)+1)* padmax;
     auto randval = randomgen.randgen64();
     const auto padded_message_size = min_padded_message_size +
-                (randval*blocksize) % (blocksize+max_padded_message_size-min_padded_message_size);
+                ((randval*blocksize) % (blocksize+max_padded_message_size-min_padded_message_size));
 
     const auto padding_checked = padded_message_size - message.size();
     
@@ -132,7 +132,7 @@ tls_record AES_CBC_SHA::deprotect(tls_record record) {
     
     bool pad_oracle_attack = false;
     
-    assert(plaintext.size() >= 1);
+    assert(!plaintext.empty());
     size_t siz = plaintext[plaintext.size()-1];
     if(siz+1+client_MAC_key.size() > plaintext.size()) {
         pad_oracle_attack = true;

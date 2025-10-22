@@ -6,6 +6,8 @@
 //
 
 #include "hpack.hpp"
+
+#include <utility>
 #include "h2frame.hpp"
 #include "h2proto.hpp"
 
@@ -32,70 +34,70 @@ std::vector<uint8_t> new_name_new_value_never_dynamic(std::string name, std::str
 std::vector<uint8_t> dynamic_table_size_update(size_t size);
 
 constexpr std::array<hpack_huffman_bit_pattern, 256> huffman_table = {
-    hpack_huffman_bit_pattern{0x1ff8, 13},  {0x7fffd8, 23}, {0xfffffe2, 28}, {0xfffffe3, 28},
-    {0xfffffe4, 28}, {0xfffffe5, 28}, {0xfffffe6, 28}, {0xfffffe7, 28},
-    {0xfffffe8, 28}, {0xffffea, 24}, {0x3ffffffc, 30}, {0xfffffe9, 28},
-    {0xfffffea, 28}, {0x3ffffffd, 30}, {0xfffffeb, 28}, {0xfffffec, 28},
-    {0xfffffed, 28}, {0xfffffee, 28}, {0xfffffef, 28}, {0xffffff0, 28},
-    {0xffffff1, 28}, {0xffffff2, 28}, {0x3ffffffe, 30}, {0xffffff3, 28},
-    {0xffffff4, 28}, {0xffffff5, 28}, {0xffffff6, 28}, {0xffffff7, 28},
-    {0xffffff8, 28}, {0xffffff9, 28}, {0xffffffa, 28}, {0xffffffb, 28},
-    {0x14, 6},      {0x3f8, 10},    {0x3f9, 10},    {0xffa, 12},
-    {0x1ff9, 13},   {0x15, 6},      {0xf8, 8},      {0x7fa, 11},
-    {0x3fa, 10},    {0x3fb, 10},    {0xf9, 8},      {0x7fb, 11},
-    {0xfa, 8},      {0x16, 6},      {0x17, 6},      {0x18, 6},
-    {0x0, 5},       {0x1, 5},       {0x2, 5},       {0x19, 6},
-    {0x1a, 6},      {0x1b, 6},      {0x1c, 6},      {0x1d, 6},
-    {0x1e, 6},      {0x1f, 6},      {0x5c, 7},      {0xfb, 8},
-    {0x7ffc, 15},   {0x20, 6},      {0xffb, 12},    {0x3fc, 10},
-    {0x1ffa, 13},   {0x21, 6},      {0x5d, 7},      {0x5e, 7},
-    {0x5f, 7},      {0x60, 7},      {0x61, 7},      {0x62, 7},
-    {0x63, 7},      {0x64, 7},      {0x65, 7},      {0x66, 7},
-    {0x67, 7},      {0x68, 7},      {0x69, 7},      {0x6a, 7},
-    {0x6b, 7},      {0x6c, 7},      {0x6d, 7},      {0x6e, 7},
-    {0x6f, 7},      {0x70, 7},      {0x71, 7},      {0x72, 7},
-    {0xfc, 8},      {0x73, 7},      {0xfd, 8},      {0x1ffb, 13},
-    {0x7fff0, 19},  {0x1ffc, 13},   {0x3ffc, 14},   {0x22, 6},
-    {0x7ffd, 15},   {0x3, 5},       {0x23, 6},      {0x4, 5},
-    {0x24, 6},      {0x5, 5},       {0x25, 6},      {0x26, 6},
-    {0x27, 6},      {0x6, 5},       {0x74, 7},      {0x75, 7},
-    {0x28, 6},      {0x29, 6},      {0x2a, 6},      {0x7, 5},
-    {0x2b, 6},      {0x76, 7},      {0x2c, 6},      {0x8, 5},
-    {0x9, 5},       {0x2d, 6},      {0x77, 7},      {0x78, 7},
-    {0x79, 7},      {0x7a, 7},      {0x7b, 7},      {0x7ffe, 15},
-    {0x7fc, 11},    {0x3ffd, 14},   {0x1ffd, 13},   {0xffffffc, 28},
-    {0xfffe6, 20},  {0x3fffd2, 22}, {0xfffe7, 20},  {0xfffe8, 20},
-    {0x3fffd3, 22}, {0x3fffd4, 22}, {0x3fffd5, 22}, {0x7fffd9, 23},
-    {0x3fffd6, 22}, {0x7fffda, 23}, {0x7fffdb, 23}, {0x7fffdc, 23},
-    {0x7fffdd, 23}, {0x7fffde, 23}, {0xffffeb, 24}, {0x7fffdf, 23},
-    {0xffffec, 24}, {0xffffed, 24}, {0x3fffd7, 22}, {0x7fffe0, 23},
-    {0xffffee, 24}, {0x7fffe1, 23}, {0x7fffe2, 23}, {0x7fffe3, 23},
-    {0x7fffe4, 23}, {0x1fffdc, 21}, {0x3fffd8, 22}, {0x7fffe5, 23},
-    {0x3fffd9, 22}, {0x7fffe6, 23}, {0x7fffe7, 23}, {0xffffef, 24},
-    {0x3fffda, 22}, {0x1fffdd, 21}, {0xfffe9, 20},  {0x3fffdb, 22},
-    {0x3fffdc, 22}, {0x7fffe8, 23}, {0x7fffe9, 23}, {0x1fffde, 21},
-    {0x7fffea, 23}, {0x3fffdd, 22}, {0x3fffde, 22}, {0xfffff0, 24},
-    {0x1fffdf, 21}, {0x3fffdf, 22}, {0x7fffeb, 23}, {0x7fffec, 23},
-    {0x1fffe0, 21}, {0x1fffe1, 21}, {0x3fffe0, 22}, {0x1fffe2, 21},
-    {0x7fffed, 23}, {0x3fffe1, 22}, {0x7fffee, 23}, {0x7fffef, 23},
-    {0xfffea, 20},  {0x3fffe2, 22}, {0x3fffe3, 22}, {0x3fffe4, 22},
-    {0x7ffff0, 23}, {0x3fffe5, 22}, {0x3fffe6, 22}, {0x7ffff1, 23},
-    {0x3ffffe0, 26}, {0x3ffffe1, 26}, {0xfffeb, 20}, {0x7fff1, 19},
-    {0x3fffe7, 22}, {0x7ffff2, 23}, {0x3fffe8, 22}, {0x1ffffec, 25},
-    {0x3ffffe2, 26}, {0x3ffffe3, 26}, {0x3ffffe4, 26}, {0x7ffffde, 27},
-    {0x7ffffdf, 27}, {0x3ffffe5, 26}, {0xfffff1, 24}, {0x1ffffed, 25},
-    {0x7fff2, 19},  {0x1fffe3, 21}, {0x3ffffe6, 26}, {0x7ffffe0, 27},
-    {0x7ffffe1, 27}, {0x3ffffe7, 26}, {0x7ffffe2, 27}, {0xfffff2, 24},
-    {0x1fffe4, 21}, {0x1fffe5, 21}, {0x3ffffe8, 26}, {0x3ffffe9, 26},
-    {0xffffffd, 28}, {0x7ffffe3, 27}, {0x7ffffe4, 27}, {0x7ffffe5, 27},
-    {0xfffec, 20},  {0xfffff3, 24}, {0xfffed, 20},  {0x1fffe6, 21},
-    {0x3fffe9, 22}, {0x1fffe7, 21}, {0x1fffe8, 21}, {0x7ffff3, 23},
-    {0x3fffea, 22}, {0x3fffeb, 22}, {0x1ffffee, 25}, {0x1ffffef, 25},
-    {0xfffff4, 24}, {0xfffff5, 24}, {0x3ffffea, 26}, {0x7ffff4, 23},
-    {0x3ffffeb, 26}, {0x7ffffe6, 27}, {0x3ffffec, 26}, {0x3ffffed, 26},
-    {0x7ffffe7, 27}, {0x7ffffe8, 27}, {0x7ffffe9, 27}, {0x7ffffea, 27},
-    {0x7ffffeb, 27}, {0xffffffe, 28}, {0x7ffffec, 27}, {0x7ffffed, 27},
-    {0x7ffffee, 27}, {0x7ffffef, 27}, {0x7fffff0, 27}, {0x3ffffee, 26} // , {3fffffff, 30} implicit
+    hpack_huffman_bit_pattern{.bits=0x1ff8, .bit_length=13},  {.bits=0x7fffd8, .bit_length=23}, {.bits=0xfffffe2, .bit_length=28}, {.bits=0xfffffe3, .bit_length=28},
+    {.bits=0xfffffe4, .bit_length=28}, {.bits=0xfffffe5, .bit_length=28}, {.bits=0xfffffe6, .bit_length=28}, {.bits=0xfffffe7, .bit_length=28},
+    {.bits=0xfffffe8, .bit_length=28}, {.bits=0xffffea, .bit_length=24}, {.bits=0x3ffffffc, .bit_length=30}, {.bits=0xfffffe9, .bit_length=28},
+    {.bits=0xfffffea, .bit_length=28}, {.bits=0x3ffffffd, .bit_length=30}, {.bits=0xfffffeb, .bit_length=28}, {.bits=0xfffffec, .bit_length=28},
+    {.bits=0xfffffed, .bit_length=28}, {.bits=0xfffffee, .bit_length=28}, {.bits=0xfffffef, .bit_length=28}, {.bits=0xffffff0, .bit_length=28},
+    {.bits=0xffffff1, .bit_length=28}, {.bits=0xffffff2, .bit_length=28}, {.bits=0x3ffffffe, .bit_length=30}, {.bits=0xffffff3, .bit_length=28},
+    {.bits=0xffffff4, .bit_length=28}, {.bits=0xffffff5, .bit_length=28}, {.bits=0xffffff6, .bit_length=28}, {.bits=0xffffff7, .bit_length=28},
+    {.bits=0xffffff8, .bit_length=28}, {.bits=0xffffff9, .bit_length=28}, {.bits=0xffffffa, .bit_length=28}, {.bits=0xffffffb, .bit_length=28},
+    {.bits=0x14, .bit_length=6},      {.bits=0x3f8, .bit_length=10},    {.bits=0x3f9, .bit_length=10},    {.bits=0xffa, .bit_length=12},
+    {.bits=0x1ff9, .bit_length=13},   {.bits=0x15, .bit_length=6},      {.bits=0xf8, .bit_length=8},      {.bits=0x7fa, .bit_length=11},
+    {.bits=0x3fa, .bit_length=10},    {.bits=0x3fb, .bit_length=10},    {.bits=0xf9, .bit_length=8},      {.bits=0x7fb, .bit_length=11},
+    {.bits=0xfa, .bit_length=8},      {.bits=0x16, .bit_length=6},      {.bits=0x17, .bit_length=6},      {.bits=0x18, .bit_length=6},
+    {.bits=0x0, .bit_length=5},       {.bits=0x1, .bit_length=5},       {.bits=0x2, .bit_length=5},       {.bits=0x19, .bit_length=6},
+    {.bits=0x1a, .bit_length=6},      {.bits=0x1b, .bit_length=6},      {.bits=0x1c, .bit_length=6},      {.bits=0x1d, .bit_length=6},
+    {.bits=0x1e, .bit_length=6},      {.bits=0x1f, .bit_length=6},      {.bits=0x5c, .bit_length=7},      {.bits=0xfb, .bit_length=8},
+    {.bits=0x7ffc, .bit_length=15},   {.bits=0x20, .bit_length=6},      {.bits=0xffb, .bit_length=12},    {.bits=0x3fc, .bit_length=10},
+    {.bits=0x1ffa, .bit_length=13},   {.bits=0x21, .bit_length=6},      {.bits=0x5d, .bit_length=7},      {.bits=0x5e, .bit_length=7},
+    {.bits=0x5f, .bit_length=7},      {.bits=0x60, .bit_length=7},      {.bits=0x61, .bit_length=7},      {.bits=0x62, .bit_length=7},
+    {.bits=0x63, .bit_length=7},      {.bits=0x64, .bit_length=7},      {.bits=0x65, .bit_length=7},      {.bits=0x66, .bit_length=7},
+    {.bits=0x67, .bit_length=7},      {.bits=0x68, .bit_length=7},      {.bits=0x69, .bit_length=7},      {.bits=0x6a, .bit_length=7},
+    {.bits=0x6b, .bit_length=7},      {.bits=0x6c, .bit_length=7},      {.bits=0x6d, .bit_length=7},      {.bits=0x6e, .bit_length=7},
+    {.bits=0x6f, .bit_length=7},      {.bits=0x70, .bit_length=7},      {.bits=0x71, .bit_length=7},      {.bits=0x72, .bit_length=7},
+    {.bits=0xfc, .bit_length=8},      {.bits=0x73, .bit_length=7},      {.bits=0xfd, .bit_length=8},      {.bits=0x1ffb, .bit_length=13},
+    {.bits=0x7fff0, .bit_length=19},  {.bits=0x1ffc, .bit_length=13},   {.bits=0x3ffc, .bit_length=14},   {.bits=0x22, .bit_length=6},
+    {.bits=0x7ffd, .bit_length=15},   {.bits=0x3, .bit_length=5},       {.bits=0x23, .bit_length=6},      {.bits=0x4, .bit_length=5},
+    {.bits=0x24, .bit_length=6},      {.bits=0x5, .bit_length=5},       {.bits=0x25, .bit_length=6},      {.bits=0x26, .bit_length=6},
+    {.bits=0x27, .bit_length=6},      {.bits=0x6, .bit_length=5},       {.bits=0x74, .bit_length=7},      {.bits=0x75, .bit_length=7},
+    {.bits=0x28, .bit_length=6},      {.bits=0x29, .bit_length=6},      {.bits=0x2a, .bit_length=6},      {.bits=0x7, .bit_length=5},
+    {.bits=0x2b, .bit_length=6},      {.bits=0x76, .bit_length=7},      {.bits=0x2c, .bit_length=6},      {.bits=0x8, .bit_length=5},
+    {.bits=0x9, .bit_length=5},       {.bits=0x2d, .bit_length=6},      {.bits=0x77, .bit_length=7},      {.bits=0x78, .bit_length=7},
+    {.bits=0x79, .bit_length=7},      {.bits=0x7a, .bit_length=7},      {.bits=0x7b, .bit_length=7},      {.bits=0x7ffe, .bit_length=15},
+    {.bits=0x7fc, .bit_length=11},    {.bits=0x3ffd, .bit_length=14},   {.bits=0x1ffd, .bit_length=13},   {.bits=0xffffffc, .bit_length=28},
+    {.bits=0xfffe6, .bit_length=20},  {.bits=0x3fffd2, .bit_length=22}, {.bits=0xfffe7, .bit_length=20},  {.bits=0xfffe8, .bit_length=20},
+    {.bits=0x3fffd3, .bit_length=22}, {.bits=0x3fffd4, .bit_length=22}, {.bits=0x3fffd5, .bit_length=22}, {.bits=0x7fffd9, .bit_length=23},
+    {.bits=0x3fffd6, .bit_length=22}, {.bits=0x7fffda, .bit_length=23}, {.bits=0x7fffdb, .bit_length=23}, {.bits=0x7fffdc, .bit_length=23},
+    {.bits=0x7fffdd, .bit_length=23}, {.bits=0x7fffde, .bit_length=23}, {.bits=0xffffeb, .bit_length=24}, {.bits=0x7fffdf, .bit_length=23},
+    {.bits=0xffffec, .bit_length=24}, {.bits=0xffffed, .bit_length=24}, {.bits=0x3fffd7, .bit_length=22}, {.bits=0x7fffe0, .bit_length=23},
+    {.bits=0xffffee, .bit_length=24}, {.bits=0x7fffe1, .bit_length=23}, {.bits=0x7fffe2, .bit_length=23}, {.bits=0x7fffe3, .bit_length=23},
+    {.bits=0x7fffe4, .bit_length=23}, {.bits=0x1fffdc, .bit_length=21}, {.bits=0x3fffd8, .bit_length=22}, {.bits=0x7fffe5, .bit_length=23},
+    {.bits=0x3fffd9, .bit_length=22}, {.bits=0x7fffe6, .bit_length=23}, {.bits=0x7fffe7, .bit_length=23}, {.bits=0xffffef, .bit_length=24},
+    {.bits=0x3fffda, .bit_length=22}, {.bits=0x1fffdd, .bit_length=21}, {.bits=0xfffe9, .bit_length=20},  {.bits=0x3fffdb, .bit_length=22},
+    {.bits=0x3fffdc, .bit_length=22}, {.bits=0x7fffe8, .bit_length=23}, {.bits=0x7fffe9, .bit_length=23}, {.bits=0x1fffde, .bit_length=21},
+    {.bits=0x7fffea, .bit_length=23}, {.bits=0x3fffdd, .bit_length=22}, {.bits=0x3fffde, .bit_length=22}, {.bits=0xfffff0, .bit_length=24},
+    {.bits=0x1fffdf, .bit_length=21}, {.bits=0x3fffdf, .bit_length=22}, {.bits=0x7fffeb, .bit_length=23}, {.bits=0x7fffec, .bit_length=23},
+    {.bits=0x1fffe0, .bit_length=21}, {.bits=0x1fffe1, .bit_length=21}, {.bits=0x3fffe0, .bit_length=22}, {.bits=0x1fffe2, .bit_length=21},
+    {.bits=0x7fffed, .bit_length=23}, {.bits=0x3fffe1, .bit_length=22}, {.bits=0x7fffee, .bit_length=23}, {.bits=0x7fffef, .bit_length=23},
+    {.bits=0xfffea, .bit_length=20},  {.bits=0x3fffe2, .bit_length=22}, {.bits=0x3fffe3, .bit_length=22}, {.bits=0x3fffe4, .bit_length=22},
+    {.bits=0x7ffff0, .bit_length=23}, {.bits=0x3fffe5, .bit_length=22}, {.bits=0x3fffe6, .bit_length=22}, {.bits=0x7ffff1, .bit_length=23},
+    {.bits=0x3ffffe0, .bit_length=26}, {.bits=0x3ffffe1, .bit_length=26}, {.bits=0xfffeb, .bit_length=20}, {.bits=0x7fff1, .bit_length=19},
+    {.bits=0x3fffe7, .bit_length=22}, {.bits=0x7ffff2, .bit_length=23}, {.bits=0x3fffe8, .bit_length=22}, {.bits=0x1ffffec, .bit_length=25},
+    {.bits=0x3ffffe2, .bit_length=26}, {.bits=0x3ffffe3, .bit_length=26}, {.bits=0x3ffffe4, .bit_length=26}, {.bits=0x7ffffde, .bit_length=27},
+    {.bits=0x7ffffdf, .bit_length=27}, {.bits=0x3ffffe5, .bit_length=26}, {.bits=0xfffff1, .bit_length=24}, {.bits=0x1ffffed, .bit_length=25},
+    {.bits=0x7fff2, .bit_length=19},  {.bits=0x1fffe3, .bit_length=21}, {.bits=0x3ffffe6, .bit_length=26}, {.bits=0x7ffffe0, .bit_length=27},
+    {.bits=0x7ffffe1, .bit_length=27}, {.bits=0x3ffffe7, .bit_length=26}, {.bits=0x7ffffe2, .bit_length=27}, {.bits=0xfffff2, .bit_length=24},
+    {.bits=0x1fffe4, .bit_length=21}, {.bits=0x1fffe5, .bit_length=21}, {.bits=0x3ffffe8, .bit_length=26}, {.bits=0x3ffffe9, .bit_length=26},
+    {.bits=0xffffffd, .bit_length=28}, {.bits=0x7ffffe3, .bit_length=27}, {.bits=0x7ffffe4, .bit_length=27}, {.bits=0x7ffffe5, .bit_length=27},
+    {.bits=0xfffec, .bit_length=20},  {.bits=0xfffff3, .bit_length=24}, {.bits=0xfffed, .bit_length=20},  {.bits=0x1fffe6, .bit_length=21},
+    {.bits=0x3fffe9, .bit_length=22}, {.bits=0x1fffe7, .bit_length=21}, {.bits=0x1fffe8, .bit_length=21}, {.bits=0x7ffff3, .bit_length=23},
+    {.bits=0x3fffea, .bit_length=22}, {.bits=0x3fffeb, .bit_length=22}, {.bits=0x1ffffee, .bit_length=25}, {.bits=0x1ffffef, .bit_length=25},
+    {.bits=0xfffff4, .bit_length=24}, {.bits=0xfffff5, .bit_length=24}, {.bits=0x3ffffea, .bit_length=26}, {.bits=0x7ffff4, .bit_length=23},
+    {.bits=0x3ffffeb, .bit_length=26}, {.bits=0x7ffffe6, .bit_length=27}, {.bits=0x3ffffec, .bit_length=26}, {.bits=0x3ffffed, .bit_length=26},
+    {.bits=0x7ffffe7, .bit_length=27}, {.bits=0x7ffffe8, .bit_length=27}, {.bits=0x7ffffe9, .bit_length=27}, {.bits=0x7ffffea, .bit_length=27},
+    {.bits=0x7ffffeb, .bit_length=27}, {.bits=0xffffffe, .bit_length=28}, {.bits=0x7ffffec, .bit_length=27}, {.bits=0x7ffffed, .bit_length=27},
+    {.bits=0x7ffffee, .bit_length=27}, {.bits=0x7ffffef, .bit_length=27}, {.bits=0x7fffff0, .bit_length=27}, {.bits=0x3ffffee, .bit_length=26} // , {3fffffff, 30} implicit
 };
 
 std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& headers) {
@@ -144,11 +146,11 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
     return encoded_block;
 }
 
-table::table() : next_idx(first_dynamic_idx) {}
+table::table()  {}
 
-size_t table::index(entry_t entry) {
+size_t table::index(const entry_t& entry) {
     for(size_t i = 0; i < s_static_table.size(); i++) {
-        auto& ent = s_static_table[i];
+        const auto& ent = s_static_table[i];
         if(ent.name == entry.name and ent.value == entry.value) {
             return i + 1;
         }
@@ -164,7 +166,7 @@ size_t table::index(entry_t entry) {
 
 size_t table::name_index(const std::string& name) {
     for(size_t i = 0; i < s_static_table.size(); i++) {
-        auto& ent = s_static_table[i];
+        const auto& ent = s_static_table[i];
         if(ent.name == name) {
             return i + 1;
         }
@@ -234,8 +236,8 @@ void hpack::set_decoder_max_capacity(uint32_t capacity) {
 }
 
 std::string decode_string(const std::vector<uint8_t>& encoded, size_t& offset) {
-    bool is_huffman = (encoded[offset] & 0x80) != 0;
-    uint32_t size = decode_integer(encoded, offset, 7);
+    bool const is_huffman = (encoded[offset] & 0x80) != 0;
+    uint32_t const size = decode_integer(encoded, offset, 7);
     if(is_huffman) {
         if(offset + size > encoded.size()) {
             throw h2_error("bad Huffman decode", h2_code::COMPRESSION_ERROR);
@@ -243,27 +245,26 @@ std::string decode_string(const std::vector<uint8_t>& encoded, size_t& offset) {
         auto ret = decode_huffman({encoded.begin() + offset, size});
         offset += size;
         return ret;
-    } else {
-        std::string out;
+    }         std::string out;
         if(offset + size > encoded.size()) {
             throw h2_error("bad Huffman decode", h2_code::COMPRESSION_ERROR);
         }
         out.append(encoded.begin() + offset, encoded.begin() + offset + size);
         offset += size;
         return out;
-    }
+   
 }
 
 std::string decode_huffman(std::span<const uint8_t> encoded_str) {
     std::string result;
     uint32_t current_bits = 0;
     uint8_t bit_size = 0;
-    for (uint8_t byte : encoded_str) {
+    for (uint8_t const byte : encoded_str) {
         for (int bit = 7; bit >= 0; --bit) {
             current_bits <<= 1;
             current_bits |= ((byte >> bit) & 1);
             bit_size++;
-            if(auto it = huffman_decode.find(hpack_huffman_bit_pattern{current_bits, bit_size}); it != huffman_decode.end()) {
+            if(auto it = huffman_decode.find(hpack_huffman_bit_pattern{.bits=current_bits, .bit_length=bit_size}); it != huffman_decode.end()) {
                 result.push_back(char(it->second));
                 current_bits = 0;
                 bit_size = 0;
@@ -292,18 +293,18 @@ std::vector<entry_t> hpack::parse_field_block(const std::vector<uint8_t>& field_
     return entries;
 }
 
-std::vector<uint8_t> encode_huffman(std::string str_literal) {
+std::vector<uint8_t> encode_huffman(const std::string& str_literal) {
     std::vector<uint8_t> out;
     uint8_t bit_idx = 0;
     uint8_t current_byte = 0;
 
-    for (uint8_t ch : str_literal) {
+    for (uint8_t const ch : str_literal) {
         auto [bit_pattern, num_bits] = huffman_table[ch];
         while (num_bits > 0) {
-            uint8_t available_bits = 8 - bit_idx;
-            uint8_t bits_to_write = std::min(num_bits, available_bits);
-            uint8_t shift = num_bits - bits_to_write;
-            uint8_t bits = (bit_pattern >> shift) & ((1 << bits_to_write) - 1);
+            uint8_t const available_bits = 8 - bit_idx;
+            uint8_t const bits_to_write = std::min(num_bits, available_bits);
+            uint8_t const shift = num_bits - bits_to_write;
+            uint8_t const bits = (bit_pattern >> shift) & ((1 << bits_to_write) - 1);
             current_byte |= bits << (available_bits - bits_to_write);
             bit_idx += bits_to_write;
             num_bits -= bits_to_write;
@@ -347,7 +348,7 @@ std::vector<uint8_t> encode_integer(uint32_t value, uint8_t prefix_bits) {
 }
 
 uint32_t decode_integer(const std::vector<uint8_t>& encoded, size_t& offset, uint8_t prefix_bits) {
-    uint32_t prefix = (1 << prefix_bits) - 1;
+    uint32_t const prefix = (1 << prefix_bits) - 1;
     if(offset >= encoded.size()) {
         throw h2_error("bounds check", h2_code::COMPRESSION_ERROR);
     }
@@ -362,12 +363,12 @@ uint32_t decode_integer(const std::vector<uint8_t>& encoded, size_t& offset, uin
         if(offset + i >= encoded.size()) [[unlikely]] { 
             throw h2_error("integer encoding incomplete", h2_code::COMPRESSION_ERROR);
         }
-        uint8_t byte = encoded[offset + i];
+        uint8_t const byte = encoded[offset + i];
 
         const uint64_t seven_bits = (byte & 0x7F);
         value += (seven_bits << (7*(i-1)));
 
-        if (value > ((1ull << 31) - prefix)) [[unlikely]] {
+        if (value > ((1ULL << 31) - prefix)) [[unlikely]] {
             throw h2_error("encoded integer is too large", h2_code::COMPRESSION_ERROR);
         }
         if ((byte & 0x80) == 0) {
@@ -392,11 +393,10 @@ std::vector<uint8_t> encode_string_efficient(std::string str) {
         lit[0] |= 0x80;
         lit.insert(lit.end(), hstr.begin(), hstr.end());
         return lit;
-    } else {
-        auto lit = encode_integer(str.size(), 7);
+    }         auto lit = encode_integer(str.size(), 7);
         lit.insert(lit.end(), str.begin(), str.end());
         return lit;
-    }
+   
 }
 
 std::vector<uint8_t> indexed_field(uint32_t idx) {
@@ -408,15 +408,15 @@ std::vector<uint8_t> indexed_field(uint32_t idx) {
 std::vector<uint8_t> indexed_name_new_value(uint32_t idx, std::string value) {
     std::vector<uint8_t> rep = encode_integer(idx, 6);
     rep[0] |= 0x40;
-    const auto string_encoded = encode_string_efficient(value);
+    const auto string_encoded = encode_string_efficient(std::move(value));
     rep.insert(rep.end(), string_encoded.begin(), string_encoded.end());
     return rep;
 }
 
 std::vector<uint8_t> new_name_new_value(std::string name, std::string value) {
     std::vector<uint8_t> rep {0x40};
-    const auto name_encoded = encode_string_efficient(name);
-    const auto value_encoded = encode_string_efficient(value);
+    const auto name_encoded = encode_string_efficient(std::move(name));
+    const auto value_encoded = encode_string_efficient(std::move(value));
     rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
     rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
@@ -424,15 +424,15 @@ std::vector<uint8_t> new_name_new_value(std::string name, std::string value) {
 
 std::vector<uint8_t> indexed_name_new_value_without_dynamic(uint32_t idx, std::string value) {
     std::vector<uint8_t> rep = encode_integer(idx, 4);
-    const auto value_encoded = encode_string_efficient(value);
+    const auto value_encoded = encode_string_efficient(std::move(value));
     rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
 }
 
 std::vector<uint8_t> new_name_new_value_without_dynamic(std::string name, std::string value) {
     std::vector<uint8_t> rep {0};
-    const auto name_encoded = encode_string_efficient(name);
-    const auto value_encoded = encode_string_efficient(value);
+    const auto name_encoded = encode_string_efficient(std::move(name));
+    const auto value_encoded = encode_string_efficient(std::move(value));
     rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
     rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
@@ -440,7 +440,7 @@ std::vector<uint8_t> new_name_new_value_without_dynamic(std::string name, std::s
 
 std::vector<uint8_t> indexed_name_new_value_never_dynamic(uint32_t idx, std::string value) {
     std::vector<uint8_t> rep = encode_integer(idx, 4);
-    const auto value_encoded = encode_string_literal(value);
+    const auto value_encoded = encode_string_literal(std::move(value));
     rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     rep[0] |= 0x10;
     return rep;
@@ -448,8 +448,8 @@ std::vector<uint8_t> indexed_name_new_value_never_dynamic(uint32_t idx, std::str
 
 std::vector<uint8_t> new_name_new_value_never_dynamic(std::string name, std::string value) {
     std::vector<uint8_t> rep {0x10};
-    const auto name_encoded = encode_string_literal(name);
-    const auto value_encoded = encode_string_literal(value);
+    const auto name_encoded = encode_string_literal(std::move(name));
+    const auto value_encoded = encode_string_literal(std::move(value));
     rep.insert(rep.end(), name_encoded.begin(), name_encoded.end());
     rep.insert(rep.end(), value_encoded.begin(), value_encoded.end());
     return rep;
@@ -463,20 +463,20 @@ std::vector<uint8_t> dynamic_table_size_update(size_t size) {
 
 std::pair<hpack::prefix_type, uint32_t> hpack::decode_prefix(const std::vector<uint8_t>& encoded, size_t& offset) {
     assert(offset < encoded.size());
-    uint8_t byte = encoded[offset];
+    uint8_t const byte = encoded[offset];
     int prefix_bytes = 0;
     prefix_type type;
     using enum prefix_type;
-    if(byte & 0x80) {
+    if((byte & 0x80) != 0) {
         prefix_bytes = 7;
         type = indexed_header;
-    } else if(byte & 0x40) {
+    } else if((byte & 0x40) != 0) {
         prefix_bytes = 6;
         type = literal_header_incremental_indexing;
-    } else if(byte & 0x20) {
+    } else if((byte & 0x20) != 0) {
         prefix_bytes = 5;
         type = table_size_update;
-    } else if(byte & 0x10) {
+    } else if((byte & 0x10) != 0) {
         prefix_bytes = 4;
         type = literal_header_never_indexing;
     } else {
@@ -503,23 +503,23 @@ std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& en
         case indexed_header: {
             auto name = m_decode_table.field_name(idx);
             auto value = m_decode_table.field_value(idx);
-            return {{name, value, do_indexing::incremental}};
+            return {{.name=name, .value=value, .do_index=do_indexing::incremental}};
         }
         case literal_header_incremental_indexing: {
             auto name = decode_name(idx);
             auto value = decode_string(encoded, offset);
             m_decode_table.add_entry(name, value);
-            return {{name, value, do_indexing::incremental}};
+            return {{.name=name, .value=value, .do_index=do_indexing::incremental}};
         }
         case literal_header_never_indexing: {
             auto name = decode_name(idx);
             auto value = decode_string(encoded, offset);
-            return {{name, value, do_indexing::never}};
+            return {{.name=name, .value=value, .do_index=do_indexing::never}};
         }
         case literal_header_without_indexing: {
             auto name = decode_name(idx);
             auto value = decode_string(encoded, offset);
-            return {{name, value, do_indexing::without}};
+            return {{.name=name, .value=value, .do_index=do_indexing::without}};
         }
         case table_size_update:
             if(idx > decoder_max_capacity) {
@@ -533,67 +533,67 @@ std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& en
 }
 
 const std::array<entry_t, static_entries> table::s_static_table = {
-    entry_t{":authority", ""},
-    {":method", "GET"},
-    {":method", "POST"},
-    {":path", "/"},
-    {":path", "/index.html"},
-    {":scheme", "http"},
-    {":scheme", "https"},
-    {":status", "200"},
-    {":status", "204"},
-    {":status", "206"},
-    {":status", "304"},
-    {":status", "400"},
-    {":status", "404"},
-    {":status", "500"},
-    {"accept-charset", ""},
-    {"accept-encoding", "gzip, deflate"},
-    {"accept-language", ""},
-    {"accept-ranges", ""},
-    {"accept", ""},
-    {"access-control-allow-origin", ""},
-    {"age", ""},
-    {"allow", ""},
-    {"authorization", ""},
-    {"cache-control", ""},
-    {"content-disposition", ""},
-    {"content-encoding", ""},
-    {"content-language", ""},
-    {"content-length", ""},
-    {"content-location", ""},
-    {"content-range", ""},
-    {"content-type", ""},
-    {"cookie", ""},
-    {"date", ""},
-    {"etag", ""},
-    {"expect", ""},
-    {"expires", ""},
-    {"from", ""},
-    {"host", ""},
-    {"if-match", ""},
-    {"if-modified-since", ""},
-    {"if-none-match", ""},
-    {"if-range", ""},
-    {"if-unmodified-since", ""},
-    {"last-modified", ""},
-    {"link", ""},
-    {"location", ""},
-    {"max-forwards", ""},
-    {"proxy-authenticate", ""},
-    {"proxy-authorization", ""},
-    {"range", ""},
-    {"referer", ""},
-    {"refresh", ""},
-    {"retry-after", ""},
-    {"server", ""},
-    {"set-cookie", ""},
-    {"strict-transport-security", ""},
-    {"transfer-encoding", ""},
-    {"user-agent", ""},
-    {"vary", ""},
-    {"via", ""},
-    {"www-authenticate", ""}
+    entry_t{.name=":authority", .value=""},
+    {.name=":method", .value="GET"},
+    {.name=":method", .value="POST"},
+    {.name=":path", .value="/"},
+    {.name=":path", .value="/index.html"},
+    {.name=":scheme", .value="http"},
+    {.name=":scheme", .value="https"},
+    {.name=":status", .value="200"},
+    {.name=":status", .value="204"},
+    {.name=":status", .value="206"},
+    {.name=":status", .value="304"},
+    {.name=":status", .value="400"},
+    {.name=":status", .value="404"},
+    {.name=":status", .value="500"},
+    {.name="accept-charset", .value=""},
+    {.name="accept-encoding", .value="gzip, deflate"},
+    {.name="accept-language", .value=""},
+    {.name="accept-ranges", .value=""},
+    {.name="accept", .value=""},
+    {.name="access-control-allow-origin", .value=""},
+    {.name="age", .value=""},
+    {.name="allow", .value=""},
+    {.name="authorization", .value=""},
+    {.name="cache-control", .value=""},
+    {.name="content-disposition", .value=""},
+    {.name="content-encoding", .value=""},
+    {.name="content-language", .value=""},
+    {.name="content-length", .value=""},
+    {.name="content-location", .value=""},
+    {.name="content-range", .value=""},
+    {.name="content-type", .value=""},
+    {.name="cookie", .value=""},
+    {.name="date", .value=""},
+    {.name="etag", .value=""},
+    {.name="expect", .value=""},
+    {.name="expires", .value=""},
+    {.name="from", .value=""},
+    {.name="host", .value=""},
+    {.name="if-match", .value=""},
+    {.name="if-modified-since", .value=""},
+    {.name="if-none-match", .value=""},
+    {.name="if-range", .value=""},
+    {.name="if-unmodified-since", .value=""},
+    {.name="last-modified", .value=""},
+    {.name="link", .value=""},
+    {.name="location", .value=""},
+    {.name="max-forwards", .value=""},
+    {.name="proxy-authenticate", .value=""},
+    {.name="proxy-authorization", .value=""},
+    {.name="range", .value=""},
+    {.name="referer", .value=""},
+    {.name="refresh", .value=""},
+    {.name="retry-after", .value=""},
+    {.name="server", .value=""},
+    {.name="set-cookie", .value=""},
+    {.name="strict-transport-security", .value=""},
+    {.name="transfer-encoding", .value=""},
+    {.name="user-agent", .value=""},
+    {.name="vary", .value=""},
+    {.name="via", .value=""},
+    {.name="www-authenticate", .value=""}
 };
 
 const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode = [](){

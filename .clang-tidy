@@ -26,4 +26,6 @@ Checks: >
   -readability-convert-member-functions-to-static,
   -misc-include-cleaner,
   -modernize-use-ranges,
+  -misc-use-internal-linkage,
+  -modernize-use-integer-sign-comparison,
 WarningsAsErrors: '*'

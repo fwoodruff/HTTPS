@@ -24,8 +24,8 @@ public:
     tcplistener(tcplistener&& other) noexcept;
     tcplistener& operator=(tcplistener&& other) noexcept;
     
-    static tcplistener bind(std::string service);
-    acceptable accept();
+    static tcplistener bind(const std::string& service);
+    acceptable accept() const;
 private:
     int m_fd;
 };

@@ -21,14 +21,14 @@
 namespace fbw {
 
 template<typename T>
-T rotate_left(T a,  size_t b) noexcept {
-    size_t m = CHAR_BIT * sizeof(T);
+static T rotate_left(T a,  size_t b) noexcept {
+    size_t const m = CHAR_BIT * sizeof(T);
     assert(b < m);
     return (a << b) | (a >> (m - b));
 }
 
 // used in CBC mode
-sha1::sha1() : datalen(0), m_data({}) {
+sha1::sha1() :  m_data({}) {
     m_state[0] = 0x67452301;
     m_state[1] = 0xEFCDAB89;
     m_state[2] = 0x98BADCFE;
@@ -36,7 +36,7 @@ sha1::sha1() : datalen(0), m_data({}) {
     m_state[4] = 0xC3D2E1F0;
 }
 
-void sha1_transform(std::array<uint32_t,5>& state, std::array<uint8_t,64>& data) {
+static void sha1_transform(std::array<uint32_t,5>& state, std::array<uint8_t,64>& data) {
     std::array<uint32_t,80> w;
     for(int i = 0; i < 16; i++) {
         w[i] = static_cast<uint32_t>(try_bigend_read(data, i * 4, 4));
@@ -51,7 +51,8 @@ void sha1_transform(std::array<uint32_t,5>& state, std::array<uint8_t,64>& data)
     auto d = state[3];
     auto e = state[4];
     for (int i = 0 ; i < 80; i ++) {
-        uint32_t f, k;
+        uint32_t f;
+        uint32_t k;
         switch(i/20) {
             case 0:
                 f = (b & c) | (~b & d);

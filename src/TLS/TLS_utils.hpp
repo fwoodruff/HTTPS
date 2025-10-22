@@ -110,7 +110,7 @@ public:
     }
 };
 
-void certificates_serial(tls_record& record, std::string domain, bool use_tls13);
+void certificates_serial(tls_record& record, const std::string& domain, bool use_tls13);
 std::optional<tls_record> try_extract_record(std::vector<uint8_t>& input);
 
 } // namespace

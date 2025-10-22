@@ -44,8 +44,8 @@ public:
     uint16_t m_port;
 private:
     int m_fd;
-    [[nodiscard]] readable read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout);
-    [[nodiscard]] writeable write_some(std::span<const uint8_t>& bytes, std::optional<milliseconds> timeout);
+    [[nodiscard]] readable read(std::span<uint8_t>& bytes, std::optional<milliseconds> timeout) const;
+    [[nodiscard]] writeable write_some(std::span<const uint8_t>& bytes, std::optional<milliseconds> timeout) const;
     
 };
 

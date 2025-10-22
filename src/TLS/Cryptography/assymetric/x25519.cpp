@@ -52,7 +52,7 @@ constexpr ct_u256 RR_P = "0x5a4"_xl;
 constexpr ct_u256 AR_P= "0x11a2ee4"_xl;
 
 // G
-constexpr point256 Base {"0x9"_xl,"0x1"_xl};
+constexpr point256 Base {.xcoord="0x9"_xl,.affine="0x1"_xl};
 
 // computes a such that aR = a * R mod N
 constexpr ct_u256 REDC(ct_u512 aR) noexcept {
@@ -61,16 +61,16 @@ constexpr ct_u256 REDC(ct_u512 aR) noexcept {
     ct_u256 a;
     for(size_t i = 0; i < a.v.size(); i++) {
         radix2 carry = 0;
-        radix2 congruent_multiplier = static_cast<radix>(aR.v[i]*Magic.v[0]);
+        radix2 const congruent_multiplier = static_cast<radix>(aR.v[i]*Magic.v[0]);
         
         for(size_t j = 0; j < a.v.size(); j++) {
-            radix2 x = static_cast<radix2>(aR.v[i+j]) + congruent_multiplier * static_cast<radix2>(Prime.v[j]) + carry;
+            radix2 const x = static_cast<radix2>(aR.v[i+j]) + (congruent_multiplier * static_cast<radix2>(Prime.v[j])) + carry;
             aR.v[i+j] = static_cast<radix>(x);
             carry = x >> ct_u256::RADIXBITS;
         }
         assert(aR.v.size() >= i);
         for(size_t j = a.v.size(); j < aR.v.size() - i; j++){
-            radix2 x = static_cast<radix2>(aR.v[i+j]) + carry;
+            radix2 const x = static_cast<radix2>(aR.v[i+j]) + carry;
             aR.v[i+j] = static_cast<radix>(x);
             carry = x >> ct_u256::RADIXBITS;
         }
@@ -78,18 +78,18 @@ constexpr ct_u256 REDC(ct_u512 aR) noexcept {
     for(size_t i = 0; i < Prime.v.size(); i++) {
         a.v[i] = aR.v[i + Prime.v.size()];
     }
-    ct_u256 diff = a - Prime;
-    ct_u256 mask = -(diff >> (sizeof(ct_u256) * CHAR_BIT - 1));
+    ct_u256 const diff = a - Prime;
+    ct_u256 const mask = -(diff >> ((sizeof(ct_u256) * CHAR_BIT) - 1));
     return (diff & ~mask) | (a & mask);
 }
 
 
 
 // computes a' such that a * a' = 1 mod P
-constexpr ct_u256 modular_inverse(const ct_u256& a) {
+static constexpr ct_u256 modular_inverse(const ct_u256& a) {
     auto ladder = R_P;
     auto aR = REDC(a*RR_P);
-    for(int i = sizeof(ct_u256)*CHAR_BIT-1; i >=0; i--) {
+    for(int i = (sizeof(ct_u256)*CHAR_BIT)-1; i >=0; i--) {
         auto prime_shift = Prime2 >> i;
         auto reduced = REDC(ladder*ladder);
         auto next = REDC(aR*reduced);
@@ -100,17 +100,17 @@ constexpr ct_u256 modular_inverse(const ct_u256& a) {
 }
 
 // computes lhs + rhs mod P
-constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) { // todo: CT
+static constexpr ct_u256 modulo_add(const ct_u256& lhs, const ct_u256& rhs) { // todo: CT
     assert(lhs < Prime and rhs < Prime);
-    ct_u256 summand = lhs + rhs;
+    ct_u256 const summand = lhs + rhs;
     return summand >= Prime ? summand - Prime : summand;
 }
 
 // computes lhs - rhs mod P
-constexpr ct_u256 modulo_sub(const ct_u256& lhs, const ct_u256& rhs) {
+static constexpr ct_u256 modulo_sub(const ct_u256& lhs, const ct_u256& rhs) {
     assert(lhs < (Prime + Prime) and rhs < Prime);
-    ct_u256 diff = lhs - rhs;
-    ct_u256 mask = -(diff >> (sizeof(ct_u256) * CHAR_BIT - 1));
+    ct_u256 const diff = lhs - rhs;
+    ct_u256 const mask = -(diff >> ((sizeof(ct_u256) * CHAR_BIT) - 1));
     ct_u256 result = diff + (mask & Prime);
     return result;
 }
@@ -118,38 +118,38 @@ constexpr ct_u256 modulo_sub(const ct_u256& lhs, const ct_u256& rhs) {
 
 // finds point R, on the line through P and Q
 // The y coordinate is inferred from the base point.
-constexpr point256 point_add(const point256& P, const point256& Q, const point256& base) {
-    ct_u256 dif1 = modulo_sub(REDC(Q.xcoord * P.xcoord), REDC(Q.affine * P.affine));
-    ct_u256 dif2 = modulo_sub(REDC(Q.xcoord * P.affine), REDC(Q.affine * P.xcoord));
-    ct_u256 aa = modulo_add(dif1, dif1);
-    ct_u256 bb = modulo_add(dif2, dif2);
-    return {REDC(REDC(aa * aa) * base.affine), REDC(REDC(bb * bb) * base.xcoord)};
+static constexpr point256 point_add(const point256& P, const point256& Q, const point256& base) {
+    ct_u256 const dif1 = modulo_sub(REDC(Q.xcoord * P.xcoord), REDC(Q.affine * P.affine));
+    ct_u256 const dif2 = modulo_sub(REDC(Q.xcoord * P.affine), REDC(Q.affine * P.xcoord));
+    ct_u256 const aa = modulo_add(dif1, dif1);
+    ct_u256 const bb = modulo_add(dif2, dif2);
+    return {.xcoord=REDC(REDC(aa * aa) * base.affine), .affine=REDC(REDC(bb * bb) * base.xcoord)};
 }
 
 
 // finds point R on the line tangent to point P on the curve, reflected in x-axis
-constexpr point256 point_double(const point256& P) {
+static constexpr point256 point_double(const point256& P) {
     // todo: consider point at infinity
     ct_u256 point_xz = REDC(P.xcoord * P.affine);
-    ct_u256 point_xx = REDC(P.xcoord * P.xcoord);
-    ct_u256 point_zz = REDC(P.affine * P.affine);
+    ct_u256 const point_xx = REDC(P.xcoord * P.xcoord);
+    ct_u256 const point_zz = REDC(P.affine * P.affine);
     ct_u256 Azzn = modulo_add(point_xx, REDC(AR_P *  point_xz));
-    ct_u256 point_xxzz = modulo_sub(point_xx, point_zz);
+    ct_u256 const point_xxzz = modulo_sub(point_xx, point_zz);
     point_xz = modulo_add(point_xz, point_xz);
     point_xz = modulo_add(point_xz, point_xz);
     Azzn = modulo_add(Azzn, point_zz);
-    return { REDC(point_xxzz * point_xxzz), REDC(point_xz * Azzn) };
+    return { .xcoord=REDC(point_xxzz * point_xxzz), .affine=REDC(point_xz * Azzn) };
 }
 
 // computes P + P + ... + P (N times) and returns the x coordinate.
 // x_coord is the x coordinate of P, and N is some secret number.
 // note that we assume that the y coordinate of P is the same as G's.
-ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) {
-    const point256 base_point = {x_coord,"0x1"_xl};
+static ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) {
+    const point256 base_point = {.xcoord=x_coord,.affine="0x1"_xl};
     auto current_point = base_point;
     auto current_double = point_double(base_point);
     
-    int maxbit = sizeof(ct_u256)*CHAR_BIT-1;
+    int const maxbit = (sizeof(ct_u256)*CHAR_BIT)-1;
     for(int i = maxbit; i>=0; i--) {
         auto shift_secret = secret >> i;
         if(shift_secret <= "0x1"_xl) {
@@ -170,7 +170,7 @@ ct_u256 point_multiply(const ct_u256& secret, const ct_u256& x_coord) {
 
 // takes any_value and flips a few bits to ensure that the point is on the prime order curve.
 // Without this, someone could pick a point for which 9*P = P, and quickly decipher a private key.
-constexpr ct_u256 clamp(ct_u256 any_value) {
+static constexpr ct_u256 clamp(ct_u256 any_value) {
     any_value &= ~"0x7"_xl ;
     any_value &= ~("0x1"_xl << 255);
     any_value |= "0x1"_xl << 254;

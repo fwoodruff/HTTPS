@@ -52,7 +52,7 @@ struct options {
 };
 
 extern options project_options;
-void init_options(std::filesystem::path config_file);
+void init_options(const std::filesystem::path& config_file);
 std::string build_iso_8601_current_timestamp();
 
 template<typename T>

@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <unistd.h>
 #include <vector>
-#include <limits.h>
+#include <climits>
 
 #include <iomanip>
 #include <ctime>
@@ -47,7 +47,7 @@ std::vector<std::string> split(const std::string& line, const std::string& delim
 
 options project_options;
 
-std::filesystem::path relative_to(std::filesystem::path query_path, std::filesystem::path relative_to_this) {
+std::filesystem::path relative_to(std::filesystem::path query_path, const std::filesystem::path& relative_to_this) {
     auto abs_path = std::filesystem::absolute(relative_to_this).lexically_normal();
     if(query_path.is_relative()) {
         query_path = abs_path.parent_path() / query_path;
@@ -56,7 +56,7 @@ std::filesystem::path relative_to(std::filesystem::path query_path, std::filesys
     return query_path.lexically_normal();
 }
 
-void init_options(std::filesystem::path config_file) {
+void init_options(const std::filesystem::path& config_file) {
     auto file = std::ifstream(config_file);
     if(!file.is_open()) {
         throw std::runtime_error("no config.txt file at " + config_file.string());
@@ -127,7 +127,7 @@ std::string base64_encode(const std::vector<uint8_t>& data) {
 std::string build_iso_8601_current_timestamp() {
     auto now = std::chrono::system_clock::now();
     auto tt = std::chrono::system_clock::to_time_t(now);
-    std::tm tm = *std::gmtime(&tt);
+    std::tm const tm = *std::gmtime(&tt);
     auto t = std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     std::ostringstream ts;
     ts << t;
@@ -137,7 +137,7 @@ std::string build_iso_8601_current_timestamp() {
 std::filesystem::path get_config_path(int argc, const char* argv[]) {
     std::string config_path {};
     for(int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
+        std::string const arg = argv[i];
         if (arg == "--config" && i + 1 < argc) {
             config_path = argv[i+1];
             i++;
@@ -150,7 +150,7 @@ std::filesystem::path get_config_path(int argc, const char* argv[]) {
         }
     }
     if (config_path.empty()) {
-        std::filesystem::path exec_path = argv[0];
+        std::filesystem::path const exec_path = argv[0];
         auto config_dir = (exec_path / ".."/ "..").lexically_normal();
         auto path = config_dir / "config.txt";
         if(std::filesystem::exists(path)) {

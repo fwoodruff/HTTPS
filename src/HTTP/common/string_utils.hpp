@@ -174,11 +174,11 @@ std::string make_server_name();
 
 [[nodiscard]] std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& range_header, size_t file_size);
 
-[[nodiscard]] std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header);
+[[nodiscard]] std::vector<uint8_t> make_header(const std::string& status, const std::unordered_map<std::string, std::string>& header);
 
 [[nodiscard]] std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_t, ssize_t>& range);
 
-[[nodiscard]] std::string error_to_html(int status, std::string message);
+[[nodiscard]] std::string error_to_html(int status, const std::string& message);
 
 //[[nodiscard]] std::vector<std::string> split(const std::string& line, const std::string& delim);
 
@@ -188,7 +188,7 @@ std::string make_server_name();
 
 void parse_tlds(const std::string& tld_filename);
 
-bool is_tld(std::string domain);
+bool is_tld(const std::string& domain);
 
 char asciitolower(char character);
 

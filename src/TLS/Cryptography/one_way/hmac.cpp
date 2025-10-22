@@ -50,7 +50,8 @@ hmac::hmac(const hmac& other) {
 }
 
 hmac& hmac::operator=(const hmac & other) {
-    if (this == &other) return *this;
+    if (this == &other) { return *this;
+}
     m_factory = other.m_factory->clone();
     m_hasher = other.m_hasher->clone();
     KeyPrime = other.KeyPrime;

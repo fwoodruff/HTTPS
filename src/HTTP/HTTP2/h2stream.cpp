@@ -6,13 +6,15 @@
 //
 
 #include "h2stream.hpp"
+
+#include <utility>
 #include "h2proto.hpp"
 #include "../../TLS/protocol.hpp"
 
 namespace fbw {
 
 h2_stream::h2_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) :
-    m_connection(connection), m_stream_id(stream_id)
+    m_connection(std::move(connection)), m_stream_id(stream_id)
 {}
 
 bool h2_stream::is_done() {
@@ -28,7 +30,7 @@ task<stream_result> h2_stream::write_headers(const std::vector<entry_t>& headers
     if(!conn) {
         co_return stream_result::closed;
     }
-    bool success = conn->h2_ctx.buffer_headers(headers, m_stream_id);
+    bool const success = conn->h2_ctx.buffer_headers(headers, m_stream_id);
     if(!success) {
         co_return stream_result::closed;
     }
@@ -77,8 +79,8 @@ task<std::pair<stream_result, bool>> h2_stream::append_http_data(std::deque<uint
         co_return {res, false};
     }
     // since we are allowing early data
-    auto tls_stream = dynamic_cast<TLS*>(conn->m_stream.get());
-    if(tls_stream) {
+    auto *tls_stream = dynamic_cast<TLS*>(conn->m_stream.get());
+    if(tls_stream != nullptr) {
         auto res2 = co_await tls_stream->await_handshake_finished();
         if(res2 != stream_result::ok) {
             co_return {res2, false};

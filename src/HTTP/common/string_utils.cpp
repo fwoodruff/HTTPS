@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include "../../global.hpp"
 
+#include <algorithm>
 #include <string>
 #include <ctime>
 #include <iomanip>
@@ -50,7 +51,7 @@ std::string to_upper(std::string s) {
 // used in response header
 std::string timestring(time_t t) {
     char buf[48];
-    std::tm* tm_ptr = std::gmtime(&t);
+    std::tm const* tm_ptr = std::gmtime(&t);
     assert(tm_ptr != nullptr);
     const std::tm tm = *tm_ptr;
     auto err = std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm);
@@ -223,7 +224,7 @@ void parse_tlds(const std::string& tld_filename) {
     }
 }
 
-bool is_tld(std::string domain) {
+bool is_tld(const std::string& domain) {
     return known_tlds.contains(domain);
 }
 
@@ -270,17 +271,17 @@ std::string make_server_name() {
 }
 
 std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& range_header, size_t file_size) {
-    std::string prefix = "bytes=";
-    if(range_header.substr(0, prefix.size()) != prefix) {
+    std::string const prefix = "bytes=";
+    if(!range_header.starts_with(prefix)) {
         throw http_error(416, "Range Not Satisfiable");
     }
     size_t pos = prefix.size();
     std::vector<std::pair<size_t, size_t>> out;
     while(true) {
-        size_t end = range_header.find(',', pos);
+        size_t const end = range_header.find(',', pos);
         std::string range = range_header.substr(pos, end - pos);
         std::erase_if(range, [](unsigned char c){ return std::isspace(c); });
-        size_t mid = range.find("-");
+        size_t const mid = range.find('-');
         if(mid == std::string::npos) {
             throw http_error(416, "Range Not Satisfiable");
         }
@@ -298,9 +299,7 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
                 if (idx != second.size()) {
                     throw http_error(416,  "Range Not Satisfiable");
                 }
-                if(second_i > file_size) {
-                    second_i = file_size;
-                }
+                second_i = std::min(second_i, file_size);
                 first_i = file_size - second_i;
                 second_i = file_size - 1;
             } else {
@@ -326,7 +325,7 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
                     throw http_error(416,  "Range Not Satisfiable");
                 }
             }
-            out.push_back({first_i, second_i});
+            out.emplace_back(first_i, second_i);
         } catch(const std::invalid_argument& e) {
             throw http_error(416, "Range Not Satisfiable");
         } catch(const std::out_of_range& e) {
@@ -342,11 +341,11 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
 
 
 
-std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header) {
+std::vector<uint8_t> make_header(const std::string& status, const std::unordered_map<std::string, std::string>& header) {
     std::ostringstream oss;
     oss << "HTTP/1.1 " << status << "\r\n";
     size_t content_size = 0;
-    for(auto [k, v] : header) {
+    for(const auto& [k, v] : header) {
         if(k == "Content-Length") {
             content_size = std::stol(v);
         }
@@ -354,7 +353,7 @@ std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::str
     }
     std::string head = oss.str();
     const std::string pad = "paddingpadding";
-    size_t padding_length = ((content_size + head.size()) % (pad.size() - 1)) + 1;
+    size_t const padding_length = ((content_size + head.size()) % (pad.size() - 1)) + 1;
     head += "X-Padding: " + std::string(pad.c_str(), padding_length);
     head += "\r\n\r\n";
 
@@ -371,7 +370,7 @@ std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_
         range.second = end - 1;
     } else if(range.second == -1) {
         begin = range.first;
-        end = std::min(ssize_t(file_size), range.first + RANGE_SUGGESTED_SIZE);
+        end = std::min(file_size, range.first + RANGE_SUGGESTED_SIZE);
         range.second = end - 1;
     } else {
         begin = range.first;
@@ -385,7 +384,7 @@ std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_
     return {begin, end};
 }
 
-std::string error_to_html(int status, std::string message) {
+std::string error_to_html(int status, const std::string& message) {
     auto it = http_code_map.find(status);
     std::string standard_msg;
     if(it != http_code_map.end()) {

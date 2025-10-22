@@ -7,6 +7,8 @@
 
 #include "h1stream.hpp"
 
+#include <utility>
+
 #include "../../Runtime/executor.hpp"
 
 namespace fbw {
@@ -41,7 +43,7 @@ std::string convert_response_to_http1_headers(const std::vector<entry_t>& header
 }
 
 task<stream_result> HTTP1::write_headers(const std::vector<entry_t>& headers) {
-    std::string str = convert_response_to_http1_headers(headers);
+    std::string const str = convert_response_to_http1_headers(headers);
     auto res = co_await m_stream->write(to_unsigned(str), project_options.session_timeout);
     co_return res;
 }
@@ -86,7 +88,7 @@ std::vector<entry_t> HTTP1::get_headers() {
     return headers;
 }
 
-HTTP1::HTTP1(std::unique_ptr<stream> stream, callback handler) : m_stream(std::move(stream)), m_application_handler(handler), m_buffered_writer(WRITE_RECORD_SIZE) {}
+HTTP1::HTTP1(std::unique_ptr<stream> stream, callback handler) : m_stream(std::move(stream)), m_application_handler(std::move(handler)), m_buffered_writer(WRITE_RECORD_SIZE) {}
 
 std::string HTTP1::get_ip() {
     return m_stream->get_ip();
@@ -96,7 +98,7 @@ std::vector<entry_t> app_try_extract_header(std::deque<uint8_t>& m_buffer) {
     if(m_buffer.size() > MAX_HEADER_SIZE) {
         throw http_error(413, "Payload Too Large");
     }
-    if (!m_buffer.empty() and !std::isupper(m_buffer[0])) {
+    if (!m_buffer.empty() and (std::isupper(m_buffer[0]) == 0)) {
         throw http_error(400, "Invalid HTTP request"); 
     }
 
@@ -129,7 +131,7 @@ task<void> HTTP1::client() {
             if (!did_handle_connection and m_read_buffer.size() >= 3 and m_read_buffer[0] == 0x16 and m_read_buffer[1] == 0x03
                     and (m_read_buffer[2] >= 0x00 && m_read_buffer[2] <= 0x04)) {
                 static constexpr std::array<uint8_t,7> tls_alert = {0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x46};
-                std::vector<uint8_t> alert_vec(tls_alert.begin(), tls_alert.end());
+                std::vector<uint8_t> const alert_vec(tls_alert.begin(), tls_alert.end());
                 auto res = co_await m_stream->write(alert_vec, project_options.session_timeout);
                 if(res != stream_result::ok) {
                     break;
@@ -157,7 +159,7 @@ task<void> HTTP1::client() {
                     }
                 }
             }
-            bool keep_alive = co_await m_application_handler(*this);
+            bool const keep_alive = co_await m_application_handler(*this);
             std::vector<uint8_t> none {};
             auto send_data = m_buffered_writer.write(none, true);
             while(!send_data.empty()) {

@@ -561,7 +561,7 @@ void tls_engine::client_alert_sync(std::queue<packet_timed>& output, const tls_r
     }
 }
 
-void tls_engine::client_heartbeat(std::queue<packet_timed>& output, tls_record client_record, std::optional<milliseconds> timeout) {
+void tls_engine::client_heartbeat(std::queue<packet_timed>& output, const tls_record& client_record, std::optional<milliseconds> timeout) {
     auto [heartblead, heartbeat_record] = client_heartbeat_record(std::move(client_record), can_heartbeat);
     if(heartblead) {
         // co_await m_client->write(to_unsigned("heartbleed?"), project_options.error_timeout);

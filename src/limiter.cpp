@@ -11,7 +11,7 @@
 #include <cassert>
 #include <coroutine>
 
-connection_token::connection_token(std::shared_ptr<limiter> lim, std::string ip) : lim(lim), ip(ip) {}
+connection_token::connection_token(const std::shared_ptr<limiter>& lim, std::string ip) : lim(lim), ip(std::move(ip)) {}
 connection_token::connection_token(connection_token&& other) noexcept : lim(other.lim), ip(std::move(other.ip)) {
     other.lim.reset();
 };
@@ -24,7 +24,7 @@ connection_token& connection_token::operator=(connection_token&& other) noexcept
 }
 
 limiter::acquirable limiter::add_connection(std::string ip) {
-    return acquirable{ shared_from_this(), std::move(ip), std::nullopt };
+    return acquirable{ .lim=shared_from_this(), .ip=std::move(ip), .token=std::nullopt };
 }
 
 limiter::fallible limiter::wait_until_retriable() {
@@ -36,8 +36,8 @@ bool limiter::acquirable::await_ready() {
 }
 
 bool limiter::acquirable::await_suspend(std::coroutine_handle<> h) {
-    std::scoped_lock lk {lim->connections_mut};
-    waiter w { h, this };
+    std::scoped_lock const lk {lim->connections_mut};
+    waiter const w { .handle=h, .bp=this };
     if(lim->total_connections >= max_connections) {
         lim->blocked.push(w);
         return true;
@@ -65,17 +65,14 @@ bool limiter::fallible::await_ready() {
     return false;
 }
 
-void limiter::fallible::await_suspend(std::coroutine_handle<> h) {
-    std::scoped_lock lk {lim->connections_mut};
+void limiter::fallible::await_suspend(std::coroutine_handle<> h) const {
+    std::scoped_lock const lk {lim->connections_mut};
     lim->retriable.push(h);
 }
 
-bool limiter::fallible::await_resume() {
-    std::scoped_lock lk {lim->connections_mut};
-    if(lim->total_connections == 0) {
-        return false;
-    }
-    return true;
+bool limiter::fallible::await_resume() const {
+    std::scoped_lock const lk {lim->connections_mut};
+    return lim->total_connections != 0;
 }
 
 limiter::~limiter() {
@@ -91,7 +88,7 @@ connection_token::~connection_token() {
     limiter::waiter w {};
     std::queue<std::coroutine_handle<>> local_retriable;
     {
-        std::scoped_lock lk {ptr->connections_mut};
+        std::scoped_lock const lk {ptr->connections_mut};
         std::swap(ptr->retriable, local_retriable);
         if (!ptr->blocked.empty()) {
             w = ptr->blocked.front();

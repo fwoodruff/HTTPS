@@ -20,7 +20,6 @@
 #include <cerrno>
 #include <arpa/inet.h>
 #include <sys/wait.h>
-#include <fcntl.h>
 #include <chrono>
 #include <utility>
 #include <cassert>
@@ -32,7 +31,7 @@ tcplistener::tcplistener(int fd) : m_fd(fd) {}
 
 tcplistener::~tcplistener() {
     if(m_fd != -1) {
-        int err = ::close(m_fd);
+        int const err = ::close(m_fd);
         assert(err == 0);
     }
 }
@@ -85,7 +84,7 @@ int get_listener_socket(std::string service) {
 
 int get_listener_socket(const std::string &service) {
     int sockfd = -1;
-    int port = std::stoi(service);
+    int const port = std::stoi(service);
 
     struct sockaddr_in6 server_addr {};
 
@@ -133,13 +132,13 @@ int get_listener_socket(const std::string &service) {
 }
 
 
-tcplistener tcplistener::bind(std::string service) {
-    int sockfd = get_listener_socket(service);
-    return tcplistener(sockfd);
+tcplistener tcplistener::bind(const std::string& service) {
+    int const sockfd = get_listener_socket(service);
+    return {sockfd};
 }
 
-acceptable tcplistener::accept() {
-    return acceptable(m_fd);
+acceptable tcplistener::accept() const {
+    return {m_fd};
 }
 
 tcplistener::tcplistener(tcplistener&& other) noexcept : m_fd(std::exchange(other.m_fd, -1)) {

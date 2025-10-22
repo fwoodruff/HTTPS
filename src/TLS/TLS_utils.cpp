@@ -15,7 +15,7 @@
 
 namespace fbw {
 
-void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
+void certificates_serial(tls_record& record, const std::string& domain, bool tls_13) {
     record.start_size_header(3);
     std::vector<std::vector<uint8_t>> certs;
     try {

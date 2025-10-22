@@ -23,7 +23,7 @@ void executor::notify_runtime() {
 }
 
 void executor::mark_done() {
-    std::scoped_lock lk {thread_mut};
+    std::scoped_lock const lk {thread_mut};
     num_active_threads.fetch_sub(1, std::memory_order_relaxed);
     m_zombies.push_back(std::this_thread::get_id());
 }
@@ -31,7 +31,7 @@ void executor::mark_done() {
 void executor::reap_done() {
     std::vector<std::thread::id> zombies;
     {
-        std::scoped_lock lk {thread_mut};
+        std::scoped_lock const lk {thread_mut};
         zombies.swap(m_zombies);
     }
     if (zombies.empty()) {
@@ -39,7 +39,7 @@ void executor::reap_done() {
     }
     std::vector<std::thread> to_join;
     {
-        std::scoped_lock lk {thread_mut};
+        std::scoped_lock const lk {thread_mut};
         auto is_zombie = [&](const std::thread& t) {
             return std::find(zombies.begin(), zombies.end(), t.get_id()) != zombies.end();
         };
@@ -94,7 +94,7 @@ void executor::try_poll() {
     if(this_can_lock) {
         std::vector<std::coroutine_handle<>> wakeable_coroutines{};
         {
-            std::unique_lock lk { can_poll_wait, std::adopt_lock };
+            std::unique_lock const lk { can_poll_wait, std::adopt_lock };
             wakeable_coroutines = m_reactor.wait(true);
         }
         m_ready.push_bulk(std::move(wakeable_coroutines));
@@ -104,7 +104,7 @@ void executor::try_poll() {
 void executor::block_until_ready() {
     std::vector<std::coroutine_handle<>> wakeables;
     {
-        std::scoped_lock lk{ can_poll_wait };
+        std::scoped_lock const lk{ can_poll_wait };
         wakeables = m_reactor.wait(false);
     }
     m_ready.push_bulk(std::move(wakeables));
@@ -125,7 +125,7 @@ void executor::main_thread_function() {
         }
         auto active = num_active_threads.load(std::memory_order::relaxed);
         if(num_tasks.load() > active + 3 && active < long(NUM_THREADS)) {
-            std::scoped_lock lk {thread_mut};
+            std::scoped_lock const lk {thread_mut};
             num_active_threads.fetch_add(1, std::memory_order_relaxed);
             m_threadpool.emplace_back(&executor::thread_function, this);
         }

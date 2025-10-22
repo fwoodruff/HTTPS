@@ -34,7 +34,7 @@ public:
     void sleep_until(std::coroutine_handle<> handle, time_point<steady_clock> when);
     
     size_t task_count();
-    void notify();
+    void notify() const;
 
     std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 private:

@@ -47,7 +47,7 @@ std::unordered_map<std::string,std::string> MIME_csv_to_map(const std::filesyste
 // I found some files together containing all the possible content types and the associated
 // extensions, so this function builds that extension -> content-type map
 std::unordered_map<std::string,std::string> MIMES(const std::filesystem::path& directory_name) {
-    std::unordered_map<std::string,std::string> map;
+    std::unordered_map<std::string,std::string> const map;
     DIR *dir;
     struct dirent *ent;
 
@@ -58,15 +58,14 @@ std::unordered_map<std::string,std::string> MIMES(const std::filesystem::path& d
             if (filen=="." or filen=="..") {
                 continue;
             }
-            std::filesystem::path filenn = directory_name / filen;
+            std::filesystem::path const filenn = directory_name / filen;
             auto map = MIME_csv_to_map(filenn);
             mimes.insert(map.cbegin(),map.cend());
         }
         closedir(dir);
         return mimes;
-    } else {
-        throw std::runtime_error("MIME csv folder not found\n");
-    }
+    }         throw std::runtime_error("MIME csv folder not found\n");
+   
 }
 
 // The file in the get request header, e.g. /footballscores.html has an extension .html
@@ -77,7 +76,8 @@ std::string extension_from_path(const std::filesystem::path& path) {
     const std::string slash = "/";
     filename = path.filename();
     const std::string delimiter = ".";
-    if(filename.size() < delimiter.size()) return "";
+    if(filename.size() < delimiter.size()) { return "";
+}
     if(filename.substr(filename.size() - delimiter.size()) == delimiter) {return "";}
     if(filename.find(delimiter) == std::string::npos) {return ""; }
     
@@ -97,7 +97,7 @@ std::string extension_from_path(const std::filesystem::path& path) {
 // Returns the MIME type for a given extension
 // e.g. html -> text/html
 // This is used in the header of the GET response
-std::string get_MIME(std::string extension) {
+std::string get_MIME(const std::string& extension) {
     try {
         return MIMEmap.at(extension);
     } catch(const std::logic_error& e) {
@@ -112,8 +112,7 @@ std::string get_MIME(std::string extension) {
 std::string Mime_from_file(const std::filesystem::path &filename) {
     if(filename.filename() == "favicon.ico") {
         return "image/webp";
-    } else {
-        auto ext = extension_from_path(filename);
+    }         auto ext = extension_from_path(filename);
         if(ext == "jpeg") {
             return "image/jpeg";
         }
@@ -122,7 +121,7 @@ std::string Mime_from_file(const std::filesystem::path &filename) {
         }
         auto ret = get_MIME(ext);
         return ret;
-    }
+   
 }
 
 } // namespace fbw

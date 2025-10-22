@@ -12,11 +12,8 @@ namespace fbw {
 h2_context::h2_context() :
     outbox(WRITE_RECORD_SIZE),
     last_server_stream_id(0),
-    last_client_stream_id(0),
-    awaiting_settings_ack(false),
-    go_away_sent(false),
-    go_away_received(false),
-    initial_settings_done(false) {
+    last_client_stream_id(0)
+    {
 
         server_settings.max_concurrent_streams = 100;
 
@@ -26,7 +23,7 @@ h2_context::h2_context() :
 }
 
 std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
-    std::scoped_lock lk(m_mut);
+    std::scoped_lock const lk(m_mut);
     try {
         using enum h2_type;
         if(!initial_settings_done and frame.type != SETTINGS) {
@@ -54,7 +51,7 @@ std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
             case PUSH_PROMISE:
                 throw h2_error("Unexpected PUSH PROMISE frame", h2_code::PROTOCOL_ERROR);
             case PING:
-                if(!(frame.flags & h2_flags::ACK)) {
+                if((frame.flags & h2_flags::ACK) == 0) {
                     h2_ping response_frame = dynamic_cast<const h2_ping&>(frame);
                     response_frame.flags |= ACK;
                     outbox.push_back(response_frame.serialise());
@@ -78,7 +75,7 @@ std::vector<id_new> h2_context::receive_peer_frame(const h2frame& frame) {
 }
 
 void h2_context::close_connection() {
-    std::scoped_lock lk(m_mut);
+    std::scoped_lock const lk(m_mut);
     if(!go_away_sent) {
         enqueue_goaway(h2_code::NO_ERROR, "");
     }
@@ -86,9 +83,9 @@ void h2_context::close_connection() {
 }
 
 std::pair<std::deque<std::vector<uint8_t>>, bool> h2_context::extract_outbox(bool flush) {
-    std::scoped_lock lk { m_mut };
-    bool closing = go_away_sent and stream_ctx_map.empty();
-    std::deque<std::vector<uint8_t>> data_contiguous = outbox.get(flush or closing);
+    std::scoped_lock const lk { m_mut };
+    bool const closing = go_away_sent and stream_ctx_map.empty();
+    std::deque<std::vector<uint8_t>> const data_contiguous = outbox.get(flush or closing);
     return { data_contiguous, closing };
 }
 
@@ -131,7 +128,7 @@ void update_client_settings(setting_values& client_settings, const h2_settings& 
 
 void h2_context::send_initial_settings() {
     assert(initial_settings_done  == false);
-    h2_settings server_settings_frame = construct_settings_frame(server_settings, setting_values{});
+    h2_settings const server_settings_frame = construct_settings_frame(server_settings, setting_values{});
     initial_settings_done = true;
     m_hpack.set_encoder_max_capacity(server_settings.header_table_size);
     outbox.push_back(server_settings_frame.serialise());
@@ -145,7 +142,7 @@ void h2_context::send_initial_settings() {
 }
 
 std::vector<id_new> h2_context::receive_peer_settings(const h2_settings& frame) {
-    if (frame.flags & h2_flags::ACK) {
+    if ((frame.flags & h2_flags::ACK) != 0) {
         awaiting_settings_ack = false; // this is an ACK
         return {};
     }
@@ -201,7 +198,7 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
         return {};
     }
 
-    int32_t data_length = frame.contents.size();
+    int32_t const data_length = frame.contents.size();
     
     // Check stream-level flow control
     if (data_length > stream.stream_current_receive_window_remaining) {
@@ -219,7 +216,7 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
     
     stream.inbox.insert(stream.inbox.end(), frame.contents.begin(), frame.contents.end());
     
-    if (frame.flags & h2_flags::END_STREAM) {
+    if ((frame.flags & h2_flags::END_STREAM) != 0) {
         if(stream.strm_state == stream_state::half_closed_local) {
             stream.strm_state = stream_state::closed;
         } else {
@@ -264,24 +261,23 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         strm.stream_current_receive_window_remaining = server_settings.initial_window_size;
         strm.header_block = frame.field_block_fragment;
         strm.strm_state = stream_state::open;
-        if(frame.flags & h2_flags::END_STREAM) {
+        if((frame.flags & h2_flags::END_STREAM) != 0) {
             strm.strm_state = stream_state::half_closed_remote;
         }
         stream_ctx_map.insert({frame.stream_id, std::move(strm)});
         auto& stream = stream_ctx_map[frame.stream_id];
-        if(frame.flags & h2_flags::END_HEADERS) {
+        if((frame.flags & h2_flags::END_HEADERS) != 0) {
             stream.m_received_headers = m_hpack.parse_field_block(stream.header_block);
             return {{frame.stream_id, wake_action::new_stream}};
-        } else {
-            headers_partially_sent_stream_id = frame.stream_id;
+        }             headers_partially_sent_stream_id = frame.stream_id;
             return {};
-        }
+       
     } else {
         auto& stream = it->second;
-        if(!(stream.strm_state != stream_state::open and stream.strm_state != stream_state::half_closed_local)) {
+        if(stream.strm_state == stream_state::open || stream.strm_state == stream_state::half_closed_local) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
         }
-        if (!(frame.flags & h2_flags::END_STREAM)) {
+        if ((frame.flags & h2_flags::END_STREAM) == 0) {
             throw h2_error("Trailer HEADERS frame must have END_STREAM", h2_code::PROTOCOL_ERROR);
         }
         
@@ -293,7 +289,7 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         } else {
             throw h2_error("invalid state transition", h2_code::PROTOCOL_ERROR);
         }
-        if(!(frame.flags & h2_flags::END_HEADERS)) {
+        if((frame.flags & h2_flags::END_HEADERS) == 0) {
             headers_partially_sent_stream_id = frame.stream_id;
             return {};
         }
@@ -312,7 +308,7 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
     if(headers_partially_sent_stream_id != frame.stream_id) {
         throw h2_error("received unexpected CONTINUATION", h2_code::PROTOCOL_ERROR);
     }
-    if(frame.flags & h2_flags::END_STREAM) {
+    if((frame.flags & h2_flags::END_STREAM) != 0) {
         throw h2_error("CONTINUATION frames don't have END_STREAM flags", h2_code::PROTOCOL_ERROR);
     }
     std::vector<fbw::entry_t>* headers = &strm.m_received_headers;
@@ -320,7 +316,7 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
         headers = &strm.m_received_trailers;
     }
     strm.header_block.insert(strm.header_block.end(), frame.field_block_fragment.begin(), frame.field_block_fragment.end());
-    if(frame.flags & h2_flags::END_HEADERS) {
+    if((frame.flags & h2_flags::END_HEADERS) != 0) {
         headers_partially_sent_stream_id = 0;
         *headers = m_hpack.parse_field_block(strm.header_block);
         strm.header_block.clear();
@@ -384,13 +380,13 @@ stream_result h2_context::stage_buffer(stream_ctx& stream) {
 }
 
 std::optional<std::pair<size_t, bool>> h2_context::read_data(std::span<uint8_t> app_data, uint32_t stream_id) {
-    std::scoped_lock lk{ m_mut };
+    std::scoped_lock const lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
         return {{0, true}};
     }
     auto& stream = it->second;
-    bool client_done_sending = (stream.strm_state == stream_state::closed || stream.strm_state == stream_state::half_closed_remote);
+    bool const client_done_sending = (stream.strm_state == stream_state::closed || stream.strm_state == stream_state::half_closed_remote);
     if(stream.inbox.empty()) {
         if (client_done_sending) {
             return {{0, true}};
@@ -435,7 +431,7 @@ std::optional<std::pair<size_t, bool>> h2_context::read_data(std::span<uint8_t> 
         bytes_consumed_since_last_connection_window_update = 0;
         outbox.push_back(window.serialise());
     }
-    bool inbox_drained_and_client_finished = stream.inbox.empty() && (stream.strm_state == stream_state::closed || stream.strm_state == stream_state::half_closed_remote);
+    bool const inbox_drained_and_client_finished = stream.inbox.empty() && (stream.strm_state == stream_state::closed || stream.strm_state == stream_state::half_closed_remote);
     return {{bytes_read, inbox_drained_and_client_finished}};
 }
 
@@ -445,7 +441,7 @@ std::vector<id_new> h2_context::receive_rst_stream(const h2_rst_stream& frame) {
 }
 
 stream_result h2_context::buffer_data(std::span<const uint8_t> app_data, uint32_t stream_id, bool end) {
-    std::scoped_lock lk{ m_mut };
+    std::scoped_lock const lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
         return stream_result::closed;
@@ -472,7 +468,7 @@ stream_result h2_context::buffer_data(std::span<const uint8_t> app_data, uint32_
 }
 
 bool h2_context::buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id, bool end) {
-    std::scoped_lock lk{ m_mut };
+    std::scoped_lock const lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
         return false;
@@ -482,9 +478,9 @@ bool h2_context::buffer_headers(const std::vector<entry_t>& headers, uint32_t st
     const auto field_block = m_hpack.generate_field_block(headers);
     size_t offset = 0;
     while (offset < field_block.size()) {
-        uint32_t remaining = field_block.size() - offset;
-        uint32_t chunk_size = std::min(client_settings.max_frame_size, remaining);
-        std::vector<uint8_t> chunk(field_block.begin() + offset, field_block.begin() + offset + chunk_size);
+        uint32_t const remaining = field_block.size() - offset;
+        uint32_t const chunk_size = std::min(client_settings.max_frame_size, remaining);
+        std::vector<uint8_t> const chunk(field_block.begin() + offset, field_block.begin() + offset + chunk_size);
         h2_headers headers_frame;
         h2_continuation cont_frame;
         h2frame* frame;
@@ -514,7 +510,7 @@ bool h2_context::buffer_headers(const std::vector<entry_t>& headers, uint32_t st
 }
 
 stream_result h2_context::stream_status(uint32_t stream_id) {
-    std::scoped_lock lk(m_mut);
+    std::scoped_lock const lk(m_mut);
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
         return stream_result::closed;
@@ -534,7 +530,7 @@ stream_result h2_context::stream_status(uint32_t stream_id) {
 }
 
 std::vector<entry_t> h2_context::get_headers(uint32_t stream_id) {
-    std::scoped_lock lk{ m_mut };
+    std::scoped_lock const lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
         return {};
@@ -593,7 +589,7 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
         return {{frame.stream_id, wake_action::wake_write}};
     }
     stream.stream_current_window_remaining += frame.window_size_increment;
-    stream_result suspend = stage_buffer(stream);
+    stream_result const suspend = stage_buffer(stream);
     if(suspend == stream_result::awaiting) {
         return {};
     }

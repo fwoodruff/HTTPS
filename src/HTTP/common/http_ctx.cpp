@@ -12,7 +12,7 @@ namespace fbw {
 
 task<void> send_error(http_ctx& connection, uint32_t status_code, std::string status_message) {
     std::vector<entry_t> send_headers;
-    std::string message = error_to_html(status_code, status_message);
+    std::string const message = error_to_html(status_code, status_message);
     send_headers.push_back({":status", std::to_string(status_code)});
     send_headers.push_back({"content-length", std::to_string(message.size())});
     send_headers.push_back({"content-type", "text/html; charset=utf-8"});
@@ -22,7 +22,7 @@ task<void> send_error(http_ctx& connection, uint32_t status_code, std::string st
         co_return;
     }
     auto umessage = to_unsigned(message);
-    std::span<const uint8_t> sp {umessage};
+    std::span<const uint8_t> const sp {umessage};
     auto resu = co_await connection.write_data(sp, true);
     if(resu != stream_result::ok) {
         co_return;

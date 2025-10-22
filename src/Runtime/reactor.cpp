@@ -15,7 +15,7 @@
 
 reactor::reactor() {
     int rw[2];
-    int err = ::pipe(rw);
+    int const err = ::pipe(rw);
     assert(err == 0);
     m_pipe_read = rw[0];
     m_pipe_write = rw[1];
@@ -27,7 +27,7 @@ void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read
     
     auto rw = ((read_write == IO_direction::Read)? 0 : 1);
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock const lk { m_mut };
         io_handle a_handle {};
         if (auto it = park_map.find(fd); it != park_map.end()) {
             a_handle = it->second;
@@ -52,7 +52,7 @@ void reactor::sleep_for(std::coroutine_handle<> handle, milliseconds dur) {
     }
     const auto when = steady_clock::now() + dur;
     {
-        std::scoped_lock lk{m_mut};
+        std::scoped_lock const lk{m_mut};
         m_timers.emplace(when, handle);
     }
     notify();
@@ -63,20 +63,20 @@ void reactor::sleep_until(std::coroutine_handle<> handle, time_point<steady_cloc
         return;
     }
     {
-        std::scoped_lock lk{m_mut};
+        std::scoped_lock const lk{m_mut};
         m_timers.emplace(when, handle);
     }
     notify();
 }
 
-void reactor::notify() {
+void reactor::notify() const {
     char buff = '\0';
     do {
-        ssize_t succ = ::write(m_pipe_write, &buff, 1); // notify ::poll
+        ssize_t const succ = ::write(m_pipe_write, &buff, 1); // notify ::poll
         if(succ < 0) {
             if(errno == EINTR) {
-                continue;
-            } else if (errno == EPIPE) {
+                break;
+            } if (errno == EPIPE) {
                 ;
             } else {
                 assert(false);
@@ -86,13 +86,13 @@ void reactor::notify() {
 }
 
 size_t reactor::task_count() {
-    std::scoped_lock lk { m_mut };
+    std::scoped_lock const lk { m_mut };
     return park_map.size() + m_timers.size();
 }
 
 std::pair<std::optional<time_point<steady_clock>>, std::vector<std::coroutine_handle<>>>
 reactor::wakeup_timeouts( const time_point<steady_clock> &now) {
-    std::scoped_lock lk { m_mut };
+    std::scoped_lock const lk { m_mut };
     std::optional<time_point<steady_clock>> first_wake = std::nullopt;
     std::vector<std::coroutine_handle<>> out;
     for(auto it = park_map.begin(); it != park_map.end(); ) {
@@ -124,7 +124,7 @@ reactor::wakeup_timers(const time_point<steady_clock>& now) {
     std::vector<std::coroutine_handle<>> out;
     std::optional<time_point<steady_clock>> next_deadline = std::nullopt;
 
-    std::scoped_lock lk {m_mut};
+    std::scoped_lock const lk {m_mut};
     while (!m_timers.empty() and m_timers.top().when <= now) {
         out.push_back(m_timers.top().handle);
         m_timers.pop();
@@ -166,7 +166,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     
     std::vector<pollfd> to_poll;
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock const lk { m_mut };
         for(const auto& [fd, hand] : park_map) {
             pollfd poll_fd {};
             poll_fd.fd = fd;
@@ -183,22 +183,21 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     pipepoll.revents = 0;
     to_poll.push_back(pipepoll);
 
-    int num_descriptors = ::poll(to_poll.data(), (int) to_poll.size(), timeout_duration? (int) timeout_duration->count() : -1);
+    int const num_descriptors = ::poll(to_poll.data(), (int) to_poll.size(), timeout_duration? (int) timeout_duration->count() : -1);
     if(num_descriptors == -1) {
         if(errno == EINTR) {
             return out;
-        } else {
-            assert(false);
-        }
+        }             assert(false);
+       
     }
-    if(to_poll.back().revents & POLLIN) {
+    if((to_poll.back().revents & POLLIN) != 0) {
         char buff;
         do {
-            ssize_t succ = ::read(m_pipe_read, &buff, 1); // unclog pipe
+            ssize_t const succ = ::read(m_pipe_read, &buff, 1); // unclog pipe
             if(succ < 0) {
                 if(errno == EINTR) {
-                    continue;
-                } else if (errno == EPIPE) {
+                    break;
+                } if (errno == EPIPE) {
                     ;
                 } else {
                     assert(false);
@@ -209,14 +208,14 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     to_poll.pop_back(); // exclude the pipe
     
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock const lk { m_mut };
         for(auto& fdd : to_poll) {
             auto& handle = park_map[fdd.fd].handle;
             auto& wakeup = park_map[fdd.fd].wake_up;
             auto IOevent = std::array{POLLIN, POLLOUT};
             for(int i = 0; i < 2; i++) {
                 assert(!(fdd.revents & POLLNVAL));
-                if(fdd.revents & (IOevent[i] | POLLHUP | POLLERR)) {
+                if((fdd.revents & (IOevent[i] | POLLHUP | POLLERR)) != 0) {
                     if (handle[i] != nullptr) {
                         out.push_back(handle[i]);
                     }

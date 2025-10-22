@@ -10,7 +10,7 @@
 #include "../../../global.hpp"
 
 #include <cassert>
-#include <stdint.h>
+#include <cstdint>
 #include <algorithm>
 #include <vector>
 #include <print>
@@ -21,13 +21,13 @@ namespace fbw::aes {
 
 constexpr int Nb = 4;
 
-void AddRoundKey(aes_block& b, const byte_word* const roundkey) noexcept;
-void InvMixColumns(aes_block&) noexcept;
-void InvShiftRows(aes_block&) noexcept;
-void InvSubBytes(aes_block&) noexcept;
-void MixColumns(aes_block&) noexcept;
-void ShiftRows(aes_block&) noexcept;
-void SubBytes(aes_block&) noexcept;
+static void AddRoundKey(aes_block& b, const byte_word* roundkey) noexcept;
+static void InvMixColumns(aes_block& /*b*/) noexcept;
+static void InvShiftRows(aes_block& /*b*/) noexcept;
+static void InvSubBytes(aes_block& /*state*/) noexcept;
+static void MixColumns(aes_block& /*b*/) noexcept;
+static void ShiftRows(aes_block& /*b*/) noexcept;
+static void SubBytes(aes_block& /*state*/) noexcept;
 
 // rotates left the bits of a byte e.g.  10001001 -> 00010011
 // this is one of the steps in AES
@@ -39,7 +39,8 @@ consteval uint8_t ROTL8(uint8_t x, int shift) {
 constexpr std::array<uint8_t,256> SBOX = []() consteval {
     // https://en.wikipedia.org/wiki/Rijndael_S-box
     std::array<uint8_t,256> sbox {0};
-    uint8_t p = 1, q = 1;
+    uint8_t p = 1;
+    uint8_t q = 1;
     do {
         // multiply p by 3
         p = p ^ (p << 1) ^ (p & 0x80 ? 0x1B : 0);
@@ -50,7 +51,7 @@ constexpr std::array<uint8_t,256> SBOX = []() consteval {
         q ^= q & 0x80 ? 0x09 : 0;
          
         // compute the affine transformation
-        uint8_t xformed = q ^ ROTL8(q, 1) ^ ROTL8(q, 2) ^ ROTL8(q, 3) ^ ROTL8(q, 4);
+        uint8_t const xformed = q ^ ROTL8(q, 1) ^ ROTL8(q, 2) ^ ROTL8(q, 3) ^ ROTL8(q, 4);
         sbox[p] = xformed ^ 0x63;
     } while (p != 1);
 
@@ -92,7 +93,7 @@ void ShiftRows(aes_block& b) noexcept {
             temp[j] = b[(4*(i+j)+i)%(4*Nb)];
         }
         for(int j = 0; j < 4; j++) {
-            b[i + 4*j] = temp[j];
+            b[i + (4*j)] = temp[j];
         }
     }
 }
@@ -105,7 +106,7 @@ void InvShiftRows(aes_block& b) noexcept {
             temp[j] = b[(4*((Nb-i)+j)+i)%(4*Nb)];
         }
         for(int j = 0; j < 4; j++) {
-            b[i + 4*j] = temp[j];
+            b[i + (4*j)] = temp[j];
         }
     }
 }
@@ -117,7 +118,7 @@ consteval uint8_t GMul_explicit(uint8_t a, uint8_t b) {
         if ((b & 1) != 0) {
             p ^= a;
         }
-        bool hi_bit_set = (a & 0x80) != 0;
+        bool const hi_bit_set = (a & 0x80) != 0;
         a <<= 1;
         if (hi_bit_set) {
             a ^= 0x1B; // x^8 + x^4 + x^3 + x + 1
@@ -138,7 +139,7 @@ constexpr auto GMULRES = []() consteval {
     }
     return resa;
 }();
-uint8_t GMul(uint8_t a, uint8_t b) {
+static uint8_t GMul(uint8_t a, uint8_t b) {
     assert(a < 16);
     // I moved the table outside of function scope.
     // Without optimisation flags the compiler was copying
@@ -149,16 +150,16 @@ uint8_t GMul(uint8_t a, uint8_t b) {
 
 
 // Used in the mix columns function
-void mult_columns(aes_block& b, std::array<uint8_t,4> a) {
+static void mult_columns(aes_block& b, std::array<uint8_t,4> a) {
     for (int c = 0; c < Nb; c++) {
         std::array<uint8_t,4> col {0};
         for(int j = 0; j < 4; j++) {
             for(int k = 0; k < 4; k++) {
-                col[j] ^= GMul(a[(3-j+k)%4], b[c*4 + k]);
+                col[j] ^= GMul(a[(3-j+k)%4], b[(c*4) + k]);
             }
         }
         for(int j = 0; j < 4; j++) {
-            b[c*Nb + j] = col[j];
+            b[(c*Nb) + j] = col[j];
         }
     }
 }
@@ -177,7 +178,7 @@ void InvMixColumns(aes_block& b) noexcept {
 void AddRoundKey(aes_block& b, const byte_word* const roundkey) noexcept {
     for(int i = 0; i < Nb; i++) {
         for(int j = 0; j < 4; j++) {
-            b[i + j*Nb] ^= roundkey[j][i];
+            b[i + (j*Nb)] ^= roundkey[j][i];
         }
     }
 }
@@ -204,7 +205,7 @@ roundkey aes_key_schedule(const aeskey& AESkey) {
     
     for(int i = 0; i < Nka; i++) {
         for(int j = 0; j < 4; j++) {
-            keybytes[i][j] = AESkey[4*i +j];
+            keybytes[i][j] = AESkey[(4*i) +j];
         }
     }
     for(ssize_t i = Nka; i < Nb * (Nra+1); i++) {
@@ -228,9 +229,9 @@ roundkey aes_key_schedule(const aeskey& AESkey) {
 // performs the encryption on a block
 aes_block aes_encrypt(aes_block plain_block, const roundkey& roundkeys) noexcept {
     static_assert(Nb == 4, "bad AES block size");
-    const ssize_t Nra = roundkeys.size()/Nb - 1;
+    const ssize_t Nra = (roundkeys.size()/Nb) - 1;
     
-    AddRoundKey(plain_block, &roundkeys[0]);
+    AddRoundKey(plain_block, roundkeys.data());
     for (int i = 1; i < Nra; i++) {
         SubBytes(plain_block);
         ShiftRows(plain_block);
@@ -245,7 +246,7 @@ aes_block aes_encrypt(aes_block plain_block, const roundkey& roundkeys) noexcept
 
 
 aes_block aes_decrypt(aes_block ciphertext, const roundkey& roundkeys) noexcept {
-    const ssize_t Nra = roundkeys.size()/4 - 1;
+    const ssize_t Nra = (roundkeys.size()/4) - 1;
 
     AddRoundKey(ciphertext, &roundkeys[Nb*Nra]);
     for (ssize_t i = Nra-1; i >= 1; i--) {
@@ -256,7 +257,7 @@ aes_block aes_decrypt(aes_block ciphertext, const roundkey& roundkeys) noexcept 
     }
     InvShiftRows(ciphertext);
     InvSubBytes(ciphertext);
-    AddRoundKey(ciphertext, &roundkeys[0]);
+    AddRoundKey(ciphertext, roundkeys.data());
     return ciphertext;
 }
 

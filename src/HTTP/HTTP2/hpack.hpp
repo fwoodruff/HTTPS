@@ -59,7 +59,7 @@ public:
     table();
     size_t m_capacity = 4096;
     void set_capacity(size_t capacity);
-    size_t index(entry_t entry);
+    size_t index(const entry_t& entry);
     size_t name_index(const std::string& entry);
     std::string field_name(size_t entry);
     std::string field_value(size_t entry);

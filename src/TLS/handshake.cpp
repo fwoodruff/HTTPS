@@ -21,6 +21,7 @@
 #include "hello.hpp"
 #include "session_ticket.hpp"
 
+#include <algorithm>
 #include <print>
 
 
@@ -38,7 +39,7 @@ static cipher_suites choose_cipher(const hello_record_data& rec) {
     if(rec.legacy_client_version < TLS11) {
         throw ssl_error("TLS 1.0 and earlier are insufficiently secure", AlertLevel::fatal, AlertDescription::protocol_version);
     }
-    if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_FALLBACK_SCSV); it != rec.cipher_su.end()) {
+    if(auto it = std::ranges::find(rec.cipher_su, cipher_suites::TLS_FALLBACK_SCSV); it != rec.cipher_su.end()) {
         switch(rec.legacy_client_version) {
             case TLS11:
                 throw ssl_error("client supports TLS 1.2 but offers TLS 1.1 downgrade", AlertLevel::fatal, AlertDescription::inappropriate_fallback);
@@ -52,11 +53,11 @@ static cipher_suites choose_cipher(const hello_record_data& rec) {
         throw ssl_error("TLS 1.1 not supported", AlertLevel::fatal, AlertDescription::protocol_version);
     }
     bool TLS12_support = false;
-    if(auto it = std::find(rec.supported_versions.begin(), rec.supported_versions.end(), TLS12); it != rec.supported_versions.end() or rec.supported_versions.empty()) {
+    if(auto it = std::ranges::find(rec.supported_versions, TLS12); it != rec.supported_versions.end() or rec.supported_versions.empty()) {
         TLS12_support = true;
     }
     bool TLS13_support = false;
-    if(auto it = std::find(rec.supported_versions.begin(), rec.supported_versions.end(), TLS13); it != rec.supported_versions.end()) {
+    if(auto it = std::ranges::find(rec.supported_versions, TLS13); it != rec.supported_versions.end()) {
         TLS13_support = true;
     }
 
@@ -68,7 +69,7 @@ static cipher_suites choose_cipher(const hello_record_data& rec) {
     // - This gets flagged as noncompliant by https://github.com/drwetter/testssl.sh
     // - This results in an observed ~2x download speed improvement on various machines
     if(TLS13_support) {
-        if(auto it = std::find(rec.cipher_su.begin(), rec.cipher_su.end(), cipher_suites::TLS_CHACHA20_POLY1305_SHA256); it != rec.cipher_su.end()) {
+        if(auto it = std::ranges::find(rec.cipher_su, cipher_suites::TLS_CHACHA20_POLY1305_SHA256); it != rec.cipher_su.end()) {
             return cipher_suites::TLS_CHACHA20_POLY1305_SHA256;
         }
     }
@@ -97,7 +98,7 @@ static cipher_suites choose_cipher(const hello_record_data& rec) {
 }
 
 static void CRIME_compression(const hello_record_data& client_hello) {
-    if(std::find(client_hello.compression_types.begin(), client_hello.compression_types.end(), 0) == client_hello.compression_types.end()) {
+    if(std::ranges::find(client_hello.compression_types, 0) == client_hello.compression_types.end()) {
         throw ssl_error("compression not supported", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 }
@@ -146,10 +147,10 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
 static std::string choose_alpn(const std::vector<std::string>& client_alpn) {
     constexpr const char* ALPN_H1 = "http/1.1";
     constexpr const char* ALPN_H2 = "h2";
-    if(std::find(client_alpn.begin(), client_alpn.end(), ALPN_H2) != client_alpn.end()) {
+    if(std::ranges::find(client_alpn, ALPN_H2) != client_alpn.end()) {
         return ALPN_H2;
     }
-    if(client_alpn.empty() or std::find(client_alpn.begin(), client_alpn.end(), ALPN_H1) != client_alpn.end()) {
+    if(client_alpn.empty() or std::ranges::find(client_alpn, ALPN_H1) != client_alpn.end()) {
         return ALPN_H1;
     }
     throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
@@ -174,7 +175,7 @@ static key_share choose_client_public_key(const std::vector<key_share>& keys, co
         throw ssl_error("no keys sent", AlertLevel::fatal, AlertDescription::decode_error);
     }
     for(const auto& key : keys) {
-        if(std::find(groups.begin(), groups.end(), key.key_type) == groups.end()) {
+        if(std::ranges::find(groups, key.key_type) == groups.end()) {
             throw ssl_error("key share not supported", AlertLevel::fatal, AlertDescription::illegal_parameter);
         }
     }
@@ -319,10 +320,10 @@ void handshake_ctx::client_hello_record(const std::vector<uint8_t>& handshake_me
         const bool has_psk_modes = client_hello.parsed_extensions.contains(ExtensionType::psk_key_exchange_modes);
         const bool has_supported_groups = client_hello.parsed_extensions.contains(ExtensionType::supported_groups);
 
-        const bool has_psk_ke = std::any_of(client_hello.pskmodes.begin(), client_hello.pskmodes.end(),
+        const bool has_psk_ke = std::ranges::any_of(client_hello.pskmodes,
                               [](auto mode) { return mode == PskKeyExchangeMode::psk_ke; });
 
-        const bool has_psk_dhe_ke = std::any_of(client_hello.pskmodes.begin(), client_hello.pskmodes.end(),
+        const bool has_psk_dhe_ke = std::ranges::any_of(client_hello.pskmodes,
                                    [](auto mode) { return mode == PskKeyExchangeMode::psk_dhe_ke; });
 
         if(!has_key_share and (!has_psk_ke || has_psk_dhe_ke)) {
@@ -487,7 +488,7 @@ tls_record handshake_ctx::server_certificate_record() const {
     auto hash_out = ctx.hash();
 
     std::array<uint8_t, 32> signature_digest;
-    std::copy(hash_out.begin(), hash_out.end(), signature_digest.begin());
+    std::ranges::copy(hash_out, signature_digest.begin());
     std::array<uint8_t, 32> csrn;
     randomgen.randgen(csrn);
     std::vector<uint8_t> const signature = secp256r1::DER_ECDSA(std::move(csrn), std::move(signature_digest), std::move(certificate_private));
@@ -570,7 +571,7 @@ tls_record handshake_ctx::server_key_exchange_record() {
     auto signature_digest_vec = hashctx->hash();
     assert(signature_digest_vec.size() == 32);
     std::array<uint8_t, 32> signature_digest;
-    std::copy(signature_digest_vec.cbegin(), signature_digest_vec.cend(), signature_digest.begin());
+    std::ranges::copy(signature_digest_vec, signature_digest.begin());
     
     auto certificate_private = privkey_for_domain(m_SNI);
 
@@ -643,7 +644,7 @@ void handshake_ctx::hello_extensions(tls_record& record, const key_share& server
     if(client_hello.parsed_extensions.contains(ExtensionType::supported_versions) and *p_tls_version == TLS13) {
         write_supported_versions(record, *p_tls_version);
     }
-    if(auto it = std::find(client_hello.cipher_su.begin(), client_hello.cipher_su.end(), cipher_suites::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+    if(auto it = std::ranges::find(client_hello.cipher_su, cipher_suites::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
         (it != client_hello.cipher_su.end() or
         client_hello.parsed_extensions.contains(ExtensionType::renegotiation_info)) and *p_tls_version == TLS12)  {
             write_renegotiation_info(record);

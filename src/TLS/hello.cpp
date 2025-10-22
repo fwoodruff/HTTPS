@@ -9,6 +9,7 @@
 #include "TLS_enums.hpp"
 #include "TLS_utils.hpp"
 #include "../global.hpp"
+#include <algorithm>
 #include <vector>
 #include <span>
 #include <memory>
@@ -389,7 +390,7 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
         {
             assert(peer_key.key.size() == curve25519::PUBKEY_SIZE);
             std::array<uint8_t, curve25519::PUBKEY_SIZE> cli_pub;
-            std::copy(peer_key.key.begin(), peer_key.key.end(), cli_pub.begin());
+            std::ranges::copy(peer_key.key, cli_pub.begin());
             auto shared_secret = curve25519::multiply(server_private_key_ephem, cli_pub);
             auto shared_secret_str = std::vector<uint8_t>(shared_secret.begin(), shared_secret.end());
             return shared_secret_str;
@@ -460,13 +461,13 @@ std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_ret
     } while(false);
     assert(server_random != std::vector<uint8_t>(32, 0));
     if(version < TLS12) {
-        std::copy(tls_11_downgrade_protection_sentinel.begin(), tls_11_downgrade_protection_sentinel.end(), server_random.begin()+24);
+        std::ranges::copy(tls_11_downgrade_protection_sentinel, server_random.begin()+24);
     }
     if(version == TLS12) {
-        std::copy(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.end(), server_random.begin()+24);
+        std::ranges::copy(tls_12_downgrade_protection_sentinel, server_random.begin()+24);
     }
     if(version == TLS13 and requires_hello_retry) {
-        std::copy(tls13_hello_retry_sentinel.begin(), tls13_hello_retry_sentinel.end(), server_random.begin());
+        std::ranges::copy(tls13_hello_retry_sentinel, server_random.begin());
     }
     return server_random;
 }

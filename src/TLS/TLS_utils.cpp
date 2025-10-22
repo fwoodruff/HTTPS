@@ -11,6 +11,7 @@
 #include "PEMextract.hpp"
 
 #include <print>
+#include <utility>
 
 namespace fbw {
 
@@ -18,7 +19,7 @@ void certificates_serial(tls_record& record, std::string domain, bool tls_13) {
     record.start_size_header(3);
     std::vector<std::vector<uint8_t>> certs;
     try {
-        certs = der_cert_for_domain(domain);
+        certs = der_cert_for_domain(std::move(domain));
     } catch(std::exception& e) {
         std::println(stderr, "certificate error: {}", e.what());
         throw e;
@@ -44,7 +45,7 @@ std::optional<tls_record> try_extract_record(std::vector<uint8_t>& input) {
     }
     tls_record out(static_cast<ContentType>(input[0]), input[1], input[2] );
 
-    size_t record_size = try_bigend_read(input, 3, 2);
+    size_t const record_size = try_bigend_read(input, 3, 2);
     if(record_size > TLS_RECORD_SIZE + TLS_EXPANSION_MAX) [[unlikely]] {
         throw ssl_error("record header size too large", AlertLevel::fatal, AlertDescription::record_overflow);
     }

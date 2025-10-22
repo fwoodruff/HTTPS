@@ -43,14 +43,14 @@ tls_engine::tls_engine() {
 }
 
 // application layer protocol negotiation
-std::string tls_engine::alpn() {
+std::string tls_engine::alpn() const {
     return handshake.alpn;
 }
 
-HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, std::deque<uint8_t>& application_data, const std::deque<uint8_t>& bio_input, std::optional<milliseconds> app_timeout) {
+HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, std::deque<uint8_t>& application_data, const std::deque<uint8_t>& bio_input, std::optional<milliseconds>  /*app_timeout*/) {
     try {
         if(m_expected_read_record == HandshakeStage::application_data or m_expected_read_record == HandshakeStage::client_early_data) {
-            std::scoped_lock lk { m_write_queue_mut };
+            std::scoped_lock const lk { m_write_queue_mut };
             update_sync(network_output);
         }
         if(m_expected_read_record == HandshakeStage::application_closed) {
@@ -62,10 +62,10 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
             assert(opt_record);
             auto record = *opt_record;
             record = decrypt_record(record);
-            switch (static_cast<ContentType>(record.get_type()) ) {
+            switch (record.get_type() ) {
                 case Handshake:
                 {
-                    std::scoped_lock lk { m_write_queue_mut };
+                    std::scoped_lock const lk { m_write_queue_mut };
                     client_handshake_record_sync(network_output, std::move(record));
                     break;
                 }
@@ -90,12 +90,12 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                     }
                     throw ssl_error("handshake not done yet", AlertLevel::fatal, AlertDescription::insufficient_security);
                 case Alert: {
-                    std::scoped_lock lk { m_write_queue_mut };
+                    std::scoped_lock const lk { m_write_queue_mut };
                     client_alert_sync(network_output, std::move(record), project_options.error_timeout);
                     return m_expected_read_record;
                 }
                 case Heartbeat: {
-                    std::scoped_lock lk { m_write_queue_mut };
+                    std::scoped_lock const lk { m_write_queue_mut };
                     client_heartbeat(network_output, std::move(record), project_options.session_timeout);
                     break;
                 }
@@ -106,11 +106,11 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
             }
         }
     } catch(const ssl_error& e) {
-        std::scoped_lock lk { m_write_queue_mut };
+        std::scoped_lock const lk { m_write_queue_mut };
         server_alert_sync(network_output, e.m_l, e.m_d);
         return m_expected_read_record;
     } catch(const std::exception& e) {
-        std::scoped_lock lk { m_write_queue_mut };
+        std::scoped_lock const lk { m_write_queue_mut };
         server_alert_sync(network_output, AlertLevel::fatal, AlertDescription::decode_error);
         return m_expected_read_record;
     }
@@ -127,7 +127,7 @@ void tls_engine::update_sync(std::queue<packet_timed>& output) {
 
 stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
-    std::scoped_lock lk { m_write_queue_mut };
+    std::scoped_lock const lk { m_write_queue_mut };
     assert(server_cipher_spec);
     if(write_connection_done) {
         return stream_result::closed;
@@ -136,7 +136,7 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, st
         size_t idx = 0;
         while(idx < data.size()) {
             tls_record record(Application);
-            size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
+            size_t const write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
             record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
             idx += write_size;
             write_record_sync(output, std::move(record), timeout);
@@ -227,13 +227,13 @@ void tls_engine::write_record_sync(std::queue<packet_timed>& output, tls_record 
     output.push({record.serialise(), timeout});
 }
 
-std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshake_record, std::vector<uint8_t>& fragment) {
+static std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshake_record, std::vector<uint8_t>& fragment) {
     std::vector<std::vector<uint8_t>> messages;
     fragment.insert(fragment.end(), handshake_record.m_contents.begin(), handshake_record.m_contents.end());
 
     size_t offset = 0;
     while(offset + 4 <= fragment.size()) {
-        size_t message_size = try_bigend_read(fragment, offset + 1, 3);
+        size_t const message_size = try_bigend_read(fragment, offset + 1, 3);
         if (offset + 4 + message_size > fragment.size()) {
             fragment.assign(fragment.begin() + offset, fragment.end());
             break;
@@ -292,8 +292,7 @@ void tls_engine::client_handshake_message_sync(std::queue<packet_timed>& output,
         [[unlikely]] default:
             throw ssl_error("unsupported handshake record type", AlertLevel::fatal, AlertDescription::decode_error);
     }
-    return;
-}
+    }
 
 void tls_engine::client_hello(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_hello) [[unlikely]] {
@@ -338,8 +337,7 @@ void tls_engine::server_response_to_hello_sync(std::queue<packet_timed>& output)
         server_key_exchange(output);
         server_hello_done(output);
     }
-    return;
-}
+    }
 
 KeyUpdateRequest tls_engine::client_key_update_received(const std::vector<uint8_t>& handshake_message) {
     if(tls_protocol_version != TLS13) {
@@ -387,12 +385,12 @@ void tls_engine::server_hello_sync(std::queue<packet_timed>& output) {
 }
 
 void tls_engine::server_encrypted_extensions(std::queue<packet_timed>& output) {
-    tls_record out = handshake.server_encrypted_extensions_record();
+    tls_record const out = handshake.server_encrypted_extensions_record();
     write_record_sync(output, out, project_options.handshake_timeout);
 }
 
 void tls_engine::server_certificate(std::queue<packet_timed>& output) {
-    tls_record certificate_record = handshake.server_certificate_record();
+    tls_record const certificate_record = handshake.server_certificate_record();
     write_record_sync(output, certificate_record, project_options.handshake_timeout);
 }
 
@@ -456,7 +454,7 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
 }
 
 void tls_engine::server_key_exchange(std::queue<packet_timed>& output) {
-    tls_record record = handshake.server_key_exchange_record();
+    tls_record const record = handshake.server_key_exchange_record();
     write_record_sync(output, record, project_options.handshake_timeout);
 }
 
@@ -465,7 +463,7 @@ void tls_engine::server_hello_done(std::queue<packet_timed>& output) {
     write_record_sync(output, record, project_options.handshake_timeout);
 }
 
-void tls_engine::client_key_exchange(std::vector<uint8_t> handshake_message) {
+void tls_engine::client_key_exchange(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_key_exchange) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -476,7 +474,7 @@ void tls_engine::client_key_exchange(std::vector<uint8_t> handshake_message) {
     m_expected_read_record = HandshakeStage::client_change_cipher_spec;
 }
 
-void tls_engine::client_end_of_early_data(std::vector<uint8_t> handshake_message) {
+void tls_engine::client_end_of_early_data(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_early_data) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
@@ -531,14 +529,14 @@ void tls_engine::server_handshake_finished12(std::queue<packet_timed>& output) {
     auto handshake_hash = handshake.handshake_hasher->hash();
     assert(handshake_hash.size() == 32);
     
-    std::vector<uint8_t> server_finished = prf(*handshake.hash_ctor, handshake.tls12_master_secret, "server finished", handshake_hash, 12);
+    std::vector<uint8_t> const server_finished = prf(*handshake.hash_ctor, handshake.tls12_master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
     out.end_size_header();
     write_record_sync(output, out, project_options.handshake_timeout);
 }
 
-void tls_engine::client_alert_sync(std::queue<packet_timed>& output, tls_record record, std::optional<milliseconds> timeout) {
+void tls_engine::client_alert_sync(std::queue<packet_timed>& output, const tls_record& record, std::optional<milliseconds> timeout) {
     m_expected_read_record = HandshakeStage::application_closed;
     const auto& alert_message = record.m_contents;
     if(alert_message.size() != 2) {
@@ -564,7 +562,7 @@ void tls_engine::client_alert_sync(std::queue<packet_timed>& output, tls_record 
 }
 
 void tls_engine::client_heartbeat(std::queue<packet_timed>& output, tls_record client_record, std::optional<milliseconds> timeout) {
-    auto [heartblead, heartbeat_record] = client_heartbeat_record(client_record, can_heartbeat);
+    auto [heartblead, heartbeat_record] = client_heartbeat_record(std::move(client_record), can_heartbeat);
     if(heartblead) {
         // co_await m_client->write(to_unsigned("heartbleed?"), project_options.error_timeout);
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
@@ -572,13 +570,13 @@ void tls_engine::client_heartbeat(std::queue<packet_timed>& output, tls_record c
     write_record_sync(output, heartbeat_record, timeout);
 }
 
-std::pair<bool, tls_record> tls_engine::client_heartbeat_record(tls_record record, bool can_heartbeat) {
+std::pair<bool, tls_record> tls_engine::client_heartbeat_record(const tls_record& record, bool can_heartbeat) {
     if(!can_heartbeat) [[unlikely]] {
         throw ssl_error("bad heartbeat payload length", AlertLevel::fatal, AlertDescription::illegal_parameter);
     }
     auto heartbeat_message = record.m_contents;
 
-    if (heartbeat_message.size() < 1 or heartbeat_message[0] != 0x01 ) [[unlikely]] {
+    if (heartbeat_message.empty() or heartbeat_message[0] != 0x01 ) [[unlikely]] {
         throw ssl_error("unexpected heartbeat response", AlertLevel::fatal, AlertDescription::access_denied);
     }
 
@@ -619,7 +617,7 @@ void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
 
 // applications call this when graceful not abrupt closing of a connection is desired
 void tls_engine::process_close_notify(std::queue<packet_timed>& output) {
-    std::scoped_lock lk { m_write_queue_mut };
+    std::scoped_lock const lk { m_write_queue_mut };
     server_alert_sync(output, AlertLevel::warning, AlertDescription::close_notify);
 }
 

@@ -17,7 +17,7 @@
 
 
 namespace fbw {
-uint8_t letter_to_num(uint8_t byt) {
+static uint8_t letter_to_num(uint8_t byt) {
     if(byt >='A' and byt <= 'Z') {
         return byt-'A';
     }
@@ -36,7 +36,7 @@ uint8_t letter_to_num(uint8_t byt) {
     throw ssl_error("unexpected character; could not parse PEM", AlertLevel::fatal, AlertDescription::bad_certificate);
 }
 
-std::vector<uint8_t> decode64(std::string data) {
+static std::vector<uint8_t> decode64(std::string data) {
     std::vector<uint8_t> out;
     uint16_t buffer = 0;
     int j = 0;
@@ -58,7 +58,7 @@ std::vector<uint8_t> decode64(std::string data) {
     return out;
 }
 
-std::array<uint8_t,32> deserialise(std::vector<uint8_t> asn1) {
+static std::array<uint8_t,32> deserialise(std::vector<uint8_t> asn1) {
     if (asn1.size() < 68) {
         throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
@@ -75,55 +75,55 @@ std::array<uint8_t,32> deserialise(std::vector<uint8_t> asn1) {
     return privkey;
 }
 
-std::array<uint8_t,32> privkey_for_domain(std::string domain) {
+std::array<uint8_t,32> privkey_for_domain(const std::string& domain) {
     auto privkey_file = project_options.key_folder / domain / project_options.key_file;
-    if(!std::filesystem::exists(privkey_file) or domain == "") {
+    if(!std::filesystem::exists(privkey_file) or domain.empty()) {
         privkey_file = project_options.key_folder / project_options.default_subfolder / project_options.key_file;
     }
     return privkey_from_file(privkey_file);
 }
 
-std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
-    std::ifstream t(filename);
+std::array<uint8_t,32> privkey_from_file(const std::filesystem::path& filename) {
+    std::ifstream const t(filename);
     if (t.fail()) {
         throw ssl_error("no private key found", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     std::stringstream buffer;
     buffer << t.rdbuf();
-    std::string file = buffer.str();
-    std::string begin = "-----BEGIN PRIVATE KEY-----\n";
-    std::string end = "-----END PRIVATE KEY-----\n";
+    std::string const file = buffer.str();
+    std::string const begin = "-----BEGIN PRIVATE KEY-----\n";
+    std::string const end = "-----END PRIVATE KEY-----\n";
     size_t start_idx = file.find(begin);
     if(start_idx == std::string::npos) {
         throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     start_idx += begin.size();
-    size_t end_idx = file.find(end);
+    size_t const end_idx = file.find(end);
     if(end_idx == std::string::npos) {
         throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     if (end_idx < start_idx) {
         throw ssl_error("unsupported private key format", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    std::string data = file.substr(start_idx,end_idx-start_idx);
-    std::vector<uint8_t> DER = decode64(data);
+    std::string const data = file.substr(start_idx,end_idx-start_idx);
+    std::vector<uint8_t> const DER = decode64(data);
     auto key = deserialise(DER);
     return key;
 }
 
-std::vector<std::vector<uint8_t>> der_cert_for_domain(std::string domain) {
+std::vector<std::vector<uint8_t>> der_cert_for_domain(const std::string& domain) {
     auto cert_file = project_options.key_folder / domain / project_options.certificate_file;
-    if(!std::filesystem::exists(cert_file) or domain == "") {
+    if(!std::filesystem::exists(cert_file) or domain.empty()) {
         cert_file = project_options.key_folder / project_options.default_subfolder / project_options.certificate_file;
     }
     return der_cert_from_file(cert_file);
 }
 
-std::vector<std::vector<uint8_t>> der_cert_from_file(std::filesystem::path filename) {
-    std::ifstream t(filename);
+std::vector<std::vector<uint8_t>> der_cert_from_file(const std::filesystem::path& filename) {
+    std::ifstream const t(filename);
     std::stringstream buffer;
     buffer << t.rdbuf();
-    std::string file = buffer.str();
+    std::string const file = buffer.str();
     
     size_t end_idx = 0;
     std::vector<std::vector<uint8_t>> output;
@@ -134,9 +134,8 @@ std::vector<std::vector<uint8_t>> der_cert_from_file(std::filesystem::path filen
         if(start_idx == std::string::npos) {
             if(end_idx == 0) {
                 throw ssl_error("bad certificate", AlertLevel::fatal, AlertDescription::bad_certificate);
-            } else {
-                break;
-            }
+            }                 break;
+           
         }
         start_idx += begin.size();
         end_idx = file.find(end, end_idx);
@@ -146,7 +145,7 @@ std::vector<std::vector<uint8_t>> der_cert_from_file(std::filesystem::path filen
         if (end_idx < start_idx) {
             throw ssl_error("bad certificate", AlertLevel::fatal, AlertDescription::bad_certificate);
         }
-        std::string data = file.substr(start_idx, end_idx - start_idx);
+        std::string const data = file.substr(start_idx, end_idx - start_idx);
         end_idx += end.size();
         const std::vector<uint8_t> DER = decode64(data);
         output.push_back(DER);

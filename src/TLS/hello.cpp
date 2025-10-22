@@ -20,7 +20,7 @@
 
 namespace fbw {
 
-std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
+static std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
     // Server name
     try {
         std::vector<std::string> out;
@@ -32,7 +32,7 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
             switch(entry[0]) {
                 case 0: // DNS hostname
                 {
-                    size_t name_len = try_bigend_read(entry, 1, 2);
+                    size_t const name_len = try_bigend_read(entry, 1, 2);
                     const auto subdomain_name_span = entry.subspan(3);
                     if(name_len != subdomain_name_span.size()) {
                         return {}; // throw something
@@ -50,7 +50,7 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
     return {};
 }
 
-std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_data) {
+static std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_data) {
     std::vector<NamedGroup> out;
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
@@ -60,7 +60,7 @@ std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_
     return out;
 }
 
-std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> extension_data) {
+static std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> extension_data) {
     std::vector<SignatureScheme> out;
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
@@ -70,7 +70,7 @@ std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> exte
     return out;
 }
 
-std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> extension_data) {
+static std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> extension_data) {
     const std::vector<uint8_t> peer_may_send {0x00, 0x01, 0x00};
     const std::vector<uint8_t> peer_no_send { 0x00, 0x01, 0x02};
     if(extension_data.size() == 3) [[likely]] {
@@ -84,20 +84,20 @@ std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> exten
     return { false, false};
 }
 
-std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_data) {
+static std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_data) {
     std::vector<uint16_t> out;
-    size_t versions = extension_data[0];
+    size_t const versions = extension_data[0];
     if(versions + 1 != extension_data.size() or versions % 2 != 0) {
         return {};
     }
     for(size_t i = 1; i < extension_data.size(); i += 2) {
-        uint16_t vers = try_bigend_read(extension_data, i, 2);
+        uint16_t const vers = try_bigend_read(extension_data, i, 2);
         out.push_back(vers);
     }
     return out;
 }
 
-std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
+static std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
     std::vector<CertificateCompressionAlgorithm> out;
     auto cert_algos = der_span_read(extension_data, 0, 1);
     while(!cert_algos.empty()) {
@@ -108,8 +108,8 @@ std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(s
     return out;
 }
 
-std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_data) {
-    size_t ext_len = try_bigend_read(extension_data, 0, 2);
+static std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_data) {
+    size_t const ext_len = try_bigend_read(extension_data, 0, 2);
     if(ext_len + 2 != extension_data.size()) {
         throw ssl_error("malformed TLS version extension", AlertLevel::fatal, AlertDescription::decode_error);
     }
@@ -118,16 +118,16 @@ std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_d
     while(!extension_data.empty()) {
         auto key_type = extension_data.subspan(0, 2);
         auto group = static_cast<NamedGroup>(try_bigend_read(key_type, 0, 2));
-        size_t len = try_bigend_read(extension_data, 2, 2);
+        size_t const len = try_bigend_read(extension_data, 2, 2);
         auto key_value = extension_data.subspan(4, len);
-        auto typed_key = key_share({group, std::vector<uint8_t>(key_value.begin(), key_value.end())});
+        auto typed_key = key_share({.key_type=group, .key=std::vector<uint8_t>(key_value.begin(), key_value.end())});
         shared_keys.push_back(std::move(typed_key));
         extension_data = extension_data.subspan(len + 4);
     }
     return shared_keys;
 }
 
-std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t> extension_data) {
+static std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t> extension_data) {
     std::vector<std::string> alpn_types;
     auto alpn_data = der_span_read(extension_data, 0, 2);
     while(!alpn_data.empty()) {
@@ -138,7 +138,7 @@ std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t
     return alpn_types;
 }
 
-preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
+static preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
     preshared_key_ext psk_exts {};
     auto psk_ids = der_span_read(extension_data, 0, 2);
     psk_exts.idxbinders_ext = psk_ids.size() + 2;
@@ -160,7 +160,7 @@ preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
     return psk_exts;
 }
 
-std::vector<PskKeyExchangeMode> get_pskmodes(std::span<const uint8_t> extension_data) {
+static std::vector<PskKeyExchangeMode> get_pskmodes(std::span<const uint8_t> extension_data) {
     auto spn = der_span_read(extension_data, 0, 1);
     std::vector<PskKeyExchangeMode> out;
     for(auto c : spn) {
@@ -169,7 +169,7 @@ std::vector<PskKeyExchangeMode> get_pskmodes(std::span<const uint8_t> extension_
     return out;
 }
 
-void parse_extension(hello_record_data& record, extension ext) {
+static void parse_extension(hello_record_data& record, extension ext) {
     switch(ext.type) {
         case ExtensionType::server_name:
             record.parsed_extensions.insert(ext.type);
@@ -243,9 +243,9 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
     if(hello.empty()) {
         throw ssl_error("record is just a header", AlertLevel::fatal, AlertDescription::decode_error);
     }
-    assert(hello.size() >= 1 and hello[0] == 1);
+    assert(!hello.empty() and hello[0] == 1);
 
-    size_t len = try_bigend_read(hello,1,3);
+    size_t const len = try_bigend_read(hello,1,3);
     if(len + 4 != hello.size()) {
         throw ssl_error("record length overflows", AlertLevel::fatal, AlertDescription::decode_error);
     }
@@ -284,14 +284,14 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
     //idx += 2;
 
     while(!extensions.empty()) {
-        size_t extension_type = try_bigend_read(extensions, 0, 2);
+        size_t const extension_type = try_bigend_read(extensions, 0, 2);
         auto extension_span = der_span_read(extensions, 2, 2);
         if(extensions.size() < extension_span.size() + 2) {
             throw ssl_error("bad extensions", AlertLevel::fatal, AlertDescription::decode_error);
         }
         extensions = extensions.subspan(extension_span.size() + 4);
-        std::vector<uint8_t> ext_data(extension_span.begin(), extension_span.end());
-        extension ext = {static_cast<ExtensionType>(extension_type), ext_data};
+        std::vector<uint8_t> const ext_data(extension_span.begin(), extension_span.end());
+        extension const ext = {.type=static_cast<ExtensionType>(extension_type), .data=ext_data};
         parse_extension(record, ext);
 
         if(ext.type == ExtensionType::pre_shared_key) {
@@ -310,7 +310,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
     return record;
 }
 
-void write_alpn_extension(tls_record& record, std::string alpn) {
+void write_alpn_extension(tls_record& record, const std::string& alpn) {
     record.write2(ExtensionType::application_layer_protocol_negotiation);
     record.start_size_header(2);
     record.start_size_header(2);
@@ -416,8 +416,8 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
             std::array<uint8_t, 32> pubkey_ephem = curve25519::base_multiply(server_privkey);
-            std::vector<uint8_t> server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
-            key_share server_key { client_keyshare.key_type, server_pub };
+            std::vector<uint8_t> const server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
+            key_share const server_key { .key_type=client_keyshare.key_type, .key=server_pub };
             auto shared_secret = get_shared_secret(server_privkey, client_keyshare);
             return { shared_secret, server_key };
         }
@@ -426,8 +426,8 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
             std::array<uint8_t, 65> pubkey_ephem = secp256r1::get_public_key(server_privkey);
-            std::vector<uint8_t> server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
-            key_share server_key { client_keyshare.key_type, server_pub };
+            std::vector<uint8_t> const server_pub(pubkey_ephem.begin(), pubkey_ephem.end());
+            key_share const server_key { .key_type=client_keyshare.key_type, .key=server_pub };
             auto shared_secret = get_shared_secret(server_privkey, client_keyshare);
             return { shared_secret, server_key };
         }
@@ -437,7 +437,7 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             if (shared_secret.empty()) {
                 throw ssl_error("", AlertLevel::fatal, AlertDescription::illegal_parameter);
             }
-            return { shared_secret, { NamedGroup::X25519MLKEM768, server_keyshare } };
+            return { shared_secret, { .key_type=NamedGroup::X25519MLKEM768, .key=server_keyshare } };
         }
         default:
             assert(false);
@@ -455,7 +455,7 @@ std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_ret
     do {
         randomgen.randgen(server_random);
         if(std::equal(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.begin() + 4, server_random.begin()+24)) {
-            continue;
+            break;
         }
     } while(false);
     assert(server_random != std::vector<uint8_t>(32, 0));

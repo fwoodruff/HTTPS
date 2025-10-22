@@ -68,23 +68,23 @@ public:
 
     cipher_suites cipher;
 
-    bool middlebox_compatibility();
+    bool middlebox_compatibility() const;
 
     std::string m_SNI;
 
-    [[nodiscard]] tls_record server_certificate_record();
+    [[nodiscard]] tls_record server_certificate_record() const;
     [[nodiscard]] tls_record server_key_exchange_record();
     [[nodiscard]] tls_record server_hello_record();
-    [[nodiscard]] tls_record server_certificate_verify_record();
-    tls_record server_encrypted_extensions_record();
-    tls_record server_hello_done_record();
+    [[nodiscard]] tls_record server_certificate_verify_record() const;
+    tls_record server_encrypted_extensions_record() const;
+    tls_record server_hello_done_record() const;
 
-    void client_end_of_early_data_record(const std::vector<uint8_t>& handshake_message);
+    void client_end_of_early_data_record(const std::vector<uint8_t>& handshake_message) const;
 
     void client_hello_record(const std::vector<uint8_t>& handshake_message);
     std::vector<uint8_t> client_key_exchange_receipt(const std::vector<uint8_t>& handshake_message);
 
-    void client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message);
+    void client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message) const;
     void client_handshake_finished13_record(const std::vector<uint8_t>& handshake_message);
 
     [[nodiscard]] tls_record server_handshake_finished12_record() const;

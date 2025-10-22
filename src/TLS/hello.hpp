@@ -74,7 +74,7 @@ struct hello_record_data {
 hello_record_data parse_client_hello(const std::vector<uint8_t>& hello_contents);
 
 // server hello extensions
-void write_alpn_extension(tls_record& record, std::string alpn);
+void write_alpn_extension(tls_record& record, const std::string& alpn);
 void write_renegotiation_info(tls_record& record);
 void write_heartbeat(tls_record& record);
 void write_key_share(tls_record& record, const key_share& pubkey_ephem);

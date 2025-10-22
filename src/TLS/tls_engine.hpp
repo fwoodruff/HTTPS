@@ -42,7 +42,7 @@ public:
     void process_close_notify(std::queue<packet_timed>& output);
     stream_result close_notify_finish(const std::deque<uint8_t>& bio_input);
 
-    std::string alpn();
+    std::string alpn() const;
     
     HandshakeStage m_expected_read_record = HandshakeStage::client_hello;
     std::mutex m_write_queue_mut;
@@ -65,13 +65,13 @@ private:
 
     void client_handshake_record_sync(std::queue<packet_timed>& output, tls_record record);
     void client_handshake_message_sync(std::queue<packet_timed>& output, const std::vector<uint8_t>& handshake_message);
-    void client_alert_sync(std::queue<packet_timed>& output, tls_record record, std::optional<milliseconds> timeout);
+    void client_alert_sync(std::queue<packet_timed>& output, const tls_record& record, std::optional<milliseconds> timeout);
     void client_heartbeat(std::queue<packet_timed>& output, tls_record client_record, std::optional<milliseconds> timeout);
     void client_hello(const std::vector<uint8_t>& handshake_message);
-    void client_key_exchange(std::vector<uint8_t> key_exchange);
+    void client_key_exchange(const std::vector<uint8_t>& key_exchange);
     void client_handshake_finished12(const std::vector<uint8_t>& finish); 
     void client_handshake_finished13(const std::vector<uint8_t>& finish);
-    void client_end_of_early_data(std::vector<uint8_t> handshake_message);
+    void client_end_of_early_data(const std::vector<uint8_t>& handshake_message);
     void client_change_cipher_spec(tls_record);
     
     void server_key_update_respond(std::queue<packet_timed>& output);
@@ -93,7 +93,7 @@ private:
     void write_record_sync(std::queue<packet_timed>& output, tls_record record, std::optional<milliseconds> timeout);
 
     KeyUpdateRequest client_key_update_received(const std::vector<uint8_t>& handshake_message);
-    static std::pair<bool, tls_record> client_heartbeat_record(tls_record record, bool can_heartbeat);
+    static std::pair<bool, tls_record> client_heartbeat_record(const tls_record& record, bool can_heartbeat);
     std::optional<tls_record> pop_record_from_buffer();
 };
 

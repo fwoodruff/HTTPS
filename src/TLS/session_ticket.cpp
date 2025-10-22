@@ -6,6 +6,8 @@
 //
 
 #include "session_ticket.hpp"
+
+#include <utility>
 #include "../global.hpp"
 #include "TLS_enums.hpp"
 #include "TLS_utils.hpp"
@@ -51,7 +53,7 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(std::vector<ui
     out.issued_at = try_bigend_read(ticket, 5, 8);
     out.ticket_age_add = try_bigend_read(ticket, 13, 4);
     out.cipher_suite = static_cast<cipher_suites>(try_bigend_read(ticket, 17, 2));
-    out.early_data_allowed = try_bigend_read(ticket, 19, 1) != 0ull;
+    out.early_data_allowed = try_bigend_read(ticket, 19, 1) != 0ULL;
     out.number_once = 0;
     const size_t resumption_secret_len = try_bigend_read(ticket, 20, 1);
     const size_t sni_len = try_bigend_read(ticket, 21, 1);
@@ -68,7 +70,7 @@ std::optional<TLS13SessionTicket> TLS13SessionTicket::deserialise(std::vector<ui
     return out;
 }
 
-std::vector<uint8_t> encrypt_message(std::vector<uint8_t> plaintext, const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
+static std::vector<uint8_t> encrypt_message(std::vector<uint8_t> plaintext, const std::array<uint8_t, 16>& encryption_key, uint64_t number_once) {
     constexpr size_t number_once_size = 8;
     constexpr size_t mac_size = 16;
     std::array<uint8_t, number_once_size> number_once_bytes;
@@ -95,7 +97,7 @@ std::vector<uint8_t> encrypt_message(std::vector<uint8_t> plaintext, const std::
     return plaintext;
 }
 
-std::optional<std::pair<std::vector<uint8_t>, uint64_t>> decrypt_message(std::vector<uint8_t> ciphertext, const std::array<uint8_t, 16>& encryption_key) {
+static std::optional<std::pair<std::vector<uint8_t>, uint64_t>> decrypt_message(std::vector<uint8_t> ciphertext, const std::array<uint8_t, 16>& encryption_key) {
     constexpr size_t number_once_size = 8;
     constexpr size_t mac_size = 16;
     if(ciphertext.size() < (number_once_size + mac_size)) {
@@ -117,7 +119,7 @@ std::optional<std::pair<std::vector<uint8_t>, uint64_t>> decrypt_message(std::ve
     bytestream.absorb(encryption_key.data(), encryption_key.size());
     bytestream.absorb(ciphertext.data() + ciphertext.size() - number_once_size, number_once_size);
 
-    uint64_t number_once = try_bigend_read(ciphertext, ciphertext.size() - number_once_size, 8);
+    uint64_t const number_once = try_bigend_read(ciphertext, ciphertext.size() - number_once_size, 8);
 
     ciphertext.resize(ciphertext.size() - number_once_size);
 
@@ -135,7 +137,7 @@ std::vector<uint8_t> TLS13SessionTicket::encrypt_ticket(const std::array<uint8_t
 }
 
 std::optional<TLS13SessionTicket> TLS13SessionTicket::decrypt_ticket(std::vector<uint8_t> ticket, const std::array<uint8_t, 16>& encryption_key) {
-    auto opt_ticket_bytes_number_once = decrypt_message(ticket, encryption_key);
+    auto opt_ticket_bytes_number_once = decrypt_message(std::move(ticket), encryption_key);
     if(!opt_ticket_bytes_number_once) {
         return std::nullopt;
     }
@@ -183,7 +185,7 @@ std::optional<tls_record> TLS13SessionTicket::server_session_ticket_record(TLS13
     record.end_size_header();
 
     record.start_size_header(2);
-    std::vector<uint8_t> session_ticket_bytes = ticket.encrypt_ticket(encryption_key, number_once);
+    std::vector<uint8_t> const session_ticket_bytes = ticket.encrypt_ticket(encryption_key, number_once);
     record.write(session_ticket_bytes);
     record.end_size_header();
 

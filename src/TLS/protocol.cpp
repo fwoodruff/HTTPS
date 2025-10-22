@@ -78,7 +78,7 @@ task<stream_result> TLS::bail_if_http(const std::deque<uint8_t>& input_data) {
         "\r\n";
     if(m_engine.m_expected_read_record == HandshakeStage::client_hello) {
         if(!input_data.empty() and (input_data.front() < 19 or input_data.front() > 27)) {
-            std::vector<uint8_t> data{redirect_response.begin(), redirect_response.end() };
+            std::vector<uint8_t> const data{redirect_response.begin(), redirect_response.end() };
             co_await m_client->write(data, project_options.error_timeout);
             co_return stream_result::closed;
         }
@@ -138,14 +138,14 @@ task<stream_result> TLS::write(std::vector<uint8_t> data, std::optional<millisec
 }
 
 task<stream_result> TLS::net_write_all() {
-    bool already_acquired = m_write_region.exchange(true);
+    bool const already_acquired = m_write_region.exchange(true);
     if(already_acquired) {
         co_return stream_result::ok;
     }
     for(;;) {
         packet_timed packet;
         {
-            std::scoped_lock lk { m_engine.m_write_queue_mut };
+            std::scoped_lock const lk { m_engine.m_write_queue_mut };
             if(output.empty()) {
                 m_write_region.store(false);
                 co_return stream_result::ok;
@@ -153,7 +153,7 @@ task<stream_result> TLS::net_write_all() {
             packet = std::move(output.front());
             output.pop();
         }
-        stream_result res = co_await m_client->write(packet.data, packet.timeout);
+        stream_result const res = co_await m_client->write(packet.data, packet.timeout);
         if(res != stream_result::ok) {
             co_return res;
         }
@@ -178,10 +178,10 @@ task<void> TLS::close_notify() {
         if(res != stream_result::ok) {
             co_return;
         }
-        std::queue<packet_timed> output_end;
+        std::queue<packet_timed> const output_end;
         auto res2 = m_engine.close_notify_finish(input_data);
         if(res2 == stream_result::awaiting) {
-            continue;
+            break;
         }
         if(res2 != stream_result::ok) {
             co_return;
@@ -192,13 +192,12 @@ task<void> TLS::close_notify() {
 }
 
 task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t>& buffer, std::optional<std::chrono::milliseconds> timeout) {
-    auto tls_stream = dynamic_cast<TLS*>(p_stream);
-    if(tls_stream) {
+    auto *tls_stream = dynamic_cast<TLS*>(p_stream);
+    if(tls_stream != nullptr) {
         return tls_stream->read_append_early_data(buffer, timeout);
-    } else {
-        assert(p_stream);
+    }         assert(p_stream);
         return p_stream->read_append(buffer, timeout);
-    }
+   
 }
 
 buffer::buffer(size_t size): buffer_size(size){}

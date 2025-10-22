@@ -17,13 +17,13 @@
 
 namespace fbw {
 
-std::array<unsigned char,32> privkey_from_file(std::filesystem::path filename);
+std::array<unsigned char,32> privkey_from_file(const std::filesystem::path& filename);
 
-std::vector<std::vector<uint8_t>> der_cert_from_file(std::filesystem::path filename);
+std::vector<std::vector<uint8_t>> der_cert_from_file(const std::filesystem::path& filename);
 
-std::array<uint8_t,32> privkey_for_domain(std::string domain);
+std::array<uint8_t,32> privkey_for_domain(const std::string& domain);
 
-std::vector<std::vector<uint8_t>> der_cert_for_domain(std::string domain);
+std::vector<std::vector<uint8_t>> der_cert_for_domain(const std::string& domain);
 } //namespace fbw
 
 

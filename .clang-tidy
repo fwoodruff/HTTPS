@@ -6,6 +6,11 @@ Checks: >
   modernize-*,
   readability-*,
   misc-*,
+  abseil-*,
+  cert-*,
+  google-*,
+  portability-*,
+  cppcoreguidelines-*,
   -bugprone-exception-escape,
   -readability-static-accessed-through-instance,
   -modernize-use-trailing-return-type,
@@ -14,4 +19,5 @@ Checks: >
   -bugprone-easily-swappable-parameters,
   -readability-identifier-length,
   -misc-non-private-member-variables-in-classes,
+  -cert-err33-c
 WarningsAsErrors: '*'

@@ -193,7 +193,7 @@ namespace {
         }
     }
 
-    static task<void> async_main(fbw::tcplistener https_listener, std::string https_port, fbw::tcplistener http_listener, std::string http_port) {
+    task<void> async_main(fbw::tcplistener https_listener, std::string https_port, fbw::tcplistener http_listener, std::string http_port) {
         try {
             fbw::MIMEmap = fbw::MIMES(fbw::project_options.mime_folder);
             static_cast<void>(fbw::der_cert_for_domain(fbw::project_options.default_subfolder));
@@ -202,7 +202,10 @@ namespace {
 
             std::println("Redirect running on port {}", http_port);
             std::println("HTTPS running on port {}", https_port);
-            std::fflush(stdout);
+            int const res = std::fflush(stdout);
+            if (res != 0) {
+                throw std::runtime_error("bad stdout");
+            }
 
             auto ip_connections = std::make_shared<limiter>();
             async_spawn(https_server(ip_connections, std::move(https_listener)));
@@ -220,7 +223,7 @@ namespace {
         co_return;
     }
 
-}
+}  // namespace
 
 
 int main(int argc, const char * argv[]) {

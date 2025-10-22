@@ -65,9 +65,9 @@ task<void> tcp_stream::close_notify() {
     return m_ip;
 }
 
-tcp_stream::tcp_stream(tcp_stream&& other) : m_ip(std::move(other.m_ip)), m_port(std::move(other.m_port)), m_fd(std::exchange(other.m_fd, -1)) { }
+tcp_stream::tcp_stream(tcp_stream&& other) noexcept : m_ip(std::move(other.m_ip)), m_port(std::move(other.m_port)), m_fd(std::exchange(other.m_fd, -1)) { }
 
-tcp_stream& tcp_stream::operator=(tcp_stream&& other) {
+tcp_stream& tcp_stream::operator=(tcp_stream&& other) noexcept {
     if(this != &other) {
         m_fd = std::exchange(other.m_fd, -1);
         m_ip = std::move(other.m_ip);

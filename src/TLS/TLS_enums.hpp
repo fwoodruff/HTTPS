@@ -17,7 +17,7 @@ constexpr uint16_t TLS11 = 0x0302;
 constexpr uint16_t TLS12 = 0x0303;
 constexpr uint16_t TLS13 = 0x0304;
 
-enum class HandshakeStage {
+enum class HandshakeStage : uint8_t {
     client_hello,
     server_hello,
     server_certificate,
@@ -133,13 +133,13 @@ enum class KeyUpdateRequest : uint8_t {
 enum class ContentType : uint8_t {
     Invalid = 0,
     ChangeCipherSpec = 0x14,
-    Alert,
-    Handshake,
-    Application,
-    Heartbeat,
-    tls12_cid,
-    ACK,
-    return_routability_check
+    Alert = 0x15,
+    Handshake = 0x16,
+    Application = 0x17,
+    Heartbeat = 0x18,
+    tls12_cid = 0x19,
+    ACK = 0x20,
+    return_routability_check = 0x21
 };
 
 enum class ECCurveType : uint8_t{
@@ -370,9 +370,9 @@ public:
     AlertDescription m_d;
 
     ssl_error(const std::string& what_arg,
-              AlertLevel l,
-              AlertDescription d) :
-    std::runtime_error(what_arg), m_l(l), m_d(d) {}
+              AlertLevel level,
+              AlertDescription description) :
+    std::runtime_error(what_arg), m_l(level), m_d(description) {}
 };
 
 enum class cipher_suites : uint16_t {

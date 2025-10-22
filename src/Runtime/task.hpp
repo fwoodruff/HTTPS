@@ -23,11 +23,11 @@
 
 struct promise_metadata {
     virtual ~promise_metadata() = default;
-    std::thread::id affinity {};
+    std::thread::id affinity;
 };
 
-inline std::coroutine_handle<promise_metadata> upcast(std::coroutine_handle<> h) noexcept {
-    auto meta = std::coroutine_handle<promise_metadata>::from_address(h.address());
+inline std::coroutine_handle<promise_metadata> upcast(std::coroutine_handle<> handle) noexcept {
+    auto meta = std::coroutine_handle<promise_metadata>::from_address(handle.address());
     promise_metadata& base = meta.promise();
     assert(dynamic_cast<promise_metadata*>(&base));
     return meta;
@@ -39,15 +39,15 @@ template<class T> class task;
 class task_promise_base : public promise_metadata {
 public:
     struct final_awaitable {
-        bool await_ready() const noexcept { return false; }
+        [[nodiscard]] static bool await_ready() noexcept { return false; }
         template<typename PROMISE>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<PROMISE> coro) noexcept {
             return coro.promise().m_continuation;
         }
         void await_resume() noexcept { }
     };
-    std::suspend_always initial_suspend() noexcept { return {}; }
-    final_awaitable final_suspend() noexcept { return {}; }
+    static std::suspend_always initial_suspend() noexcept { return {}; }
+    static final_awaitable final_suspend() noexcept { return {}; }
     template<typename PROMISE>
     void set_continuation(std::coroutine_handle<PROMISE> continuation) noexcept {
         if constexpr (std::derived_from<PROMISE, promise_metadata>) {
@@ -68,7 +68,7 @@ template<typename T>
 class task_promise final : public task_promise_base {
 public:
     task_promise() noexcept {};
-    ~task_promise() noexcept {
+    ~task_promise() noexcept override {
         if (init) {
             m_value.~T();
         }
@@ -126,7 +126,7 @@ class task {
 public:
     using promise_type = task_promise<T>;
     struct awaitable {
-        bool await_ready() const noexcept { return !m_coroutine || m_coroutine.done(); }
+        [[nodiscard]] bool await_ready() const noexcept { return !m_coroutine || m_coroutine.done(); }
         template<class Promise>
         std::coroutine_handle<> await_suspend( std::coroutine_handle<Promise> awaiting_coroutine ) noexcept {
             m_coroutine.promise().set_continuation( awaiting_coroutine );
@@ -191,13 +191,13 @@ public:
             return root_task { std::coroutine_handle<promise_type>::from_promise(*this) };
         }
         void return_void() noexcept { }
-        std::suspend_always initial_suspend() noexcept {
+        static std::suspend_always initial_suspend() noexcept {
             return {};
         }
-        std::suspend_never final_suspend() noexcept {
+        static std::suspend_never final_suspend() noexcept {
             return {};
         }
-        void unhandled_exception() {
+        static void unhandled_exception() {
             assert(false);
         }
     };

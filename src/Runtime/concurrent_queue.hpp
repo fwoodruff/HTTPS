@@ -14,7 +14,6 @@
 #include <mutex>
 #include <queue>
 #include <vector>
-#include <queue>
 #include <optional>
 #include <atomic>
 
@@ -26,7 +25,7 @@ private:
     struct node : public hazard_pointer_obj_base<node> {
         std::atomic<T*> data {sentinel};
         std::atomic<node*> next;
-        node() : next(nullptr) {}
+        node() = default;
         node(T data_) : data(std::move(data_)), next(nullptr) { }
     };
 
@@ -48,12 +47,12 @@ public:
     }
 
     void push(T data) {
-        hazard_pointer hp = make_hazard_pointer();
+        hazard_pointer hazard_ptr = make_hazard_pointer();
         node* new_next = new node;
         T* data_ptr = new T(std::move(data));
         assert(data_ptr != sentinel);
         for(;;) {
-            node* old_tail = hp.protect(tail);
+            node* old_tail = hazard_ptr.protect(tail);
             T* old_data = sentinel;
             if(old_tail->data.compare_exchange_strong(old_data, data_ptr)) {
                 node* old_next = nullptr;
@@ -62,24 +61,23 @@ public:
                     new_next = old_next;
                 }
                 node* const current_tail_ptr = old_tail;
-                while(!tail.compare_exchange_weak(old_tail, new_next) and old_tail == current_tail_ptr);
+                while(!tail.compare_exchange_weak(old_tail, new_next) and old_tail == current_tail_ptr) {}
                 return;
-            } else {
-                node* old_next = nullptr;
-                if(old_tail->next.compare_exchange_strong(old_next, new_next)) {
-                    old_next = new_next;
-                    new_next = new node; 
-                }
-                node* const current_tail_ptr = old_tail;
-                while(!tail.compare_exchange_weak(old_tail, old_next) and old_tail == current_tail_ptr);
             }
+            node* old_next = nullptr;
+            if(old_tail->next.compare_exchange_strong(old_next, new_next)) {
+                old_next = new_next;
+                new_next = new node; 
+            }
+            node* const current_tail_ptr = old_tail;
+            while(!tail.compare_exchange_weak(old_tail, old_next) and old_tail == current_tail_ptr) {}
         }
     }
 
     std::optional<T> try_pop() {
-        hazard_pointer hp = make_hazard_pointer();
+        hazard_pointer hazard_ptr = make_hazard_pointer();
         for(;;) {
-            node* old_head = hp.protect(head);
+            node* old_head = hazard_ptr.protect(head);
             if(old_head == tail.load()) {
                 return std::nullopt;
             }

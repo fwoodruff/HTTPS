@@ -17,12 +17,12 @@ class acceptable;
 
 class tcplistener {
 public:
-    tcplistener(int fd);
+    tcplistener(int file_descriptor);
     ~tcplistener();
     tcplistener(const tcplistener& other) = delete;
     tcplistener& operator=(const tcplistener& other) = delete;
-    tcplistener(tcplistener&& other);
-    tcplistener& operator=(tcplistener&& other);
+    tcplistener(tcplistener&& other) noexcept;
+    tcplistener& operator=(tcplistener&& other) noexcept;
     
     static tcplistener bind(std::string service);
     acceptable accept();

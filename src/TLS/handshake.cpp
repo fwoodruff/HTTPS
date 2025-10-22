@@ -299,6 +299,10 @@ void handshake_ctx::client_hello_record(const std::vector<uint8_t>& handshake_me
     assert(p_tls_version != nullptr);
 
     alpn = choose_alpn(client_hello.application_layer_protocols);
+
+    if(client_hello.signature_schemes.empty()) {
+        throw ssl_error("signature schemes required for TLS >=1.2", AlertLevel::fatal, AlertDescription::illegal_parameter);
+    }
     
     std::vector<uint8_t> psk = std::vector<uint8_t>(hash_ctor->get_hash_size(), 0);
     if(*p_tls_version == TLS13) {
@@ -407,7 +411,7 @@ tls_record handshake_ctx::server_hello_record() {
     
     hello_record.start_size_header(3);
 
-    hello_record.write2(TLS12);
+    hello_record.write2(TLS12); // must use legacy here even for TLS 1.3
 
     hello_record.write(m_server_random);
 

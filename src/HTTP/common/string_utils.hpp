@@ -154,7 +154,7 @@ struct http_frame {
 };
 
 // A pretty timestamp for response headers
-[[nodiscard]] std::string timestring(time_t t);
+[[nodiscard]] std::string timestring(time_t time_v);
 
 // returns n bytes FIFO from an HTTP stream, and removes those bytes from the stream
 // Note that this returns an empty string if there are fewer than n bytes in the stream
@@ -180,7 +180,7 @@ std::string make_server_name();
 
 [[nodiscard]] std::string error_to_html(int status, std::string message);
 
-[[nodiscard]] std::vector<std::string> split(const std::string& line, const std::string& delim);
+//[[nodiscard]] std::vector<std::string> split(const std::string& line, const std::string& delim);
 
 [[nodiscard]] std::string trim(std::string str);
 
@@ -190,13 +190,13 @@ void parse_tlds(const std::string& tld_filename);
 
 bool is_tld(std::string domain);
 
-char asciitolower(char in);
+char asciitolower(char character);
 
-std::string to_lower(std::string s);
+std::string to_lower(std::string str);
 
-char asciitoupper(char in);
+char asciitoupper(char character);
 
-std::string to_upper(std::string s);
+std::string to_upper(std::string character);
 
 
 std::string parse_domain(std::string hostname);

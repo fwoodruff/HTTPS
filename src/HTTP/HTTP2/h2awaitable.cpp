@@ -76,7 +76,7 @@ stream_result unless_blocking_read::await_resume() {
 
 // Read data
 // todo: alias the pointer to the context
-h2readable::h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data) :
+h2readable::h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<uint8_t> data) :
     m_h2_contx(connection), m_stream_id(stream_id), m_data(data) {
         assert(!data.empty());
 }

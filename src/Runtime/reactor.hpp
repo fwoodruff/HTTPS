@@ -21,13 +21,13 @@
 #include <coroutine>
 
 using namespace std::chrono;
-enum class IO_direction { Read, Write };
+enum class IO_direction : uint8_t { Read, Write };
 
 
 class reactor {
 public:
     reactor();
-    void add_task(int fd, std::coroutine_handle<> handle, IO_direction rw,
+    void add_task(int file_descriptor, std::coroutine_handle<> handle, IO_direction rd_wt,
                   std::optional<milliseconds> timeout = std::nullopt);
 
     void sleep_for(std::coroutine_handle<> handle, milliseconds duration);
@@ -49,8 +49,8 @@ private:
         std::coroutine_handle<> handle;
     };
     struct timer_cmp {
-        bool operator()(const timer_entry& a, const timer_entry& b) const noexcept {
-            return a.when > b.when;
+        bool operator()(const timer_entry& after, const timer_entry& before) const noexcept {
+            return after.when > before.when;
         }
     };
     
@@ -70,7 +70,7 @@ private:
 class wait_for {
 public:
     wait_for(milliseconds duration);
-    bool await_ready() const noexcept;
+    [[nodiscard]] bool await_ready() const noexcept;
     void await_suspend(std::coroutine_handle<> awaiting_coroutine);
     void await_resume();
 private:

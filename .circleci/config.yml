@@ -55,3 +55,4 @@ workflows:
     jobs:
       - test
       - docker-test
+      - lint

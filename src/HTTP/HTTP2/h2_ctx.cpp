@@ -383,7 +383,7 @@ stream_result h2_context::stage_buffer(stream_ctx& stream) {
     }
 }
 
-std::optional<std::pair<size_t, bool>> h2_context::read_data(const std::span<uint8_t> app_data, uint32_t stream_id) {
+std::optional<std::pair<size_t, bool>> h2_context::read_data(std::span<uint8_t> app_data, uint32_t stream_id) {
     std::scoped_lock lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {
@@ -444,7 +444,7 @@ std::vector<id_new> h2_context::receive_rst_stream(const h2_rst_stream& frame) {
     return {{frame.stream_id, wake_action::wake_any}};
 }
 
-stream_result h2_context::buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end) {
+stream_result h2_context::buffer_data(std::span<const uint8_t> app_data, uint32_t stream_id, bool end) {
     std::scoped_lock lk{ m_mut };
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {

@@ -28,8 +28,8 @@ namespace fbw {
 // co_await a readable, shrinks the input buffer to the remaining buffer, and returns the bytes read
 class readable {
 public:
-    readable(int fd, std::span<uint8_t>& buffer, std::optional<milliseconds> millis);
-    bool await_ready() const noexcept;
+    readable(int file_descriptor, std::span<uint8_t>& buffer, std::optional<milliseconds> millis);
+    [[nodiscard]] bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<uint8_t>, stream_result> await_resume();
 private:
@@ -44,8 +44,8 @@ private:
 // co_await a writeable, shrinks the input buffer to the remaining buffer, and returns the bytes written
 class writeable {
 public:
-    writeable(int fd, std::span<const uint8_t>& bytes, std::optional<milliseconds> millis);
-    bool await_ready() const noexcept;
+    writeable(int file_descriptor, std::span<const uint8_t>& bytes, std::optional<milliseconds> millis);
+    [[nodiscard]] bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<const uint8_t>, stream_result> await_resume();
 private:

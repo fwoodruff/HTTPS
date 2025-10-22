@@ -33,9 +33,9 @@ constexpr size_t first_dynamic_idx = static_entries + 1;
 
 template<>
 struct std::hash<fbw::hpack_huffman_bit_pattern> {
-    size_t operator()(const fbw::hpack_huffman_bit_pattern& s) const noexcept {
-        size_t seed = s.bits;
-        fbw::hash_combine(seed, s.bits, s.bit_length);
+    size_t operator()(const fbw::hpack_huffman_bit_pattern& pattern) const noexcept {
+        size_t seed = pattern.bits;
+        fbw::hash_combine(seed, pattern.bits, pattern.bit_length);
         return seed;
     }
 };
@@ -72,7 +72,7 @@ private:
     table m_encode_table;
     table m_decode_table;
 
-    enum class prefix_type {
+    enum class prefix_type : uint8_t {
         indexed_header,
         literal_header_incremental_indexing,
         table_size_update,

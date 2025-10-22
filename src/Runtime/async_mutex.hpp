@@ -21,8 +21,8 @@ public:
     public:
         scope_guard(const scope_guard&) = delete;
         scope_guard& operator=(const scope_guard&) = delete;
-        scope_guard(scope_guard&&);
-        scope_guard& operator=(scope_guard&&);
+        scope_guard(scope_guard&&) noexcept;
+        scope_guard& operator=(scope_guard&&) noexcept;
         ~scope_guard();
     private:
         friend class lockable;
@@ -34,7 +34,7 @@ public:
     public:
         lockable(async_mutex* ctx);
         ~lockable();
-        bool await_ready() const noexcept;
+        [[nodiscard]] bool await_ready() const noexcept;
         bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
         scope_guard await_resume();
     private:

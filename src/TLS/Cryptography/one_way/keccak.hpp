@@ -7,8 +7,6 @@
 #ifndef keccak_hpp
 #define keccak_hpp
 
-#include "keccak.hpp"
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -26,15 +24,15 @@ class keccak_sponge {
     uint8_t padding_byte;
 public:
     keccak_sponge(size_t capacity = 512, uint8_t domain_separator = 0x1F) noexcept;
-    template <typename T> void absorb(const T* const input, size_t N) noexcept;
-    template <typename T> void squeeze(T* const output, size_t N) noexcept;
+    template <typename T> void absorb(const T* input, size_t num_bytes) noexcept;
+    template <typename T> void squeeze(T* output, size_t num_bytes) noexcept;
     void reset() noexcept;
 };
 
 class cprng : keccak_sponge {
-    std::once_flag init{};
+    std::once_flag init;
 public:
-    void randgen(uint8_t* const output, size_t N);
+    void randgen(uint8_t* output, size_t num_bytes);
     [[nodiscard]] uint64_t randgen64();
 
     template<typename T>

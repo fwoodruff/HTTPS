@@ -21,7 +21,7 @@
 namespace fbw {
 
 
-constexpr size_t TLS_RECORD_SIZE = (1u << 14);
+constexpr size_t TLS_RECORD_SIZE = (1U << 14);
 constexpr size_t TLS_EXPANSION_MAX = 2048;
 constexpr size_t TLS_HEADER_SIZE = 5;
 constexpr size_t WRITE_RECORD_SIZE = 1417;
@@ -81,40 +81,40 @@ template<typename T>
 
 
 template<typename T>
-inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nbytes) {
+inline void checked_bigend_write(uint64_t value, T& container, ssize_t idx, short nbytes) {
     assert(static_cast<ssize_t>(container.size()) > idx + nbytes - 1);
     assert(nbytes >= 1);
     assert(nbytes <= 8);
-    assert(nbytes == 8 or x < (1ull << nbytes*8));
+    assert(nbytes == 8 or value < (1ULL << nbytes*8));
     assert(idx >= 0);
     for(ssize_t i = idx+nbytes-1; i >= idx; i--) {
-        container[i] = static_cast<uint8_t>(x) & 0xffU;
-        x >>= 8;
+        container[i] = static_cast<uint8_t>(value) & 0xffU;
+        value >>= 8;
     }
 }
 
-[[nodiscard("returns unsigned string")]] inline std::vector<uint8_t> to_unsigned(std::string s) {
+[[nodiscard("returns unsigned string")]] inline std::vector<uint8_t> to_unsigned(const std::string& signed_str) {
     std::vector<uint8_t> out;
-    out.assign(s.cbegin(), s.cend());
+    out.assign(signed_str.cbegin(), signed_str.cend());
     return out;
 }
 
-[[nodiscard("returns signed string")]] inline std::string to_signed(std::vector<uint8_t> s) {
+[[nodiscard("returns signed string")]] inline std::string to_signed(const std::vector<uint8_t>& bytes) {
     std::string out;
-    out.append(s.cbegin(), s.cend());
+    out.append(bytes.cbegin(), bytes.cend());
     return out;
 }
 
 inline void hash_combine(std::size_t& seed) { }
 
 template <typename T, typename... Rest>
-inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
-    std::hash<T> hasher;
-    seed ^= hasher(v) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+inline void hash_combine(std::size_t& seed, const T& value, const Rest&...  rest) {
+    const std::hash<T> hasher;
+    seed ^= hasher(value) + 0x9e3779b9 + (seed<<6) + (seed>>2);
     hash_combine(seed, rest...);
 }
 
-std::filesystem::path get_config_path(int argc, const char* argv[]);
+std::filesystem::path get_config_path(int argc, const char* argv[]); // NOLINT(modernize-avoid-c-arrays)
 
 void remove_whitespace(std::string& str);
 

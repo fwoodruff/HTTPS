@@ -228,6 +228,9 @@ void parse_extension(hello_record_data& record, extension ext) {
         case ExtensionType::renegotiation_info:
             record.parsed_extensions.insert(ext.type);
             break;
+        case ExtensionType::signature_algorithms:
+            record.parsed_extensions.insert(ext.type);
+            record.signature_schemes = get_signature_schemes(ext.data);
         default:
             break;
     }
@@ -278,7 +281,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
 
     // extensions
     auto extensions = der_span_read(hello, idx, 2);
-    idx += 2;
+    //idx += 2;
 
     while(!extensions.empty()) {
         size_t extension_type = try_bigend_read(extensions, 0, 2);

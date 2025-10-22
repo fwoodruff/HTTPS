@@ -12,10 +12,10 @@
 #include <coroutine>
 
 connection_token::connection_token(std::shared_ptr<limiter> lim, std::string ip) : lim(lim), ip(ip) {}
-connection_token::connection_token(connection_token&& other) : lim(other.lim), ip(std::move(other.ip)) {
+connection_token::connection_token(connection_token&& other) noexcept : lim(other.lim), ip(std::move(other.ip)) {
     other.lim.reset();
 };
-connection_token& connection_token::operator=(connection_token&& other) {
+connection_token& connection_token::operator=(connection_token&& other) noexcept {
     if(this != &other) {
         lim = std::exchange(other.lim, std::weak_ptr<limiter>{});
         ip = std::move(other.ip);

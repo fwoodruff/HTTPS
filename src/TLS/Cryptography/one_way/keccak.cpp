@@ -181,7 +181,7 @@ int LFSR86540(uint8_t& LFSR) noexcept {
 
 
 
-void cprng::randgen(uint8_t*  output, size_t N) {
+void cprng::randgen(uint8_t* output, size_t N) {
     std::call_once(init, [&]{
         std::random_device rd;
         unsigned char bucket[4];

@@ -298,7 +298,7 @@ task<bool> handle_request(http_ctx& connection) {
     }
     auto timestamp = build_iso_8601_current_timestamp();
     auto ip = connection.get_ip();
-    std::println(ip_ban, "[{}] HTTP    ip={} detail={} {}", timestamp, ip, method.value_or("BAD"), path.value_or("/malformed"));
+    ip_ban << std::format("[{}] HTTP    ip={} detail={} {}\n", timestamp, ip, method.value_or("BAD"), path.value_or("/malformed"));
     ip_ban.flush();
     
     if(is_websocket_upgrade(request_headers)) {

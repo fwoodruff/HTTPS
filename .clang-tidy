@@ -1,0 +1,17 @@
+# clang-tidy src/main.cpp -p . --extra-arg=-std=c++23
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  misc-*,
+  -bugprone-exception-escape,
+  -readability-static-accessed-through-instance,
+  -modernize-use-trailing-return-type,
+  -readability-magic-numbers,
+  -performance-enum-size,
+  -bugprone-easily-swappable-parameters,
+  -readability-identifier-length,
+  -misc-non-private-member-variables-in-classes,
+WarningsAsErrors: '*'

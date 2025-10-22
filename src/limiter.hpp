@@ -19,9 +19,9 @@ class connection_token {
     std::weak_ptr<limiter> lim;
     std::string ip;
 public:
-    connection_token(std::shared_ptr<limiter> lim, std::string ip);
-    connection_token(connection_token&& other);
-    connection_token& operator=(connection_token&& other);
+    connection_token(std::shared_ptr<limiter> lim, std::string ip_addr);
+    connection_token(connection_token&& other) noexcept;
+    connection_token& operator=(connection_token&& other) noexcept;
     connection_token& operator=(const connection_token&) = delete;
     connection_token(const connection_token&) = delete;
     ~connection_token();
@@ -52,16 +52,16 @@ public:
         std::string ip;
         std::optional<connection_token> token;
         bool await_ready();
-        bool await_suspend(std::coroutine_handle<> h);
+        bool await_suspend(std::coroutine_handle<> handle);
         std::optional<connection_token> await_resume();
     };
     struct fallible {
         std::shared_ptr<limiter> lim;
         bool await_ready();
-        void await_suspend(std::coroutine_handle<> h);
+        void await_suspend(std::coroutine_handle<> handle);
         bool await_resume();
     };
-    acquirable add_connection(std::string ip);
+    acquirable add_connection(std::string ipaddr);
     fallible wait_until_retriable();
 };
 

@@ -27,7 +27,7 @@ class hmac : public hash_base {
     hmac(const hash_base& hasher, const uint8_t* key, size_t key_len);
 public:
     template<typename T> hmac(const hash_base& hasher, const T& key);
-    std::unique_ptr<hash_base> clone() const override;
+    [[nodiscard]] std::unique_ptr<hash_base> clone() const override;
     hmac& update_impl(const uint8_t* key, size_t key_len) noexcept override;
     [[nodiscard]] std::vector<uint8_t> hash() const override;
     using hash_base::hash;
@@ -36,7 +36,7 @@ public:
 
     hmac(const hmac &);
     hmac& operator=(const hmac &);
-    ~hmac() noexcept = default;
+    ~hmac() noexcept override = default;
 };
 
 template<typename T>

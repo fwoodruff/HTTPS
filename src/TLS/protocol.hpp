@@ -34,12 +34,12 @@ public:
 
 
     TLS(std::unique_ptr<stream> output_stream);
-    ~TLS() = default;
+    ~TLS() override = default;
     
-    [[nodiscard]] task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) override;
-    [[nodiscard]] task<stream_result> read_append_early_data(std::deque<uint8_t>&, std::optional<milliseconds> timeout);
+    [[nodiscard]] task<stream_result> read_append(std::deque<uint8_t>& output, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> read_append_early_data(std::deque<uint8_t>& output, std::optional<milliseconds> timeout);
     [[nodiscard]] task<stream_result> await_handshake_finished(); // call this after read_append_early_data for sensitive data
-    [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write(std::vector<uint8_t> buffer, std::optional<milliseconds> timeout) override;
     [[nodiscard]] std::string get_ip() override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] task<stream_result> await_hello();
@@ -69,7 +69,7 @@ task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t
 class buffer {
 public:
     buffer(size_t size);
-    std::deque<std::vector<uint8_t>> write(const std::span<const uint8_t> data, bool do_flush);
+    std::deque<std::vector<uint8_t>> write(std::span<const uint8_t> data, bool do_flush);
 private:
     size_t buffer_size;
     std::vector<uint8_t> m_buffer;
@@ -79,7 +79,7 @@ private:
 class store_buffer { // todo: 'channels'
 public:
     store_buffer(size_t size);
-    void push_back(const std::span<const uint8_t> data);
+    void push_back(std::span<const uint8_t> data);
     std::deque<std::vector<uint8_t>> get(bool flush);
     ssize_t remaining();
 private:

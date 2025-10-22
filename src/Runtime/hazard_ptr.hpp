@@ -9,14 +9,14 @@
 #include <thread>
 
 void delete_nodes_with_no_hazards();
-bool outstanding_hazard_pointers_for(void* p);
+bool outstanding_hazard_pointers_for(void* ptr);
 struct retired_data {
     void* data;
     void (*deleter)(void*);
-    retired_data* next;
+    retired_data* next{};
     
     template<typename T>
-    retired_data(T* p): data(p), deleter([](void* ptr) { delete static_cast<T*>(ptr); }), next(0) {}
+    retired_data(T* pointer): data(pointer), deleter([](void* ptr) { delete static_cast<T*>(ptr); }) {}
     ~retired_data() {
         deleter(data);
     }
@@ -55,8 +55,8 @@ template<typename T>
 struct hazard_pointer_obj_base {
 public:
     void retire() noexcept {
-        hazard_pointer hp = make_hazard_pointer();
-        hp.reset_protection();
+        hazard_pointer hazard_ptr = make_hazard_pointer();
+        hazard_ptr.reset_protection();
         if (outstanding_hazard_pointers_for(this)) {
             reclaim_later(this);
         } else {

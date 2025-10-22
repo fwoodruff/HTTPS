@@ -40,7 +40,7 @@ struct stream_ctx {
     stream_state strm_state = stream_state::idle;
 };
 
-enum class wake_action {
+enum class wake_action : uint8_t {
     new_stream,
     wake_read,
     wake_write,
@@ -65,14 +65,14 @@ public:
     std::vector<id_new> receive_peer_frame(const h2frame& frame);
 
     // todo: nonblocking write that only writes the allowed amount.
-    stream_result buffer_data(const std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
+    stream_result buffer_data(std::span<const uint8_t> app_data, uint32_t stream_id, bool end);
     bool buffer_headers(const std::vector<entry_t>& headers, uint32_t stream_id, bool end = false);
 
     // read data into the supplied span
     // return std::nullopt if we need to block
     // returns 0 if read fails (connection closed)
     // returns true, if client data done
-    std::optional<std::pair<size_t, bool>> read_data(const std::span<uint8_t> app_data, uint32_t stream_id);
+    std::optional<std::pair<size_t, bool>> read_data(std::span<uint8_t> app_data, uint32_t stream_id);
     std::vector<entry_t> get_headers(uint32_t stream_id);
 
     stream_result stream_status(uint32_t stream_id);

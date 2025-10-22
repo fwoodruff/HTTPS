@@ -50,13 +50,13 @@ void tls13_resumption_key_calc(const hash_base& base, key_schedule& key_sch, std
 template<typename T>
 std::vector<uint8_t> P_hash(const hash_base& hash_ctor, const T& secret, const std::vector<uint8_t>& seed, size_t len) {
     std::vector<uint8_t> result;
-    std::vector<uint8_t> A = do_hmac(hash_ctor, secret, seed);
+    std::vector<uint8_t> A_accum = do_hmac(hash_ctor, secret, seed);
     while (result.size() < len) {
-        std::vector<uint8_t> A_seed = A;
+        std::vector<uint8_t> A_seed = A_accum;
         A_seed.insert(A_seed.cend(), seed.cbegin(), seed.cend());
-        const auto hm = do_hmac(hash_ctor, secret, A_seed);
-        result.insert(result.cend(), hm.cbegin(), hm.cend());
-        A = do_hmac(hash_ctor, secret, A);
+        const auto hm_inner = do_hmac(hash_ctor, secret, A_seed);
+        result.insert(result.cend(), hm_inner.cbegin(), hm_inner.cend());
+        A_accum = do_hmac(hash_ctor, secret, A_accum);
     }
     result.resize(len);
     return result;
@@ -74,9 +74,9 @@ std::vector<uint8_t> prf(const hash_base& hash_ctor, const T& secret, const std:
 template<typename T, typename U>
 std::vector<uint8_t> hkdf_expand(const hash_base& hash_ctor, const T& prk, const U& info, size_t length) {
     const size_t hash_len = hash_ctor.get_hash_size();
-    const size_t N = (length + hash_len - 1) / hash_len;
+    const size_t num_bytes = (length + hash_len - 1) / hash_len;
 
-    if (N > 255) {
+    if (num_bytes > 255) {
         assert(false);
     }
 
@@ -84,14 +84,15 @@ std::vector<uint8_t> hkdf_expand(const hash_base& hash_ctor, const T& prk, const
     okm.reserve(length); // check this
 
     std::vector<uint8_t> previous_block;
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < num_bytes; ++i) {
         auto hmac_ctx = hmac(hash_ctor, prk);
         hmac_ctx.update(previous_block);
         hmac_ctx.update(info);
-        std::array<uint8_t, 1> val { static_cast<uint8_t>(i + 1) };
+        const std::array<uint8_t, 1> val { static_cast<uint8_t>(i + 1) };
         hmac_ctx.update(val);
         previous_block = hmac_ctx.hash();
-        okm.insert(okm.end(), previous_block.begin(), previous_block.begin() + std::min(hash_len, length - okm.size()));
+        auto end = previous_block.begin() + static_cast<long>(std::min(hash_len, length - okm.size()));
+        okm.insert(okm.end(), previous_block.begin(), end);
     }
     return okm;
 }

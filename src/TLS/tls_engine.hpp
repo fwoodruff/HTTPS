@@ -55,13 +55,13 @@ private:
     bool can_heartbeat = false;
     uint16_t tls_protocol_version = 0;
     std::optional<std::array<uint8_t, 32>> tls13_x25519_key;
-    std::vector<uint8_t> m_handshake_fragment {};
+    std::vector<uint8_t> m_handshake_fragment;
     
     uint32_t early_data_received = 0;
     std::vector<uint8_t> m_buffer;
     bool write_connection_done = false;
 
-    [[nodiscard]] tls_record decrypt_record(tls_record);
+    tls_record decrypt_record(tls_record);
 
     void client_handshake_record_sync(std::queue<packet_timed>& output, tls_record record);
     void client_handshake_message_sync(std::queue<packet_timed>& output, const std::vector<uint8_t>& handshake_message);

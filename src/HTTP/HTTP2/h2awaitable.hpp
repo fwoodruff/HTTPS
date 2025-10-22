@@ -16,7 +16,6 @@
 #include <optional>
 #include <memory>
 #include <queue>
-#include <memory>
 #include "hpack.hpp"
 
 #include "../../TCP/stream_base.hpp"
@@ -34,9 +33,9 @@ class h2_stream;
 // awaits until stream write buffer is cleared and we can write more
 class h2writeable {
 public:
-    h2writeable(std::weak_ptr<HTTP2> h2_contx, uint32_t stream_id);
-    bool await_ready() const noexcept;
-    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
+    [[nodiscard]] h2writeable(std::weak_ptr<HTTP2> h2_contx, uint32_t stream_id);
+    [[nodiscard]] bool await_ready() const noexcept;
+    [[nodiscard]] bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     stream_result await_resume();
 private:
     std::weak_ptr<HTTP2> m_h2_contx;
@@ -46,7 +45,7 @@ private:
 class unless_blocking_read {
 public:
     unless_blocking_read(std::weak_ptr<HTTP2> h2_contx);
-    bool await_ready() const noexcept;
+    [[nodiscard]] bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     stream_result await_resume();
 private:
@@ -55,8 +54,8 @@ private:
 
 class h2readable {
 public:
-    h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data);
-    bool await_ready() const noexcept;
+    h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, std::span<uint8_t> data);
+    [[nodiscard]] bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<size_t, bool> await_resume();
 private:

@@ -35,9 +35,9 @@ struct entry_t {
 
 template<>
 struct std::hash<fbw::entry_t> {
-    size_t operator()(const fbw::entry_t& s) const noexcept {
+    size_t operator()(const fbw::entry_t& entry) const noexcept {
         size_t seed = 0;
-        fbw::hash_combine(seed, s.name, s.value, s.do_index);
+        fbw::hash_combine(seed, entry.name, entry.value, entry.do_index);
         return seed;
     }
 };

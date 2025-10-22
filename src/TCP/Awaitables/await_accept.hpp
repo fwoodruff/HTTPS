@@ -23,7 +23,7 @@ class tcp_stream;
 class acceptable {
 public:
     acceptable(int sfd);
-    bool await_ready() const noexcept;
+    [[nodiscard]] bool await_ready() const noexcept;
     void await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
     std::optional<tcp_stream> await_resume();
 private:

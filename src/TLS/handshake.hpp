@@ -28,7 +28,7 @@
 
 namespace fbw {
 
-enum class ServerHelloType {
+enum class ServerHelloType : uint8_t {
     unspecified,
     preshared_key,
     preshared_key_dh,
@@ -44,7 +44,7 @@ class handshake_ctx {
 public:
     key_share client_public_key {};
     std::unique_ptr<hash_base> handshake_hasher = nullptr;
-    std::vector<uint8_t> m_server_random {};
+    std::vector<uint8_t> m_server_random;
     
     std::unique_ptr<const hash_base> hash_ctor = nullptr;
     std::array<uint8_t,32> tls12_server_private_key_ephem {};
@@ -70,7 +70,7 @@ public:
 
     bool middlebox_compatibility();
 
-    std::string m_SNI {};
+    std::string m_SNI;
 
     [[nodiscard]] tls_record server_certificate_record();
     [[nodiscard]] tls_record server_key_exchange_record();
@@ -87,8 +87,8 @@ public:
     void client_handshake_finished12_record(const std::vector<uint8_t>& handshake_message);
     void client_handshake_finished13_record(const std::vector<uint8_t>& handshake_message);
 
-    tls_record server_handshake_finished12_record() const;
-    tls_record server_handshake_finished13_record();
+    [[nodiscard]] tls_record server_handshake_finished12_record() const;
+    [[nodiscard]] tls_record server_handshake_finished13_record();
 
 private:
     void hello_extensions(tls_record& buffer, const key_share& server_keyshare) const;
@@ -96,7 +96,7 @@ private:
 
     void set_cipher_ctx(cipher_suites cipher_suite);
 
-    std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> get_resumption_psk(const std::vector<uint8_t>& hello_message) const;
+    [[nodiscard]] std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> get_resumption_psk(const std::vector<uint8_t>& hello_message) const;
     
 };
 

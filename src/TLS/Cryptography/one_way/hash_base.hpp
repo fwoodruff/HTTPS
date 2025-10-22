@@ -24,7 +24,7 @@ class hash_base {
 public:
     friend hmac;
     virtual ~hash_base() noexcept = default;
-    virtual std::unique_ptr<hash_base> clone() const = 0;
+    [[nodiscard]] virtual std::unique_ptr<hash_base> clone() const = 0;
     
     template<typename T>
     hash_base& update(const T & data) {

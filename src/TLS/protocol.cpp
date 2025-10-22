@@ -196,13 +196,14 @@ task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t
     if(tls_stream) {
         return tls_stream->read_append_early_data(buffer, timeout);
     } else {
+        assert(p_stream);
         return p_stream->read_append(buffer, timeout);
     }
 }
 
 buffer::buffer(size_t size): buffer_size(size){}
 
-std::deque<std::vector<uint8_t>> buffer::write(const std::span<const uint8_t> data, bool do_flush) {
+std::deque<std::vector<uint8_t>> buffer::write(std::span<const uint8_t> data, bool do_flush) {
     std::deque<std::vector<uint8_t>> out;
     size_t offset = 0;
     const size_t total = data.size();

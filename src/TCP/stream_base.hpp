@@ -30,7 +30,7 @@ class timeout_error : public stream_error {
     using stream_error::stream_error;
 };
 
-enum class stream_result {
+enum class stream_result : uint8_t {
     ok,
     write_timeout,
     read_timeout,

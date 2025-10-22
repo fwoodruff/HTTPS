@@ -66,11 +66,11 @@ async_mutex::scope_guard::~scope_guard() {
     }
 }
 
-async_mutex::scope_guard::scope_guard(scope_guard&& other) {
+async_mutex::scope_guard::scope_guard(scope_guard&& other) noexcept {
     m_ctx = std::exchange(other.m_ctx, nullptr);
 }
 
-async_mutex::scope_guard& async_mutex::scope_guard::operator=(scope_guard&& other) {
+async_mutex::scope_guard& async_mutex::scope_guard::operator=(scope_guard&& other) noexcept {
     if (this != &other) {
         m_ctx = std::exchange(other.m_ctx, nullptr);
     }

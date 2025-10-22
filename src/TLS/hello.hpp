@@ -43,17 +43,17 @@ struct hello_record_data {
 
     uint16_t legacy_client_version = 0;
     std::array<uint8_t, 32> m_client_random {};
-    std::vector<uint8_t> client_session_id {};
-    std::vector<cipher_suites> cipher_su{};
-    std::vector<uint8_t> compression_types{};
+    std::vector<uint8_t> client_session_id;
+    std::vector<cipher_suites> cipher_su;
+    std::vector<uint8_t> compression_types;
 
-    std::vector<std::string> server_names{};
-    std::vector<std::string> application_layer_protocols{};
-    std::vector<NamedGroup> supported_groups{};
-    std::vector<SignatureScheme> signature_schemes{};
-    std::vector<uint8_t> ec_point_formats{};
-    std::optional<preshared_key_ext> pre_shared_key{};
-    std::vector<CertificateCompressionAlgorithm> certificate_compression{};
+    std::vector<std::string> server_names;
+    std::vector<std::string> application_layer_protocols;
+    std::vector<NamedGroup> supported_groups;
+    std::vector<SignatureScheme> signature_schemes;
+    std::vector<uint8_t> ec_point_formats;
+    std::optional<preshared_key_ext> pre_shared_key;
+    std::vector<CertificateCompressionAlgorithm> certificate_compression;
     std::optional<uint16_t> record_size_limit = std::nullopt;
     uint16_t padding_size = 0;
     bool encrypt_then_mac = true;
@@ -63,10 +63,10 @@ struct hello_record_data {
 
     std::vector<PskKeyExchangeMode> pskmodes;
 
-    std::vector<SignatureAlgorithm> signature_algorithms{};
-    std::vector<uint16_t> supported_versions{};
-    std::vector<PskKeyExchangeMode> PSK_key_exchange_modes{};
-    std::vector<key_share> shared_keys{};
+    std::vector<SignatureAlgorithm> signature_algorithms;
+    std::vector<uint16_t> supported_versions;
+    std::vector<PskKeyExchangeMode> PSK_key_exchange_modes;
+    std::vector<key_share> shared_keys;
 
     bool truncated_hmac = false;
 };

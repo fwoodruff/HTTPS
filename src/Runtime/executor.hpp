@@ -17,7 +17,6 @@
 #include <thread>
 #include <vector>
 #include <unordered_map>
-#include <queue>
 #include <optional>
 #include <span>
 #include "blocking_queue.hpp"
@@ -67,7 +66,7 @@ void run(task<void> main_task);
 root_task make_root_task(task<void> task);
 
 struct yield_coroutine {
-    bool await_ready() const noexcept {
+    [[nodiscard]] static bool await_ready() noexcept {
         return false;
     }
     template<typename PROMISE> requires std::derived_from<PROMISE, promise_metadata>

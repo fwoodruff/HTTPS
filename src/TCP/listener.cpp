@@ -142,10 +142,10 @@ acceptable tcplistener::accept() {
     return acceptable(m_fd);
 }
 
-tcplistener::tcplistener(tcplistener&& other) : m_fd(std::exchange(other.m_fd, -1)) {
+tcplistener::tcplistener(tcplistener&& other) noexcept : m_fd(std::exchange(other.m_fd, -1)) {
 }
 
-tcplistener& tcplistener::operator=(tcplistener&& other) {
+tcplistener& tcplistener::operator=(tcplistener&& other) noexcept {
     if(this != &other) {
         this->m_fd = std::exchange(other.m_fd, -1);
     }

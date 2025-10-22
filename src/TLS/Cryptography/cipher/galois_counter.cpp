@@ -11,6 +11,7 @@
 #include "../../TLS_enums.hpp"
 #include "../one_way/sha2.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <array>
 #include <utility>
@@ -173,7 +174,7 @@ static aes_block aes_gcm_prepare_j0(const std::vector<uint8_t>& iv, const aes_bl
 
     if (iv.size() == 12) {
         // Prepare block J_0 = IV || 0^31 || 1 [len(IV) = 96]
-        std::copy(iv.begin(), iv.end(), J0.begin());
+        std::ranges::copy(iv, J0.begin());
         J0[J0.size() - 1] = 0x01;
     } else {
         
@@ -296,10 +297,10 @@ void AES_GCM_SHA2_ctx::set_server_key(const std::vector<uint8_t>& traffic_key, s
     auto key = hkdf_expand_label(hash_ctor, traffic_key, "key", std::string(""), key_size);
     auto iv = hkdf_expand_label(hash_ctor, traffic_key, "iv", std::string(""), iv_size);
     std::vector<uint8_t> write_key(key_size);
-    std::copy(key.begin(), key.end(), write_key.begin());
+    std::ranges::copy(key, write_key.begin());
     server_write_round_keys = aes_key_schedule(write_key);
     server_implicit_write_IV.resize(iv_size);
-    std::copy(iv.begin(), iv.end(), server_implicit_write_IV.begin());
+    std::ranges::copy(iv, server_implicit_write_IV.begin());
 }
 
 void AES_GCM_SHA2_ctx::set_client_key(const std::vector<uint8_t>& traffic_key, size_t key_size, size_t iv_size, const hash_base& hash_ctor) {
@@ -307,10 +308,10 @@ void AES_GCM_SHA2_ctx::set_client_key(const std::vector<uint8_t>& traffic_key, s
     auto key = hkdf_expand_label(hash_ctor, traffic_key, "key", std::string(""), key_size);
     auto iv = hkdf_expand_label(hash_ctor, traffic_key, "iv", std::string(""), iv_size);
     std::vector<uint8_t> write_key(key_size);
-    std::copy(key.begin(), key.end(), write_key.begin());
+    std::ranges::copy(key, write_key.begin());
     client_write_round_keys = aes_key_schedule(write_key);
     client_implicit_write_IV.resize(iv_size);
-    std::copy(iv.begin(), iv.end(), client_implicit_write_IV.begin());
+    std::ranges::copy(iv, client_implicit_write_IV.begin());
 }
 
 void AES_128_GCM_SHA256_tls13::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {

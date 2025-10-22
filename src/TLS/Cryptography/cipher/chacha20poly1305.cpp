@@ -15,6 +15,7 @@
 
 #include <arpa/inet.h>
 #include <sys/types.h>
+#include <algorithm>
 #include <cstring>
 #include <algorithm>
 #include <array>
@@ -181,7 +182,7 @@ static std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t>
     std::array<uint8_t, 24> r_bytes {0};
     std::copy_n(key.data(), 16, r_bytes.begin());
     poly1305_clamp(r_bytes.data());
-    std::reverse(r_bytes.begin(), r_bytes.end());
+    std::ranges::reverse(r_bytes);
     
     std::array<uint8_t, 24> s_bytes {0};
     std::copy_n(&key[16], 16, s_bytes.rbegin());
@@ -261,16 +262,16 @@ chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t
 void ChaCha20_Poly1305_tls13::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {
     auto key = hkdf_expand_label(sha256(), traffic_key, "key", std::string(""), KEY_SIZE);
     auto iv = hkdf_expand_label(sha256(), traffic_key, "iv", std::string(""), IV_SIZE);
-    std::copy(key.begin(), key.end(), ctx.server_write_key.begin());
-    std::copy(iv.begin(), iv.end(), ctx.server_implicit_write_IV.begin());
+    std::ranges::copy(key, ctx.server_write_key.begin());
+    std::ranges::copy(iv, ctx.server_implicit_write_IV.begin());
     ctx.seqno_server = 0;
 }
 
 void ChaCha20_Poly1305_tls13::set_client_traffic_key(const std::vector<uint8_t>& traffic_key) {
     auto key = hkdf_expand_label(sha256(), traffic_key, "key", std::string(""), KEY_SIZE);
     auto iv = hkdf_expand_label(sha256(), traffic_key, "iv", std::string(""), IV_SIZE);
-    std::copy(key.begin(), key.end(), ctx.client_write_key.begin());
-    std::copy(iv.begin(), iv.end(), ctx.client_implicit_write_IV.begin());
+    std::ranges::copy(key, ctx.client_write_key.begin());
+    std::ranges::copy(iv, ctx.client_implicit_write_IV.begin());
     ctx.seqno_client = 0;
 }
 

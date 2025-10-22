@@ -7,6 +7,7 @@
 
 #include "mlkem.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <algorithm>
@@ -17,7 +18,7 @@ namespace fbw::mlkem {
 
 void byte_encode(uint8_t d, cyclotomic_polynomial F_poly, std::span<uint8_t> b_out) {
     assert(b_out.size() == size_t(n_len * d + 7)/8);
-    std::fill(b_out.begin(), b_out.end(), 0);
+    std::ranges::fill(b_out, 0);
     for(int i = 0; i < n_len; i ++ ) {
         int a = F_poly[i];
         assert(a >= 0);
@@ -264,7 +265,7 @@ void k_pke_key_gen(kyber_parameters params, std::array<uint8_t, entropy_length> 
         byte_encode(12, t_buffer[i], ek_span);
         byte_encode(12, s_polys[i], dk_span);
     }
-    std::copy(rho.begin(), rho.end(), ek_PKE.begin() + (serial_byte_len * params.k));
+    std::ranges::copy(rho, ek_PKE.begin() + (serial_byte_len * params.k));
 }
 
 static cyclotomic_polynomial sample_poly_CBD_seed(uint8_t eta, std::span<uint8_t> seed, uint8_t& N, std::span<uint8_t> eta_buffer) {
@@ -399,12 +400,12 @@ void ml_kem_key_gen_internal(kyber_parameters params, std::array<uint8_t, entrop
     assert(dk.size() == size_t(k_bytelen * 2 + 3 * entropy_length));
     auto dk_pke = dk.subspan(0, k_bytelen);
     k_pke_key_gen(params, d, ek, dk_pke, Ase_buffer, eta_buffer);
-    std::copy(ek.begin(), ek.end(), dk.begin() + k_bytelen);
+    std::ranges::copy(ek, dk.begin() + k_bytelen);
 
     keccak_sponge H(512, 0x06);
     H.absorb(ek.data(), ek.size());
     H.squeeze(dk.data() + k_bytelen + ek.size(), entropy_length);
-    std::copy(z.begin(), z.end(), dk.begin() + k_bytelen + ek.size() + entropy_length);
+    std::ranges::copy(z, dk.begin() + k_bytelen + ek.size() + entropy_length);
 }
 
 void ml_kem_encaps_internal(kyber_parameters params, std::span<uint8_t> ek, std::array<uint8_t, entropy_length> message, std::array<uint8_t, entropy_length>& shared_key, std::span<uint8_t> cipher_text, std::span<cyclotomic_polynomial> Aty_buffer, std::span<uint8_t> eta_buffer ) {

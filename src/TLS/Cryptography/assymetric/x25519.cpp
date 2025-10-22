@@ -8,6 +8,7 @@
 #include "bignum.hpp"
 #include "x25519.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <array>
 #include <string>
@@ -184,8 +185,8 @@ std::array<unsigned char,32> multiply(std::array<unsigned char, 32> secret,
     const auto nullarray = std::array<unsigned char, 32>();
     assert(secret != nullarray);      
     assert(serial_point != nullarray);
-    std::reverse(secret.begin(), secret.end());
-    std::reverse(serial_point.begin(), serial_point.end());
+    std::ranges::reverse(secret);
+    std::ranges::reverse(serial_point);
     auto clamped_secret = clamp(ct_u256(secret));
     auto curve_point_x = ct_u256(serial_point);
     // Note: 
@@ -204,7 +205,7 @@ std::array<unsigned char,32> multiply(std::array<unsigned char, 32> secret,
 std::array<unsigned char,32> base_multiply(std::array<unsigned char,32> secret) noexcept {
     const auto nullarray = std::array<unsigned char, 32>();
     assert(secret != nullarray);
-    std::reverse(secret.begin(), secret.end());
+    std::ranges::reverse(secret);
     auto clamped_secret = clamp(ct_u256(secret));
     auto output_point = point_multiply(clamped_secret, Base.xcoord);
     return output_point.serialise_le();

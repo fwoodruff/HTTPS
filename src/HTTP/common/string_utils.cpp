@@ -31,7 +31,7 @@ char asciitolower(char in) {
 }
 
 std::string to_lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), asciitolower);
+    std::ranges::transform(s, s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;
 }
 
@@ -43,7 +43,7 @@ char asciitoupper(char in) {
 }
 
 std::string to_upper(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), asciitoupper);
+    std::ranges::transform(s, s.begin(), asciitoupper);
     return s;
 }
 
@@ -145,7 +145,7 @@ std::string fix_filename(std::string filename) {
     if(filename.empty()) {
         filename = "/";
     }
-    std::transform(filename.begin(), filename.end(), filename.begin(),
+    std::ranges::transform(filename, filename.begin(),
         [](unsigned char c){ return std::tolower(c); });
 
     if (filename.back() == '/') {
@@ -219,7 +219,7 @@ void parse_tlds(const std::string& tld_filename) {
         if (tld.empty() || tld[0] == '#') {
             continue; // skip comments
         }
-        std::transform(tld.begin(), tld.end(), tld.begin(), asciitolower);
+        std::ranges::transform(tld, tld.begin(), asciitolower);
         known_tlds.insert(tld);
     }
 }
@@ -234,7 +234,7 @@ std::string parse_domain(std::string hostname) {
         return {};
     }
     hostname = port_host.front();
-    std::transform(hostname.begin(), hostname.end(), hostname.begin(), asciitolower);
+    std::ranges::transform(hostname, hostname.begin(), asciitolower);
     if(hostname == "localhost" or hostname == "test" or hostname == "invalid") {
         return hostname;
     }

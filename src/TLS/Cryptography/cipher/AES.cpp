@@ -9,6 +9,7 @@
 #include "AES.hpp"
 #include "../../../global.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <algorithm>
@@ -43,12 +44,12 @@ constexpr std::array<uint8_t,256> SBOX = []() consteval {
     uint8_t q = 1;
     do {
         // multiply p by 3
-        p = p ^ (p << 1) ^ (p & 0x80 ? 0x1B : 0);
+        p = static_cast<uint8_t>(p ^ (p << 1) ^ (p & 0x80 ? 0x1B : 0));
         // divide q by 3 (equals multiplication by 0xf6)
-        q ^= q << 1;
-        q ^= q << 2;
-        q ^= q << 4;
-        q ^= q & 0x80 ? 0x09 : 0;
+        q ^= static_cast<uint8_t>(q << 1);
+        q ^= static_cast<uint8_t>(q << 2);
+        q ^= static_cast<uint8_t>(q << 4);
+        q ^= static_cast<uint8_t>(q & 0x80 ? 0x09 : 0);
          
         // compute the affine transformation
         uint8_t const xformed = q ^ ROTL8(q, 1) ^ ROTL8(q, 2) ^ ROTL8(q, 3) ^ ROTL8(q, 4);
@@ -214,10 +215,10 @@ roundkey aes_key_schedule(const aeskey& AESkey) {
         assert( Nka != 0);
         if (i % Nka == 0) {
             std::rotate(temp.begin(), &temp[1], temp.end());
-            std::transform(temp.cbegin(), temp.cend(), temp.begin(), [](uint8_t c) { return SBOX[c]; });
+            std::ranges::transform(temp, temp.begin(), [](uint8_t c) { return SBOX[c]; });
             temp[0] ^= Rcon[i/Nka];
         } else if (Nka > 6 and i % Nka == 4) {
-            std::transform(temp.cbegin(), temp.cend(), temp.begin(), [](uint8_t c) { return SBOX[c]; });
+            std::ranges::transform(temp, temp.begin(), [](uint8_t c) { return SBOX[c]; });
         }
         const auto& kb = keybytes[i-Nka];
         std::transform(kb.cbegin(), kb.cend(), temp.cbegin(), keybytes[i].begin(), std::bit_xor<uint8_t>());

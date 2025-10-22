@@ -11,6 +11,7 @@
 #include "../../../global.hpp"
 #include "../../TLS_enums.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <array>
 #include <string>
@@ -262,7 +263,7 @@ std::array<uint8_t, 32> multiply(const std::array<uint8_t, 32>& private_key, con
     auto [ x, y ] = point_multiply(private_key, x_coord, y_coord);
     const auto xser = x.serialise();
     std::array<uint8_t, 32> out;
-    std::copy(xser.cbegin(), xser.cend(), out.begin());
+    std::ranges::copy(xser, out.begin());
     return out;
 }
 
@@ -274,8 +275,8 @@ std::array<unsigned char,65> get_public_key(std::array<uint8_t,32> private_key) 
     
     auto xs = x.serialise();
     auto ys = y.serialise();
-    std::copy(xs.cbegin(), xs.cend(), &out[1]);
-    std::copy(ys.cbegin(), ys.cend(), &out[33]);
+    std::ranges::copy(xs, &out[1]);
+    std::ranges::copy(ys, &out[33]);
     return out;
 }
 

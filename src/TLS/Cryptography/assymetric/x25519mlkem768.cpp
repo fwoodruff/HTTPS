@@ -37,11 +37,11 @@ std::pair<std::vector<uint8_t>, std::vector<uint8_t>> process_client_keyshare(st
     std::vector<uint8_t> server_keyshare(mlkem::ciphertext_size<params> + curve25519::PUBKEY_SIZE);
     std::vector<uint8_t> server_shared_secret(curve25519::PUBKEY_SIZE + mlkem::entropy_length);
 
-    std::copy(ml_kem_ciphertext.begin(), ml_kem_ciphertext.end(), server_keyshare.begin());
-    std::copy(server_x_pubkey.begin(), server_x_pubkey.end(), server_keyshare.begin() + mlkem::ciphertext_size<params>);
+    std::ranges::copy(ml_kem_ciphertext, server_keyshare.begin());
+    std::ranges::copy(server_x_pubkey, server_keyshare.begin() + mlkem::ciphertext_size<params>);
 
-    std::copy(ml_kem_shared_secret.begin(), ml_kem_shared_secret.end(), server_shared_secret.begin());
-    std::copy(x25519_shared_secret.begin(), x25519_shared_secret.end(), server_shared_secret.begin() + mlkem::entropy_length);
+    std::ranges::copy(ml_kem_shared_secret, server_shared_secret.begin());
+    std::ranges::copy(x25519_shared_secret, server_shared_secret.begin() + mlkem::entropy_length);
 
     return { server_shared_secret, server_keyshare };
 }

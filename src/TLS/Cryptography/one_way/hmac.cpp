@@ -9,6 +9,7 @@
 #include "hmac.hpp"
 #include "../../../global.hpp"
 
+#include <algorithm>
 #include <array>
 #include <algorithm>
 #include <cmath>
@@ -32,7 +33,7 @@ size_t hmac::get_hash_size() const noexcept {
 std::vector<uint8_t> hmac::hash() const {
     std::vector<uint8_t> opadkey;
     opadkey.resize(m_factory->get_block_size());
-    std::transform(KeyPrime.cbegin(), KeyPrime.cend(), opadkey.begin(), [](uint8_t c){return c ^ 0x5c;});
+    std::ranges::transform(KeyPrime, opadkey.begin(), [](uint8_t c){return c ^ 0x5c;});
     auto hsh = m_hasher->hash();
     assert(!hsh.empty());
     
@@ -77,7 +78,7 @@ hmac::hmac(const hash_base& hasher, const uint8_t* key, size_t key_len) {
     KeyPrime.resize(m_factory->get_block_size());
     if(key_len > m_factory->get_block_size()) {
         auto hsh = m_factory->clone()->update_impl(key, key_len).hash();
-        std::copy(hsh.cbegin(), hsh.cend(), KeyPrime.begin());
+        std::ranges::copy(hsh, KeyPrime.begin());
     } else {
         std::copy_n(key, key_len, KeyPrime.begin());
     }
@@ -85,7 +86,7 @@ hmac::hmac(const hash_base& hasher, const uint8_t* key, size_t key_len) {
     std::vector<uint8_t> ipadkey;
     ipadkey.resize(m_factory->get_block_size());
     assert(ipadkey.size() == hasher.get_block_size());
-    std::transform(KeyPrime.cbegin(), KeyPrime.cend(), ipadkey.begin(), [](uint8_t c){return c ^ 0x36;});
+    std::ranges::transform(KeyPrime, ipadkey.begin(), [](uint8_t c){return c ^ 0x36;});
     m_hasher->update(ipadkey);
 }
 

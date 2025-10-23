@@ -6,6 +6,7 @@
 //
 
 #include "executor.hpp"
+#include <algorithm>
 #include <mutex>
 #include <chrono>
 #include <poll.h>
@@ -41,7 +42,7 @@ void executor::reap_done() {
     {
         std::scoped_lock const lk {thread_mut};
         auto is_zombie = [&](const std::thread& t) {
-            return std::find(zombies.begin(), zombies.end(), t.get_id()) != zombies.end();
+            return std::ranges::find(zombies, t.get_id()) != zombies.end();
         };
         for (size_t i = 0; i < m_threadpool.size(); ) {
             if (is_zombie(m_threadpool[i])) {

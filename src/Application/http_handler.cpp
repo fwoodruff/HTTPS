@@ -21,7 +21,7 @@ namespace fbw {
 
 std::optional<std::string> find_header(const std::vector<entry_t>& request_headers, std::string header) {
     header = to_lower(header);
-    auto it = std::find_if(request_headers.begin(), request_headers.end(), [&](const entry_t& entry){ return entry.name == header; });
+    auto it = std::ranges::find_if(request_headers, [&](const entry_t& entry){ return entry.name == header; });
     if(it == request_headers.end()) {
         return std::nullopt;
     }

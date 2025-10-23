@@ -272,8 +272,7 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         }             headers_partially_sent_stream_id = frame.stream_id;
             return {};
        
-    } else {
-        auto& stream = it->second;
+    }         auto& stream = it->second;
         if(stream.strm_state == stream_state::open || stream.strm_state == stream_state::half_closed_local) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
         }
@@ -296,7 +295,7 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         stream.m_received_trailers = m_hpack.parse_field_block(stream.header_block);
         stream.header_block.clear();
         return {{frame.stream_id, wake_action::wake_read}};
-    }
+   
 }
 
 std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation& frame) {

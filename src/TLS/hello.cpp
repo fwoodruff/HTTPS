@@ -13,7 +13,6 @@
 #include <vector>
 #include <span>
 #include <memory>
-#include <algorithm>
 #include "Cryptography/assymetric/secp256r1.hpp"
 #include "Cryptography/assymetric/x25519.hpp"
 #include "Cryptography/assymetric/x25519mlkem768.hpp"

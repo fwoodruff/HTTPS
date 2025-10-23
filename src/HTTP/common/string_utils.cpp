@@ -18,7 +18,6 @@
 #include <unordered_set>
 #include <sstream>
 #include <cassert>
-#include <algorithm>
 #include <deque>
 
 namespace fbw {

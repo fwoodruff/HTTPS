@@ -13,7 +13,6 @@
 #include <array>
 #include <string>
 #include <climits>
-#include <algorithm>
 
 namespace fbw::curve25519 {
 

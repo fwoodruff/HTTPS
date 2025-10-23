@@ -146,7 +146,7 @@ std::vector<uint8_t> hpack::generate_field_block(const std::vector<entry_t>& hea
     return encoded_block;
 }
 
-table::table()  {}
+table::table()  = default;
 
 size_t table::index(const entry_t& entry) {
     for(size_t i = 0; i < s_static_table.size(); i++) {

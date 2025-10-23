@@ -17,7 +17,6 @@
 #include <sys/types.h>
 #include <algorithm>
 #include <cstring>
-#include <algorithm>
 #include <array>
 
 namespace fbw::cha {

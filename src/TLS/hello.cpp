@@ -50,24 +50,12 @@ static std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
     return {};
 }
 
-static std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_data) {
-    std::vector<NamedGroup> out;
-    auto supported_groups_data = extension_data.subspan(2);
-    for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
-        auto group = try_bigend_read(supported_groups_data, i, 2);
-        out.push_back(static_cast<NamedGroup>(group));
-    }
-    return out;
+static named_group_view get_supported_groups(std::span<const uint8_t> extension_data) {
+    return named_group_view { extension_data.subspan(2) };
 }
 
-static std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> extension_data) {
-    std::vector<SignatureScheme> out;
-    auto supported_groups_data = extension_data.subspan(2);
-    for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
-        auto group = try_bigend_read(supported_groups_data, i, 2);
-        out.push_back(static_cast<SignatureScheme>(group));
-    }
-    return out;
+static signature_schemes_view get_signature_schemes(std::span<const std::uint8_t> extension_data) {
+    return signature_schemes_view{extension_data.subspan(2)};
 }
 
 static std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> extension_data) {
@@ -84,28 +72,12 @@ static std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t
     return { false, false};
 }
 
-static std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_data) {
-    std::vector<uint16_t> out;
-    size_t const versions = extension_data[0];
-    if(versions + 1 != extension_data.size() or versions % 2 != 0) {
-        return {};
-    }
-    for(size_t i = 1; i < extension_data.size(); i += 2) {
-        uint16_t const vers = try_bigend_read(extension_data, i, 2);
-        out.push_back(vers);
-    }
-    return out;
+static supported_versions_view get_supported_versions(std::span<const uint8_t> extension_data) {
+    return supported_versions_view { extension_data.subspan(1) };
 }
 
-static std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
-    std::vector<CertificateCompressionAlgorithm> out;
-    auto cert_algos = der_span_read(extension_data, 0, 1);
-    while(!cert_algos.empty()) {
-        auto algo = static_cast<CertificateCompressionAlgorithm>(try_bigend_read(cert_algos, 0, 2));
-        out.push_back(algo);
-        cert_algos = cert_algos.subspan(2);
-    }
-    return out;
+static certificate_compression_algorithm_view get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
+    return certificate_compression_algorithm_view { extension_data.subspan(1) };
 }
 
 static std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_data) {
@@ -117,7 +89,7 @@ static std::vector<key_share> get_named_group_keys(std::span<const uint8_t> exte
     std::vector<key_share> shared_keys;
     while(!extension_data.empty()) {
         auto key_type = extension_data.subspan(0, 2);
-        auto group = static_cast<NamedGroup>(try_bigend_read(key_type, 0, 2));
+        auto group = static_cast<named_group>(try_bigend_read(key_type, 0, 2));
         size_t const len = try_bigend_read(extension_data, 2, 2);
         auto key_value = extension_data.subspan(4, len);
         auto typed_key = key_share({.key_type=group, .key=std::vector<uint8_t>(key_value.begin(), key_value.end())});
@@ -169,7 +141,7 @@ static std::vector<PskKeyExchangeMode> get_pskmodes(std::span<const uint8_t> ext
     return out;
 }
 
-static void parse_extension(hello_record_data& record, extension ext) {
+static void parse_extension(hello_record_data& record, extension_t ext) {
     switch(ext.type) {
         case ExtensionType::server_name:
             record.parsed_extensions.insert(ext.type);
@@ -263,10 +235,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
 
     // cipher suites
     auto cipher_bytes = der_span_read(hello, idx, 2);
-    for(size_t i = 0; i < cipher_bytes.size()-1; i+= 2) {
-        auto suite_value = try_bigend_read(cipher_bytes, i, 2);
-        record.cipher_su.push_back(static_cast<cipher_suites>(suite_value));
-    }
+    record.cipher_su = cipher_suites_view { cipher_bytes };
     
     // client version
     if ( hello.at(4) != 3 or hello.at(5) != 3 ) {
@@ -276,7 +245,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
     idx += cipher_bytes.size() + 2;
     // compression
     auto compression_methods = der_span_read(hello, idx, 1);
-    record.compression_types = std::vector<uint8_t>(compression_methods.begin(), compression_methods.end());
+    record.compression_types = compression_methods;
     idx += (compression_methods.size() + 1);
 
     // extensions
@@ -290,8 +259,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
             throw ssl_error("bad extensions", AlertLevel::fatal, AlertDescription::decode_error);
         }
         extensions = extensions.subspan(extension_span.size() + 4);
-        std::vector<uint8_t> const ext_data(extension_span.begin(), extension_span.end());
-        extension const ext = {.type=static_cast<ExtensionType>(extension_type), .data=ext_data};
+        extension_t const ext = {.type=static_cast<ExtensionType>(extension_type), .data=extension_span};
         parse_extension(record, ext);
 
         if(ext.type == ExtensionType::pre_shared_key) {
@@ -352,7 +320,7 @@ void write_key_share(tls_record& record, const key_share& pubkey_ephem) {
     record.end_size_header();
 }
 
-void write_key_share_request(tls_record& record, NamedGroup chosen_group) {
+void write_key_share_request(tls_record& record, named_group chosen_group) {
     record.write2(ExtensionType::key_share);
     record.start_size_header(2);
     record.write2(chosen_group);
@@ -385,7 +353,7 @@ void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
 std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
     assert(!peer_key.key.empty());
     switch(peer_key.key_type) {
-        case NamedGroup::x25519:
+        case named_group::x25519:
         {
             assert(peer_key.key.size() == curve25519::PUBKEY_SIZE);
             std::array<uint8_t, curve25519::PUBKEY_SIZE> cli_pub;
@@ -394,7 +362,7 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
             auto shared_secret_str = std::vector<uint8_t>(shared_secret.begin(), shared_secret.end());
             return shared_secret_str;
         }
-        case NamedGroup::secp256r1:
+        case named_group::secp256r1:
         {
             assert(peer_key.key.size() == secp256r1::PUBKEY_SIZE);
             std::array<uint8_t, secp256r1::PUBKEY_SIZE> cli_pub;
@@ -411,7 +379,7 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
 
 std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_share& client_keyshare) {
     switch(client_keyshare.key_type) {
-        case NamedGroup::x25519:
+        case named_group::x25519:
         {
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
@@ -421,7 +389,7 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             auto shared_secret = get_shared_secret(server_privkey, client_keyshare);
             return { shared_secret, server_key };
         }
-        case NamedGroup::secp256r1:
+        case named_group::secp256r1:
         {
             std::array<uint8_t, 32> server_privkey;
             randomgen.randgen(server_privkey);
@@ -431,13 +399,13 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             auto shared_secret = get_shared_secret(server_privkey, client_keyshare);
             return { shared_secret, server_key };
         }
-        case NamedGroup::X25519MLKEM768:
+        case named_group::X25519MLKEM768:
         {
             auto [ shared_secret, server_keyshare ] = xkem::process_client_keyshare(client_keyshare.key);
             if (shared_secret.empty()) {
                 throw ssl_error("", AlertLevel::fatal, AlertDescription::illegal_parameter);
             }
-            return { shared_secret, { .key_type=NamedGroup::X25519MLKEM768, .key=server_keyshare } };
+            return { shared_secret, { .key_type=named_group::X25519MLKEM768, .key=server_keyshare } };
         }
         default:
             assert(false);

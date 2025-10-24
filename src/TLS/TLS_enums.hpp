@@ -36,7 +36,7 @@ enum class HandshakeStage : uint8_t {
 };
 
 namespace fbw {
-enum class NamedGroup : uint16_t {
+enum class named_group : uint16_t {
     sect163k1 = 0x0001,
     sect163r1 = 0x0002,
     sect163r2 = 0x0003,
@@ -312,7 +312,7 @@ enum class ExtensionType : uint16_t{
     renegotiation_info = 65281
 };
 
-enum class CertificateCompressionAlgorithm : uint16_t {
+enum class certificate_compression_algorithm : uint16_t {
     zlib = 1,
     brotli = 2,
     zstd = 3,
@@ -344,7 +344,7 @@ enum class SignatureAlgorithm : uint8_t {
 
 
 
-enum class SignatureScheme : uint16_t {
+enum class signature_scheme : uint16_t {
     rsa_pkcs1_sha256 = 0x0401,
     rsa_pkcs1_sha384 = 0x0501,
     rsa_pkcs1_sha512 = 0x0601,

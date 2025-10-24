@@ -170,7 +170,7 @@ static std::string choose_server_name(const std::vector<std::string>& server_nam
     throw ssl_error("unrecognised name", AlertLevel::fatal, AlertDescription::unrecognized_name);
 }
 
-static key_share choose_client_public_key(const std::vector<key_share>& keys, const std::vector<NamedGroup>& groups) {
+static key_share choose_client_public_key(const std::vector<key_share>& keys, named_group_view groups) {
     if(keys.empty()) {
         throw ssl_error("no keys sent", AlertLevel::fatal, AlertDescription::decode_error);
     }
@@ -181,17 +181,17 @@ static key_share choose_client_public_key(const std::vector<key_share>& keys, co
     }
     for(const auto& key : keys) {
         switch(key.key_type) {
-            case NamedGroup::x25519:
+            case named_group::x25519:
                 if(key.key.size() != curve25519::PUBKEY_SIZE) {
                     throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
                 return key;
-            case NamedGroup::secp256r1:
+            case named_group::secp256r1:
                 if(key.key.size() != secp256r1::PUBKEY_SIZE) {
                     throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
                 return key;
-            case NamedGroup::X25519MLKEM768:
+            case named_group::X25519MLKEM768:
                 if(key.key.size() != xkem::pub_key_size) {
                     throw ssl_error("bad key length", AlertLevel::fatal, AlertDescription::illegal_parameter);
                 }
@@ -202,9 +202,9 @@ static key_share choose_client_public_key(const std::vector<key_share>& keys, co
     }
     for(const auto& group : groups) {
         switch(group) {
-            case NamedGroup::x25519: [[fallthrough]];
-            case NamedGroup::secp256r1:
-            case NamedGroup::X25519MLKEM768:
+            case named_group::x25519: [[fallthrough]];
+            case named_group::secp256r1:
+            case named_group::X25519MLKEM768:
                 return key_share{ .key_type=group, .key={} };
             default:
                 break;
@@ -496,7 +496,7 @@ tls_record handshake_ctx::server_certificate_record() const {
     tls_record record(ContentType::Handshake);
     record.write1(HandshakeType::certificate_verify);
     record.start_size_header(3);
-    record.write2(SignatureScheme::ecdsa_secp256r1_sha256);
+    record.write2(signature_scheme::ecdsa_secp256r1_sha256);
     record.start_size_header(2);
     record.write(signature);
     record.end_size_header();
@@ -553,7 +553,7 @@ tls_record handshake_ctx::server_key_exchange_record() {
 
     // Curve Info
     std::array<uint8_t,3> curve_info({static_cast<uint8_t>(ECCurveType::named_curve), 0x00, 0x00});
-    checked_bigend_write(static_cast<size_t>(NamedGroup::x25519), curve_info, 1, 2);
+    checked_bigend_write(static_cast<size_t>(named_group::x25519), curve_info, 1, 2);
     
     // Public Key
     std::vector<uint8_t> signed_empheral_key;
@@ -679,7 +679,7 @@ std::vector<uint8_t> handshake_ctx::client_key_exchange_receipt(const std::vecto
         throw ssl_error("bad public key", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     client_public_key.key.resize(32);
-    client_public_key.key_type = NamedGroup::x25519;
+    client_public_key.key_type = named_group::x25519;
     std::copy(&key_exchange[5], &key_exchange[37], client_public_key.key.begin());
     std::array<uint8_t, 32> client_pub{};
     std::copy_n(client_public_key.key.begin(), 32, client_pub.begin());

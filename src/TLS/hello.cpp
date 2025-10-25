@@ -103,15 +103,8 @@ static std::vector<key_share> get_named_group_keys(std::span<const uint8_t> exte
     return shared_keys;
 }
 
-static std::vector<std::string_view> get_application_layer_protocols(std::span<const uint8_t> extension_data) {
-    std::vector<std::string_view> alpn_types;
-    auto alpn_data = der_span_read(extension_data, 0, 2);
-    while(!alpn_data.empty()) {
-        auto alpn_val = der_span_read(alpn_data, 0, 1);
-        alpn_types.push_back(to_string_view(alpn_val));
-        alpn_data = alpn_data.subspan(alpn_val.size()+1);
-    }
-    return alpn_types;
+static string_view_view get_application_layer_protocols(std::span<const uint8_t> extension_data) {
+    return string_view_view{ extension_data.subspan(2), &decode_string_view<1> };
 }
 
 static preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {

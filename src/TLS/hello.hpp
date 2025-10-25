@@ -78,6 +78,58 @@ struct chunked_view {
     constexpr bool empty() const noexcept { return bytes.empty(); }
 };
 
+std::string_view to_string_view(std::span<const uint8_t> bytes) noexcept;
+
+template <size_t HeaderSize>
+std::string_view decode_string_view(std::span<const std::uint8_t>& rest) {
+    auto res = der_span_read(rest, 0, HeaderSize);
+    rest = rest.subspan(res.size() + HeaderSize);
+    return to_string_view(res);
+}
+
+template <typename T, typename DecodeFn>
+class decode_view : public std::ranges::view_interface<decode_view<T, DecodeFn>> {
+    std::span<const std::uint8_t> bytes;
+    DecodeFn decoder;
+public:
+    decode_view(std::span<const std::uint8_t> b, DecodeFn fn)
+        : bytes(b), decoder(std::move(fn)) {}
+    decode_view() = default;
+
+    struct iterator {
+        using iterator_category = std::forward_iterator_tag;
+        using value_type        = T;
+        using difference_type   = ptrdiff_t;
+
+        std::span<const std::uint8_t> rest;
+        DecodeFn* decode_fn;
+
+        T current{};
+
+        iterator& operator++() {
+            current = (*decode_fn)(rest);
+            return *this;
+        }
+        const T& operator*() const noexcept { return current; }
+        bool operator==(iterator end) const noexcept { 
+            return rest.empty();
+        }
+    };
+
+    iterator begin() const {
+        iterator it{bytes, const_cast<DecodeFn*>(&decoder)};
+        ++it;
+        return it;
+    }
+    
+    iterator end() const noexcept { return {}; }
+    bool empty() const noexcept { return bytes.empty(); }
+};
+
+
+
+using string_view_view = decode_view<std::string_view, std::string_view (*)(std::span<const std::uint8_t>&)>;
+
 using signature_schemes_view = chunked_view<signature_scheme, 2>;
 using cipher_suites_view = chunked_view<cipher_suites, 2>;
 using named_group_view = chunked_view<named_group, 2>;
@@ -94,7 +146,9 @@ struct hello_record_data {
     std::span<const uint8_t> compression_types;
 
     std::vector<std::string_view> server_names;
-    std::vector<std::string_view> application_layer_protocols;
+
+    string_view_view application_layer_protocols;
+    //std::vector<std::string_view> application_layer_protocols;
     named_group_view supported_groups;
     signature_schemes_view signature_schemes;
     std::optional<preshared_key_ext> pre_shared_key;

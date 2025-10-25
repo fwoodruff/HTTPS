@@ -20,10 +20,14 @@
 
 namespace fbw {
 
-static std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
+std::string_view to_string_view(std::span<const uint8_t> bytes) noexcept {
+    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+static std::vector<std::string_view> get_SNI(std::span<const uint8_t> servernames) {
     // Server name
     try {
-        std::vector<std::string> out;
+        std::vector<std::string_view> out;
         while(!servernames.empty()) {
             auto entry = der_span_read(servernames, 0, 2);
             if(entry.empty()) {
@@ -37,7 +41,7 @@ static std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
                     if(name_len != subdomain_name_span.size()) {
                         return {}; // throw something
                     }
-                    out.emplace_back(subdomain_name_span.begin(), subdomain_name_span.end());
+                    out.push_back(to_string_view(subdomain_name_span));
                     break;
                 }
                 default:
@@ -99,12 +103,12 @@ static std::vector<key_share> get_named_group_keys(std::span<const uint8_t> exte
     return shared_keys;
 }
 
-static std::vector<std::string> get_application_layer_protocols(std::span<const uint8_t> extension_data) {
-    std::vector<std::string> alpn_types;
+static std::vector<std::string_view> get_application_layer_protocols(std::span<const uint8_t> extension_data) {
+    std::vector<std::string_view> alpn_types;
     auto alpn_data = der_span_read(extension_data, 0, 2);
     while(!alpn_data.empty()) {
         auto alpn_val = der_span_read(alpn_data, 0, 1);
-        alpn_types.emplace_back(alpn_val.begin(), alpn_val.end());
+        alpn_types.push_back(to_string_view(alpn_val));
         alpn_data = alpn_data.subspan(alpn_val.size()+1);
     }
     return alpn_types;

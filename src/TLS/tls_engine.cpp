@@ -38,13 +38,13 @@ namespace fbw {
 using enum ContentType;
 
 tls_engine::tls_engine() {
-    handshake.p_cipher_context = &cipher_context;
-    handshake.p_tls_version = &tls_protocol_version;
+    handshake_data.p_cipher_context = &cipher_context;
+    handshake_data.p_tls_version = &tls_protocol_version;
 }
 
 // application layer protocol negotiation
 std::string tls_engine::alpn() const {
-    return handshake.alpn;
+    return handshake_data.alpn;
 }
 
 HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_output, std::deque<uint8_t>& application_data, const std::deque<uint8_t>& bio_input, std::optional<milliseconds>  /*app_timeout*/) {
@@ -82,7 +82,7 @@ HandshakeStage tls_engine::process_net_read(std::queue<packet_timed>& network_ou
                         if(early_data_received > MAX_EARLY_DATA) {
                             throw ssl_error("too much early data", AlertLevel::fatal, AlertDescription::unexpected_message);
                         }
-                        if(!handshake.zero_rtt) {
+                        if(!handshake_data.zero_rtt) {
                             break;
                         }
                         application_data.insert(application_data.end(), record.m_contents.begin(), record.m_contents.end());
@@ -186,8 +186,8 @@ tls_record tls_engine::decrypt_record(tls_record record) {
         } catch(ssl_error& e) {
             if(record.get_type() == Application and 
                 m_expected_read_record == HandshakeStage::client_handshake_finished and 
-                handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data) and
-                !handshake.zero_rtt) {
+                handshake_data.client_hello.parsed_extensions.contains(ExtensionType::early_data) and
+                !handshake_data.zero_rtt) {
                     // RFC 8446 4.2.10
                     //     The server then skips past early data by attempting to deprotect
                     //     received records using the handshake traffic key, discarding records
@@ -298,11 +298,11 @@ void tls_engine::client_hello(const std::vector<uint8_t>& handshake_message) {
     if(m_expected_read_record != HandshakeStage::client_hello) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    handshake.client_hello_record(handshake_message);
+    handshake_data.client_hello_record(handshake_message);
     if(tls_protocol_version == TLS13) {
-        if (handshake.zero_rtt) {
+        if (handshake_data.zero_rtt) {
             m_expected_read_record = HandshakeStage::client_early_data;
-        } else if(handshake.server_hello_type == ServerHelloType::hello_retry) {
+        } else if(handshake_data.server_hello_type == ServerHelloType::hello_retry) {
             m_expected_read_record = HandshakeStage::client_hello;
         } else {
             m_expected_read_record = HandshakeStage::client_handshake_finished;
@@ -315,15 +315,15 @@ void tls_engine::client_hello(const std::vector<uint8_t>& handshake_message) {
 void tls_engine::server_response_to_hello_sync(std::queue<packet_timed>& output) {
     server_hello_sync(output);
     if(tls_protocol_version == TLS13) {
-        if(handshake.server_hello_type == ServerHelloType::hello_retry) {
+        if(handshake_data.server_hello_type == ServerHelloType::hello_retry) {
             // server hello message was a hello retry message so next record is client hello
             return;
         }
-        if(handshake.middlebox_compatibility()) {
+        if(handshake_data.middlebox_compatibility()) {
             server_change_cipher_spec(output);
         }
         server_encrypted_extensions(output);
-        if(handshake.server_hello_type == ServerHelloType::preshared_key or handshake.server_hello_type == ServerHelloType::preshared_key_dh) {
+        if(handshake_data.server_hello_type == ServerHelloType::preshared_key or handshake_data.server_hello_type == ServerHelloType::preshared_key_dh) {
         } else {
             // mTLS client_certificate_request message would go here
             server_certificate(output);
@@ -355,8 +355,8 @@ KeyUpdateRequest tls_engine::client_key_update_received(const std::vector<uint8_
         throw ssl_error("bad key update message", AlertLevel::fatal, AlertDescription::illegal_parameter);
     }
     
-    auto& cli_key = handshake.tls13_key_schedule.client_application_traffic_secret;
-    cli_key = hkdf_expand_label(*handshake.hash_ctor, cli_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+    auto& cli_key = handshake_data.tls13_key_schedule.client_application_traffic_secret;
+    cli_key = hkdf_expand_label(*handshake_data.hash_ctor, cli_key, "traffic upd", std::string(""), handshake_data.hash_ctor->get_hash_size());
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
     tls13_context.set_client_traffic_key(cli_key);
     
@@ -366,44 +366,44 @@ KeyUpdateRequest tls_engine::client_key_update_received(const std::vector<uint8_
 
 
 void tls_engine::server_hello_sync(std::queue<packet_timed>& output) {
-    auto hello_record = handshake.server_hello_record();
+    auto hello_record = handshake_data.server_hello_record();
     write_record_sync(output, hello_record, project_options.handshake_timeout);
 
     if(tls_protocol_version == TLS13) {
-        if(handshake.server_hello_type != ServerHelloType::hello_retry) {
+        if(handshake_data.server_hello_type != ServerHelloType::hello_retry) {
             auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
             server_cipher_spec = true;
             client_cipher_spec = true;
-            tls13_context.set_server_traffic_key(handshake.tls13_key_schedule.server_handshake_traffic_secret);
-            if(handshake.client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
-                tls13_context.set_client_traffic_key(handshake.tls13_key_schedule.client_early_traffic_secret);
+            tls13_context.set_server_traffic_key(handshake_data.tls13_key_schedule.server_handshake_traffic_secret);
+            if(handshake_data.client_hello.parsed_extensions.contains(ExtensionType::early_data)) {
+                tls13_context.set_client_traffic_key(handshake_data.tls13_key_schedule.client_early_traffic_secret);
             } else {
-                tls13_context.set_client_traffic_key(handshake.tls13_key_schedule.client_handshake_traffic_secret);
+                tls13_context.set_client_traffic_key(handshake_data.tls13_key_schedule.client_handshake_traffic_secret);
             }
         }
     }
 }
 
 void tls_engine::server_encrypted_extensions(std::queue<packet_timed>& output) {
-    tls_record const out = handshake.server_encrypted_extensions_record();
+    tls_record const out = handshake_data.server_encrypted_extensions_record();
     write_record_sync(output, out, project_options.handshake_timeout);
 }
 
 void tls_engine::server_certificate(std::queue<packet_timed>& output) {
-    tls_record const certificate_record = handshake.server_certificate_record();
+    tls_record const certificate_record = handshake_data.server_certificate_record();
     write_record_sync(output, certificate_record, project_options.handshake_timeout);
 }
 
 void tls_engine::server_certificate_verify(std::queue<packet_timed>& output) {
-    auto record = handshake.server_certificate_verify_record();
+    auto record = handshake_data.server_certificate_verify_record();
     write_record_sync(output, record, project_options.handshake_timeout);
 }
 
 void tls_engine::server_handshake_finished13(std::queue<packet_timed>& output) {
-    auto record = handshake.server_handshake_finished13_record();
+    auto record = handshake_data.server_handshake_finished13_record();
     write_record_sync(output, record, project_options.handshake_timeout);
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
-    tls13_context.set_server_traffic_key(handshake.tls13_key_schedule.server_application_traffic_secret);
+    tls13_context.set_server_traffic_key(handshake_data.tls13_key_schedule.server_application_traffic_secret);
 }
 
 void tls_engine::client_handshake_finished13(const std::vector<uint8_t>& handshake_message) {
@@ -411,9 +411,9 @@ void tls_engine::client_handshake_finished13(const std::vector<uint8_t>& handsha
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     assert(tls_protocol_version == TLS13);
-    handshake.client_handshake_finished13_record(handshake_message);
+    handshake_data.client_handshake_finished13_record(handshake_message);
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
-    tls13_context.set_client_traffic_key(handshake.tls13_key_schedule.client_application_traffic_secret);
+    tls13_context.set_client_traffic_key(handshake_data.tls13_key_schedule.client_application_traffic_secret);
     m_expected_read_record = HandshakeStage::application_data;
 }
 
@@ -423,8 +423,8 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
     const auto number_once = global_number_once.fetch_add(1, std::memory_order_relaxed);
     std::vector<uint8_t> number_once_bytes(8, 0);
     checked_bigend_write(number_once, number_once_bytes, 0, 8);
-    assert(handshake.hash_ctor != nullptr);
-    const auto resumption_ticket_psk = hkdf_expand_label(*handshake.hash_ctor, handshake.tls13_key_schedule.resumption_master_secret, "resumption", number_once_bytes, handshake.hash_ctor->get_hash_size());
+    assert(handshake_data.hash_ctor != nullptr);
+    const auto resumption_ticket_psk = hkdf_expand_label(*handshake_data.hash_ctor, handshake_data.tls13_key_schedule.resumption_master_secret, "resumption", number_once_bytes, handshake_data.hash_ctor->get_hash_size());
 
     session_ticket_numbers_once[number_once % SESSION_HASHSET_SIZE].store(number_once, std::memory_order::relaxed);
 
@@ -439,7 +439,7 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
     ticket.ticket_age_add = randomgen.randgen64();
-    ticket.cipher_suite = handshake.cipher;
+    ticket.cipher_suite = handshake_data.cipher;
     ticket.early_data_allowed = offer_0rtt;
 
     ticket.number_once = number_once;
@@ -454,12 +454,12 @@ void tls_engine::server_session_ticket_sync(std::queue<packet_timed>& output) {
 }
 
 void tls_engine::server_key_exchange(std::queue<packet_timed>& output) {
-    tls_record const record = handshake.server_key_exchange_record();
+    tls_record const record = handshake_data.server_key_exchange_record();
     write_record_sync(output, record, project_options.handshake_timeout);
 }
 
 void tls_engine::server_hello_done(std::queue<packet_timed>& output) {
-    auto record = handshake.server_hello_done_record();
+    auto record = handshake_data.server_hello_done_record();
     write_record_sync(output, record, project_options.handshake_timeout);
 }
 
@@ -468,7 +468,7 @@ void tls_engine::client_key_exchange(const std::vector<uint8_t>& handshake_messa
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     assert(tls_protocol_version == TLS12);
-    auto key_material = handshake.client_key_exchange_receipt(handshake_message);
+    auto key_material = handshake_data.client_key_exchange_receipt(handshake_message);
     auto& tls12_context = dynamic_cast<cipher_base_tls12&>(*cipher_context);
     tls12_context.set_key_material_12(key_material);
     m_expected_read_record = HandshakeStage::client_change_cipher_spec;
@@ -478,10 +478,10 @@ void tls_engine::client_end_of_early_data(const std::vector<uint8_t>& handshake_
     if(m_expected_read_record != HandshakeStage::client_early_data) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    handshake.client_end_of_early_data_record(handshake_message);
+    handshake_data.client_end_of_early_data_record(handshake_message);
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
-    tls13_context.set_client_traffic_key(handshake.tls13_key_schedule.client_handshake_traffic_secret);
-    if(handshake.server_hello_type == ServerHelloType::hello_retry) {
+    tls13_context.set_client_traffic_key(handshake_data.tls13_key_schedule.client_handshake_traffic_secret);
+    if(handshake_data.server_hello_type == ServerHelloType::hello_retry) {
         m_expected_read_record = HandshakeStage::client_hello;
     } else {
         m_expected_read_record = HandshakeStage::client_handshake_finished;
@@ -507,7 +507,7 @@ void tls_engine::client_handshake_finished12(const std::vector<uint8_t>& handsha
     if(m_expected_read_record != HandshakeStage::client_handshake_finished) [[unlikely]] {
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
-    handshake.client_handshake_finished12_record(handshake_message);
+    handshake_data.client_handshake_finished12_record(handshake_message);
     m_expected_read_record = HandshakeStage::application_data;
 }
 
@@ -525,11 +525,11 @@ void tls_engine::server_handshake_finished12(std::queue<packet_timed>& output) {
     out.write1(HandshakeType::finished);
     out.start_size_header(3);
     
-    assert(handshake.handshake_hasher);
-    auto handshake_hash = handshake.handshake_hasher->hash();
+    assert(handshake_data.handshake_hasher);
+    auto handshake_hash = handshake_data.handshake_hasher->hash();
     assert(handshake_hash.size() == 32);
     
-    std::vector<uint8_t> const server_finished = prf(*handshake.hash_ctor, handshake.tls12_master_secret, "server finished", handshake_hash, 12);
+    std::vector<uint8_t> const server_finished = prf(*handshake_data.hash_ctor, handshake_data.tls12_master_secret, "server finished", handshake_hash, 12);
     
     out.write(server_finished);
     out.end_size_header();
@@ -609,8 +609,8 @@ void tls_engine::server_key_update_sync(std::queue<packet_timed>& output) {
     assert(tls_protocol_version == TLS13);
     auto keyupdate = server_key_update_record(KeyUpdateRequest::update_requested);
     write_record_sync(output, std::move(keyupdate), project_options.session_timeout);
-    auto& srv_key = handshake.tls13_key_schedule.server_application_traffic_secret;
-    srv_key = hkdf_expand_label(*handshake.hash_ctor, srv_key, "traffic upd", std::string(""), handshake.hash_ctor->get_hash_size());
+    auto& srv_key = handshake_data.tls13_key_schedule.server_application_traffic_secret;
+    srv_key = hkdf_expand_label(*handshake_data.hash_ctor, srv_key, "traffic upd", std::string(""), handshake_data.hash_ctor->get_hash_size());
     auto& tls13_context = dynamic_cast<cipher_base_tls13&>(*cipher_context);
     tls13_context.set_server_traffic_key(srv_key);
 }

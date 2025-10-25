@@ -47,7 +47,7 @@ public:
     HandshakeStage m_expected_read_record = HandshakeStage::client_hello;
     std::mutex m_write_queue_mut;
 private:
-    handshake_ctx handshake;
+    handshake_ctx handshake_data;
 
     bool server_cipher_spec = false;
     bool client_cipher_spec = false;

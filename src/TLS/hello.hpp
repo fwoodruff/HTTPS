@@ -93,8 +93,8 @@ struct hello_record_data {
     cipher_suites_view cipher_su;
     std::span<const uint8_t> compression_types;
 
-    std::vector<std::string> server_names;
-    std::vector<std::string> application_layer_protocols;
+    std::vector<std::string_view> server_names;
+    std::vector<std::string_view> application_layer_protocols;
     named_group_view supported_groups;
     signature_schemes_view signature_schemes;
     std::optional<preshared_key_ext> pre_shared_key;

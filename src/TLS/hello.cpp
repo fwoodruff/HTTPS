@@ -103,8 +103,8 @@ static std::vector<key_share> get_named_group_keys(std::span<const uint8_t> exte
     return shared_keys;
 }
 
-static string_view_view get_application_layer_protocols(std::span<const uint8_t> extension_data) {
-    return string_view_view{ extension_data.subspan(2), &decode_string_view<1> };
+static string_view_view<1> get_application_layer_protocols(std::span<const uint8_t> extension_data) {
+    return { extension_data.subspan(2) };
 }
 
 static preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {

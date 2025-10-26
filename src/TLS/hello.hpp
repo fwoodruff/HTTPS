@@ -87,13 +87,13 @@ std::string_view decode_string_view(std::span<const std::uint8_t>& rest) {
     return to_string_view(res);
 }
 
-template <typename T, typename DecodeFn>
-class decode_view : public std::ranges::view_interface<decode_view<T, DecodeFn>> {
-    std::span<const std::uint8_t> bytes;
-    DecodeFn decoder;
+
+template <typename T, T (*DecodeFn)(std::span<const std::uint8_t>&)>
+class decode_view {
+    std::span<const uint8_t> bytes;
 public:
-    decode_view(std::span<const std::uint8_t> b, DecodeFn fn)
-        : bytes(b), decoder(std::move(fn)) {}
+    decode_view(std::span<const std::uint8_t> b)
+        : bytes(b) {}
     decode_view() = default;
 
     struct iterator {
@@ -102,12 +102,11 @@ public:
         using difference_type   = ptrdiff_t;
 
         std::span<const std::uint8_t> rest;
-        DecodeFn* decode_fn;
 
         T current{};
 
         iterator& operator++() {
-            current = (*decode_fn)(rest);
+            current = (*DecodeFn)(rest);
             return *this;
         }
         const T& operator*() const noexcept { return current; }
@@ -117,7 +116,7 @@ public:
     };
 
     iterator begin() const {
-        iterator it{bytes, const_cast<DecodeFn*>(&decoder)};
+        iterator it{bytes};
         ++it;
         return it;
     }
@@ -126,9 +125,8 @@ public:
     bool empty() const noexcept { return bytes.empty(); }
 };
 
-
-
-using string_view_view = decode_view<std::string_view, std::string_view (*)(std::span<const std::uint8_t>&)>;
+template <size_t HeaderSize>
+using string_view_view = decode_view<std::string_view, &decode_string_view<HeaderSize>>;
 
 using signature_schemes_view = chunked_view<signature_scheme, 2>;
 using cipher_suites_view = chunked_view<cipher_suites, 2>;
@@ -146,9 +144,7 @@ struct hello_record_data {
     std::span<const uint8_t> compression_types;
 
     std::vector<std::string_view> server_names;
-
-    string_view_view application_layer_protocols;
-    //std::vector<std::string_view> application_layer_protocols;
+    string_view_view<1> application_layer_protocols;
     named_group_view supported_groups;
     signature_schemes_view signature_schemes;
     std::optional<preshared_key_ext> pre_shared_key;

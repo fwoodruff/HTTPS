@@ -147,10 +147,10 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
 static std::string choose_alpn(string_view_view<1> client_alpn) {
     constexpr const char* ALPN_H1 = "http/1.1";
     constexpr const char* ALPN_H2 = "h2";
-    if(std::find(client_alpn.begin(), client_alpn.end(), std::string_view{ALPN_H2}) != client_alpn.end()) {
+    if(std::ranges::find(client_alpn, std::string_view{ALPN_H2}) != client_alpn.end()) {
         return ALPN_H2;
     }
-    if(client_alpn.empty() or std::find(client_alpn.begin(), client_alpn.end(), std::string_view{ALPN_H1}) != client_alpn.end()) {
+    if(client_alpn.empty() or std::ranges::find(client_alpn, std::string_view{ALPN_H1}) != client_alpn.end()) {
         return ALPN_H1;
     }
     throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);

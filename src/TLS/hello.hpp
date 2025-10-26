@@ -40,43 +40,18 @@ struct preshared_key_ext {
 };
 
 template <typename T, size_t ChunkBytes>
-struct chunked_view {
-    std::span<const uint8_t> bytes;
+std::optional<T> decode_chunked(std::span<const std::uint8_t>& rest) noexcept {
+    if (rest.size() < ChunkBytes)
+        return std::nullopt;
 
-    constexpr chunked_view() = default;
-    constexpr explicit chunked_view(std::span<const uint8_t> b) : bytes(b) {}
-
-    struct iterator {
-        using iterator_category = std::forward_iterator_tag;
-        using value_type        = T;
-        using difference_type   = ptrdiff_t;
-
-        const uint8_t* p = nullptr;
-
-        constexpr T operator*() const noexcept {
-            uint64_t acc = 0;
-            for (size_t i = 0; i < ChunkBytes; ++i) {
-                acc = (acc << 8) | p[i];
-            }
-            return static_cast<T>(acc);
-        }
-
-        constexpr iterator& operator++() noexcept { p += ChunkBytes; return *this; }
-        constexpr iterator operator++(int) noexcept { auto tmp = *this; ++(*this); return tmp; }
-
-        constexpr bool operator==(const iterator& o) const noexcept { return p == o.p; }
-        constexpr bool operator!=(const iterator& o) const noexcept { return p != o.p; }
-    };
-
-    constexpr iterator begin() const noexcept { return iterator{bytes.data()}; }
-    constexpr iterator end() const noexcept {
-        auto even_len = (bytes.size() / ChunkBytes) * ChunkBytes;
-        return iterator{bytes.data() + even_len};
+    uint64_t acc = 0;
+    for (size_t i = 0; i < ChunkBytes; ++i) {
+        acc = (acc << 8) | rest[i];
     }
 
-    constexpr size_t size() const noexcept { return bytes.size() / ChunkBytes; }
-    constexpr bool empty() const noexcept { return bytes.empty(); }
-};
+    rest = rest.subspan(ChunkBytes);
+    return static_cast<T>(acc);
+}
 
 struct server_name {
     uint8_t type;
@@ -120,6 +95,8 @@ public:
             current = (*DecodeFn)(rest);
             return *this;
         }
+        constexpr iterator operator++(int) noexcept { auto tmp = *this; ++(*this); return tmp; }
+
         const T& operator*() const noexcept { 
             assert(current.has_value());
             return *current;
@@ -138,6 +115,9 @@ public:
     iterator end() const noexcept { return {}; }
     bool empty() const noexcept { return bytes.empty(); }
 };
+
+template <typename T, size_t ChunkBytes>
+using chunked_view = decode_view<T, &decode_chunked<T, ChunkBytes>>;
 
 template <size_t HeaderSize>
 using string_view_view = decode_view<std::string_view, &decode_string_view<HeaderSize>>;

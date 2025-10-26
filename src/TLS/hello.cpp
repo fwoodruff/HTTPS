@@ -24,34 +24,24 @@ std::string_view to_string_view(std::span<const uint8_t> bytes) noexcept {
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-static std::vector<std::string_view> get_SNI(std::span<const uint8_t> servernames) {
-    // Server name
-    try {
-        std::vector<std::string_view> out;
-        while(!servernames.empty()) {
-            auto entry = der_span_read(servernames, 0, 2);
-            if(entry.empty()) {
-                throw std::out_of_range{"out of range"};
-            }
-            switch(entry[0]) {
-                case 0: // DNS hostname
-                {
-                    size_t const name_len = try_bigend_read(entry, 1, 2);
-                    const auto subdomain_name_span = entry.subspan(3);
-                    if(name_len != subdomain_name_span.size()) {
-                        return {}; // throw something
-                    }
-                    out.push_back(to_string_view(subdomain_name_span));
-                    break;
-                }
-                default:
-                    break;
-            }
-            servernames = servernames.subspan(entry.size() + 2);
-        }
-        return out;
-    } catch(...) { }
-    return {};
+std::optional<server_name> decode_server_name(std::span<const std::uint8_t>& rest) {
+    if(rest.empty()) {
+        return std::nullopt;
+    }
+    auto entry = der_span_read(rest, 0, 2);
+    if( entry.size() == 0) {
+        rest = {};
+        return std::nullopt;
+    }
+    auto typ = entry[0];
+    auto res = der_span_read(entry, 1, 2);
+    rest = rest.subspan(entry.size() + 2);
+    auto name_sv = to_string_view(res);
+    return { server_name{ .type=typ, .name=name_sv } };
+}
+
+static server_name_view get_SNI(std::span<const uint8_t> servernames) {
+    return server_name_view{servernames};
 }
 
 static named_group_view get_supported_groups(std::span<const uint8_t> extension_data) {

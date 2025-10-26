@@ -156,13 +156,13 @@ static std::string choose_alpn(string_view_view<1> client_alpn) {
     throw ssl_error("no supported application layer protocols", AlertLevel::fatal, AlertDescription::no_application_protocol);
 }
 
-static std::string choose_server_name(std::vector<std::string_view> server_names) {
+static std::string choose_server_name(server_name_view server_names) {
     if(server_names.empty() or project_options.domain_names.empty()) {
         return "";
     }
     for(const auto& n : project_options.domain_names) {
         for(const auto& m :server_names) {
-            if(n == m) {
+            if(n == m.name) {
                 return n;
             }
         }

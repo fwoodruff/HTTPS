@@ -78,17 +78,28 @@ struct chunked_view {
     constexpr bool empty() const noexcept { return bytes.empty(); }
 };
 
+struct server_name {
+    uint8_t type;
+    std::string_view name;
+};
+
 std::string_view to_string_view(std::span<const uint8_t> bytes) noexcept;
 
+
+std::optional<server_name> decode_server_name(std::span<const uint8_t>& rest);
+
 template <size_t HeaderSize>
-std::string_view decode_string_view(std::span<const std::uint8_t>& rest) {
+std::optional<std::string_view> decode_string_view(std::span<const std::uint8_t>& rest) {
+    if(rest.empty()) {
+        return std::nullopt;
+    }
     auto res = der_span_read(rest, 0, HeaderSize);
     rest = rest.subspan(res.size() + HeaderSize);
-    return to_string_view(res);
+    return { to_string_view(res) };
 }
 
 
-template <typename T, T (*DecodeFn)(std::span<const std::uint8_t>&)>
+template <typename T, std::optional<T> (*DecodeFn)(std::span<const std::uint8_t>&)>
 class decode_view {
     std::span<const uint8_t> bytes;
 public:
@@ -103,15 +114,18 @@ public:
 
         std::span<const std::uint8_t> rest;
 
-        T current{};
+        std::optional<T> current{};
 
         iterator& operator++() {
             current = (*DecodeFn)(rest);
             return *this;
         }
-        const T& operator*() const noexcept { return current; }
+        const T& operator*() const noexcept { 
+            assert(current.has_value());
+            return *current;
+        }
         bool operator==(iterator end) const noexcept { 
-            return rest.empty();
+            return !current.has_value();
         }
     };
 
@@ -128,6 +142,8 @@ public:
 template <size_t HeaderSize>
 using string_view_view = decode_view<std::string_view, &decode_string_view<HeaderSize>>;
 
+using server_name_view = decode_view<server_name, &decode_server_name>;
+
 using signature_schemes_view = chunked_view<signature_scheme, 2>;
 using cipher_suites_view = chunked_view<cipher_suites, 2>;
 using named_group_view = chunked_view<named_group, 2>;
@@ -143,7 +159,7 @@ struct hello_record_data {
     cipher_suites_view cipher_su;
     std::span<const uint8_t> compression_types;
 
-    std::vector<std::string_view> server_names;
+    server_name_view server_names;
     string_view_view<1> application_layer_protocols;
     named_group_view supported_groups;
     signature_schemes_view signature_schemes;

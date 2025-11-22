@@ -83,17 +83,29 @@ int get_listener_socket(std::string service) {
 }
 */
 
+enum class socket_type {
+    STREAM,
+    DATAGRAM
+};
+
 int get_listener_socket(const std::string &service) {
+    auto sockfd = get_socket(service, SOCK_STREAM);
+    if (listen(sockfd, 10) == -1) {
+        close(sockfd);
+        throw std::runtime_error("listen: failed");
+    }
+    return sockfd;
+}
+
+int get_socket(const std::string &service, int sock_kind) {
     int sockfd = -1;
     int port = std::stoi(service);
-
-    struct sockaddr_in6 server_addr {};
 
     if (port < 0 || port > 65535) {
         throw std::runtime_error("Invalid port number");
     }
 
-    sockfd = socket(AF_INET6, SOCK_STREAM, 0);
+    sockfd = socket(AF_INET6, sock_kind, 0);
     if (sockfd == -1) {
         throw std::runtime_error("socket: failed to create socket");
     }
@@ -111,6 +123,7 @@ int get_listener_socket(const std::string &service) {
         throw std::runtime_error("setsockopt: failed");
     }
 
+    struct sockaddr_in6 server_addr {};
     server_addr.sin6_family = AF_INET6;
     server_addr.sin6_addr = in6addr_any; // all interfaces
     server_addr.sin6_port = htons(port);
@@ -118,11 +131,6 @@ int get_listener_socket(const std::string &service) {
     if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
         close(sockfd);
         throw std::runtime_error("bind: failed to bind socket");
-    }
-
-    if (listen(sockfd, 10) == -1) {
-        close(sockfd);
-        throw std::runtime_error("listen: failed");
     }
 
     if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {

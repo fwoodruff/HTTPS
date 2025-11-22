@@ -30,6 +30,8 @@ private:
     int m_fd;
 };
 
+int get_socket(const std::string &service, int sock_kind);
+
 }
 
 #endif // listener_hpp

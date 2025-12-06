@@ -19,7 +19,7 @@
 #include <memory>
 #include "hpack.hpp"
 
-#include "../../TCP/stream_base.hpp"
+#include "../../IP/stream_base.hpp"
 
 #include <coroutine>
 

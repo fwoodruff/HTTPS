@@ -249,6 +249,16 @@ void  wait_for::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
     auto& global_executor = executor_singleton();
     global_executor.m_reactor.sleep_for(awaiting_coroutine, m_duration);
 }
-void wait_for::await_resume() {
+void wait_for::await_resume() {}
 
+
+wait_until::wait_until(time_point<steady_clock> time_point) : m_time_point(time_point) {}
+
+bool wait_until::await_ready() const noexcept {
+    return false;
 }
+void  wait_until::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+    auto& global_executor = executor_singleton();
+    global_executor.m_reactor.sleep_until(awaiting_coroutine, m_time_point);
+}
+void wait_until::await_resume() {}

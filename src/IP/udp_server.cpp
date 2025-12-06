@@ -14,30 +14,90 @@
 #include <unordered_map>
 #include <vector>
 #include <utility>
+#include <functional>
 
 namespace fbw {
 
 using namespace std::chrono;
 
-
 udp_connection_receiver::udp_connection_receiver(udp_connection& udp_conn) : m_conn(udp_conn) {}
 
 bool udp_connection_receiver::await_ready() const noexcept {
-    return !m_conn.inbox.empty();
+    return false;
 }
-void udp_connection_receiver::await_suspend(std::coroutine_handle<> awaiting) {
+
+bool udp_connection_receiver::await_suspend(std::coroutine_handle<> awaiting) {
+    std::scoped_lock lk {m_conn.m_mut};
+    if(!m_conn.inbox.empty()) {
+        return false;
+    }
     m_conn.waiter = awaiting;
+    return true;
 }
-datagram udp_connection_receiver::await_resume() {
+
+std::optional<datagram> udp_connection_receiver::await_resume() {
     std::scoped_lock lk { m_conn.m_mut };
+    if(m_conn.inbox.empty()) {
+        return std::nullopt;
+    }
     auto result = m_conn.inbox.front();
     m_conn.inbox.pop_front();
-    return result;
+    return {result};
 }
 
 udp_connection::udp_connection(udp_socket sock) : m_sock(std::move(sock)) {}
 
-udp_connection_receiver udp_connection::receive() {
+task<void> wait_and_fire_for(std::shared_ptr<udp_connection> conn, milliseconds millis, uint64_t this_gen) {
+    co_await wait_for(millis);
+    std::coroutine_handle<> handle {};
+    {
+        std::scoped_lock lk {conn->m_mut};
+        if(this_gen == conn->wait_generation) {
+            handle = std::exchange(conn->waiter, nullptr);
+        }
+    }
+    if(handle) {
+        handle.resume();
+    }
+}
+
+task<void> wait_and_fire_until(std::shared_ptr<udp_connection> conn, time_point<steady_clock> until, uint64_t this_gen) {
+    co_await wait_until(until);
+    std::coroutine_handle<> handle {};
+    {
+        std::scoped_lock lk {conn->m_mut};
+        if(this_gen == conn->wait_generation) {
+            handle = std::exchange(conn->waiter, nullptr);
+        }
+    }
+    if(handle) {
+        handle.resume();
+    }
+}
+
+task<std::optional<datagram>> udp_connection::receive_for(milliseconds millis) {
+    uint64_t this_gen;
+    {
+        std::scoped_lock lk {m_mut};
+        wait_generation++;
+        this_gen = wait_generation;
+    }
+    async_spawn(wait_and_fire_for(shared_from_this(), millis, this_gen));
+    co_return co_await receive_untimed();
+}
+
+task<std::optional<datagram>> udp_connection::receive_until(time_point<steady_clock> until) {
+    uint64_t this_gen;
+    {
+        std::scoped_lock lk {m_mut};
+        wait_generation++;
+        this_gen = wait_generation;
+    }
+    async_spawn(wait_and_fire_until(shared_from_this(), until, this_gen));
+    co_return co_await receive_untimed();
+}
+
+udp_connection_receiver udp_connection::receive_untimed() {
     return udp_connection_receiver{*this};
 }
 
@@ -46,16 +106,23 @@ udp_sender udp_connection::send(datagram packet) {
 }
 
 void udp_connection::resume_if_waiting() {
-    if (waiter && !waiter.done()) {
-        auto h = waiter;
-        waiter = nullptr;
-        h.resume();
+    std::coroutine_handle<> handle;
+    {
+        std::scoped_lock lk {m_mut};
+        handle = std::exchange(waiter, nullptr);
+    }
+    if(handle) {
+        handle.resume();
     }
 }
 
-task<void> handle_connection(std::shared_ptr<udp_connection> conn) {
-    auto datag = co_await conn->receive();
-    co_await conn->send(datag);
+task<void> echo_handler(std::shared_ptr<udp_connection> conn) {
+    std::optional<datagram> datag = co_await conn->receive_for(500ms);
+    if(!datag.has_value()) {
+        co_return;
+    }
+    datagram d = *datag;
+    co_await conn->send(d);
 }
 
 static std::string addr_to_key(const struct sockaddr_storage &ss) { // placeholder
@@ -83,7 +150,7 @@ static std::string addr_to_key(const struct sockaddr_storage &ss) { // placehold
     }
 }
 
-task<void> serve_udp(std::string port) {
+task<void> serve_udp(std::string port, std::function<task<void>(std::shared_ptr<fbw::udp_connection>)> connection_handler) {
     udp_socket socket = udp_socket::bind(port);
     std::unordered_map<std::string, std::shared_ptr<udp_connection>> addr_map;
     for(;;) {
@@ -94,7 +161,7 @@ task<void> serve_udp(std::string port) {
         if(it == addr_map.end()) {
             connection = std::make_shared<udp_connection>(std::move(socket));
             addr_map.insert({dgram_address_key, connection});
-            async_spawn(handle_connection(connection));
+            async_spawn(connection_handler(connection));
         } else {
             connection = it->second;
         }

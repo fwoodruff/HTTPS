@@ -77,4 +77,14 @@ private:
     milliseconds m_duration;
 };
 
+class wait_until {
+public:
+    wait_until(time_point<steady_clock> until);
+    bool await_ready() const noexcept;
+    void await_suspend(std::coroutine_handle<> awaiting_coroutine);
+    void await_resume();
+private:
+    time_point<steady_clock> m_time_point;
+};
+
 #endif // reactor_hpp

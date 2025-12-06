@@ -8,7 +8,7 @@
 #ifndef h2_ctx_hpp
 #define h2_ctx_hpp
 
-#include "../../TCP/tcp_stream.hpp"
+#include "../../IP/tcp_stream.hpp"
 #include "../../global.hpp"
 #include "../../Runtime/task.hpp"
 #include "../../Runtime/concurrent_queue.hpp"

@@ -53,14 +53,13 @@ struct crypto {
 };
 
 struct new_token {
-    uint64_t token_length;
     std::vector<uint8_t> token;
 };
 
-struct stream {
+struct stream_frame {
     uint64_t stream_id;
-    uint64_t offset;
-    std::optional<uint64_t> length;
+    uint64_t offset {};
+    uint64_t length {};
     std::vector<uint8_t> stream_data;
 };
 
@@ -87,7 +86,7 @@ struct stream_data_blocked {
     uint64_t maximum_stream_data;
 };
 
-struct stream_blocked {
+struct streams_blocked {
     bool bidirectional;
     uint64_t maximum_streams;
 };
@@ -128,13 +127,13 @@ using var_frame = std::variant<
     stop_sending,
     crypto,
     new_token,
-    stream,
+    stream_frame,
     max_data,
     max_stream_data,
     max_streams,
     data_blocked,
     stream_data_blocked,
-    stream_blocked,
+    streams_blocked,
     new_connection_id,
     retire_connection_id,
     path_challenge,
@@ -177,7 +176,6 @@ struct initial_packet {
     std::vector<uint8_t> destination_connection_id;
     std::vector<uint8_t> source_connection_id;
     std::vector<uint8_t> token;
-    uint64_t length;
     uint32_t packet_number;
     std::vector<var_frame> packet_payload;
 };
@@ -218,6 +216,13 @@ struct one_rtt_packet {
     std::vector<uint8_t> destination_connection_id;
     uint32_t packet_number;
     std::vector<var_frame> packet_payload;
+};
+
+enum class packet_type : uint8_t {
+    initial,
+    zero_rtt,
+    handshake,
+    retry,
 };
 
 using var_packet = std::variant<

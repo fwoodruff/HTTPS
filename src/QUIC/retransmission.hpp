@@ -50,10 +50,6 @@ struct sent_packet{
     bool sent_bytes;
 };
 
-struct ack_packet {
-
-};
-
 using namespace std::chrono_literals;
 struct retransmission_state {
     static constexpr uint64_t k_packet_threshold = 3;

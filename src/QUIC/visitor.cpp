@@ -38,7 +38,7 @@ task<void> visit_frame(const var_frame& frame) {
         [](const new_token& f) {
 
         },
-        [](const stream& f) {
+        [](const stream_frame& f) {
 
         },
         [](const max_data& f) {
@@ -56,7 +56,7 @@ task<void> visit_frame(const var_frame& frame) {
         [](const stream_data_blocked& f) {
 
         },
-        [](const stream_blocked& f) {
+        [](const streams_blocked& f) {
 
         },
         [](const new_connection_id& f) {

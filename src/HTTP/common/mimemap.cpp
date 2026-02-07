@@ -111,7 +111,7 @@ std::string get_MIME(std::string extension) {
 // otherwise we look up the MIME type
 std::string Mime_from_file(const std::filesystem::path &filename) {
     if(filename.filename() == "favicon.ico") {
-        return "image/webp";
+        return "image/x-icon";
     } else {
         auto ext = extension_from_path(filename);
         if(ext == "jpeg") {

@@ -137,30 +137,6 @@ http_header parse_http_headers(const std::string& header_str) {
     return headers;
 }
 
-// add an extension if not present, and set / to /index.html
-// note index.php not supported here
-// edge case for /folder/.file
-std::string fix_filename(std::string filename) {
-    if(filename.empty()) {
-        filename = "/";
-    }
-    std::transform(filename.begin(), filename.end(), filename.begin(),
-        [](unsigned char c){ return std::tolower(c); });
-
-    if (filename.back() == '/') {
-        filename += "index.html";
-        return filename;
-    }
-
-    auto last_slash = filename.find_last_of('/');
-    auto last_dot = filename.find_last_of('.');
-
-    if (last_dot == std::string::npos or (last_slash != std::string::npos and last_dot < last_slash)) {
-        filename.append(".html");
-    }
-    return filename;
-}
-
 void shuffle(std::array<uint8_t, 32>& state) {
     for(int i = 0; i < 3; i++) {
         state[4] = ~(state[4] & 0x7a);

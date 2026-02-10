@@ -79,6 +79,11 @@
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
+
+// TODO:
+// remove case insensitivity for GET
+// no extension, should return <directory>/index.html
+
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {

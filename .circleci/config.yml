@@ -51,7 +51,8 @@ jobs:
             sudo docker build -f Dockerfile.armv6 --progress=plain -t server-armv6 .
             docker build --progress=plain -t containerymccontainerface -f Dockerfile.armv6 .
             c_id=$(docker create containerymccontainerface)
-            docker cp $c_id:/target/codeymccodeface ./target/codeymccodeface.armv6
+            mkdir -p target
+            docker cp $c_id:/target/codeymccodeface target/codeymccodeface.armv6
             if [ "$CIRCLE_BRANCH" = "main" ]; then
               scp target/codeymccodeface.armv6 freddiewoodruff@rpi:~/doc/deploy/codeymccodeface
               # todo: package resources and deploy binary

@@ -91,4 +91,3 @@ workflows:
             branches:
               only:
                 - main
-                - fix-js

@@ -379,6 +379,23 @@ std::vector<uint8_t> raw_ECDSA(std::array<uint8_t,32> k_random,
     return out;
 }
 
+static void append_der_int(std::vector<uint8_t>& out, const std::array<unsigned char, 32>& a) {
+    size_t i = 0;
+    while (i < a.size() - 1 && a[i] == 0x00) {
+        ++i;
+    }
+    const bool needs_leading_zero = (a[i] & 0x80) != 0;
+    const size_t value_len = (a.size() - i) + (needs_leading_zero ? 1u : 0u);
+
+    out.push_back(0x02); // INTEGER
+    out.push_back(static_cast<uint8_t>(value_len));
+
+    if (needs_leading_zero) {
+        out.push_back(0x00);
+    }
+    out.insert(out.end(), a.begin() + i, a.end());
+}
+
 std::vector<uint8_t> DER_ECDSA(
                      std::array<uint8_t,32> k_random,
                      std::array<uint8_t,32> digest,
@@ -388,23 +405,13 @@ std::vector<uint8_t> DER_ECDSA(
     auto r = signature.r.serialise();
     auto s = signature.s.serialise();
     
-
     std::vector<uint8_t> out;
-    out.insert(out.end(), {0x30,0x00, 0x02});
-    
-    if(r[0]&0x80) {
-        out.insert(out.end(), {0x21,0x00});
-    } else {
-        out.insert(out.end(),{0x20});
-    }
-    out.insert(out.end(),r.cbegin(),r.cend());
-    out.insert(out.end(), {0x02});
-    if(s[0]&0x80) {
-        out.insert(out.end(), {0x21,0x00});
-    } else {
-        out.insert(out.end(), {0x20});
-    }
-    out.insert(out.end(), s.cbegin(),s.cend());
+    out.reserve(72);
+    out.insert(out.end(), {0x30,0x00});
+
+    append_der_int(out, r);
+    append_der_int(out, s);
+
     assert(out.size() >= 2);
     assert(out.size() < 256);
     out[1] = static_cast<uint8_t>(out.size()-2);

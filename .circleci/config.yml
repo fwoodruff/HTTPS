@@ -66,12 +66,12 @@ jobs:
       - run:
           name: Copy binary to Raspberry Pi
           command: |
-            scp -o StrictHostKeyChecking=no target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/HTTPS23/target/codeymccodeface
+            scp -o StrictHostKeyChecking=no target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy
       - run:
           name: Restart server
           command: |
             ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
-              cd /home/freddiewoodruff/doc/deploy;
+              cd ~/doc/deploy;
               [ -f codey.pid ] && sudo kill $(cat codey.pid) || true;
               rm -f codey.pid;
               sudo sh -c "nohup ./codeymccodeface --config /home/freddiewoodruff/doc/HTTPS23/config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"

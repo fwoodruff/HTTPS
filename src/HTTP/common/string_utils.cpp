@@ -254,7 +254,8 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
     std::vector<std::pair<size_t, size_t>> out;
     while(true) {
         size_t end = range_header.find(',', pos);
-        std::string range = range_header.substr(pos, end - pos);
+        size_t len = (end == std::string::npos) ? std::string::npos : (end - pos);
+        std::string range = range_header.substr(pos, len);
         std::erase_if(range, [](unsigned char c){ return std::isspace(c); });
         size_t mid = range.find("-");
         if(mid == std::string::npos) {

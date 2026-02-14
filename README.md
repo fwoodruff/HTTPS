@@ -54,8 +54,10 @@ docker build -t server .
 docker run --init --rm -p 8443:8443 -p 8080:8080 server
 ```
 
+The certificate and key in the keypair/freddiewoodruff.co.uk are deliberately very outdated.
+CA certificates can be renewed with certbot in webroot mode.
 
-CA certificates can renewed with:
+e.g.:
 ```bash
 sudo certbot certonly \
   --webroot \
@@ -67,14 +69,10 @@ sudo certbot certonly \
   -d www.freddiewoodruff.co.uk \
   --force-renewal
 ```
-Set up a cronjob for renewal with `sudo crontab -e`
-```
-0 */12 * * * certbot renew --quiet
-```
 
 `config.txt` is for localhost.
 
-`live_config.txt` is my Raspberry Pi server config.
+`live_config.txt` is the Raspberry Pi server config pushed from CircleCI
 
 </details>
 
@@ -92,13 +90,7 @@ Set up a cronjob for renewal with `sudo crontab -e`
   <summary>Targeting</summary>
 
 Compiling C++23 for a Raspberry Pi 1B mixes old with new.
-`Dockerfile.armv6` downloads a cross-compiler and builds the ARMv6 binary. Run as follows:
-```bash
-mkdir -p target
-docker build -t containerymccontainerface -f Dockerfile.armv6 .
-c_id=$(docker create containerymccontainerface)
-docker cp $c_id:/target/codeymccodeface ./target/codeymccodeface.armv6
-docker rm $c_id
-```
+`Dockerfile.armv6` downloads a cross-compiler and builds the ARMv6 binary, which CircleCI copies to the Raspberry Pi 1B at freddiewoodruff.co.uk
+
 </details>
 

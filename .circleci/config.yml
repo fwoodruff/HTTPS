@@ -72,7 +72,8 @@ jobs:
           name: Copy binary to Raspberry Pi
           command: |
             scp -o StrictHostKeyChecking=no target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
-            rsync -avz --delete resources/MIME/ resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/MIME/
+            rsync -avz --delete resources/MIME/ freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/MIME/
+            rsync -avz --delete resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
             scp -o StrictHostKeyChecking=no live_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/config.txt
       - run:
           name: Restart server

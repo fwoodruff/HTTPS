@@ -48,7 +48,7 @@ jobs:
             c_id=$(docker create containerymccontainerface)
             mkdir -p target
             docker cp $c_id:/target/codeymccodeface target/codeymccodeface.armv6
-            sudo docker rm -f "$cid" >/dev/null
+            sudo docker rm -f "$c_id" >/dev/null
             test -x target/codeymccodeface.armv6
       - persist_to_workspace:
           root: .

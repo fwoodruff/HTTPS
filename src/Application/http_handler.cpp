@@ -193,12 +193,26 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
         throw http_error(400, "Bad Request");
     }
     // todo: check if HTTP/2 stream is half-closed local?
-    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
+    std::error_code ec;
+    auto st = std::filesystem::status(file_path, ec);
+    std::filesystem::path to_serve;
+    if (!ec && std::filesystem::is_regular_file(st)) {
+        to_serve = file_path;
+    } else if (!ec && std::filesystem::is_directory(st)) {
+        to_serve = file_path / "index.html";
+        if (!std::filesystem::exists(to_serve, ec) || !std::filesystem::is_regular_file(to_serve, ec)) {
+            throw http_error(404, "Not Found");
+        }
+    } else {
+        throw http_error(404, "Not Found");
+    }
+
+    std::ifstream file(to_serve, std::ifstream::ate | std::ifstream::binary);
     if(file.fail()) {
         throw http_error(404, "Not Found");
     }
     ssize_t file_size = file.tellg();
-    std::string mime = Mime_from_file(file_path);
+    std::string mime = Mime_from_file(to_serve);
     auto range_hdr = find_header(headers, "range");
     if (range_hdr) {
         auto ranges = parse_range_header(*range_hdr, file_size);
@@ -309,8 +323,8 @@ task<bool> handle_request(http_ctx& connection) {
     if (!method.has_value() or !path.has_value()) {
         throw http_error(400, "Bad Request");
     }
+    std::filesystem::path safe_path = *path;
 
-    std::filesystem::path safe_path = fix_filename(*path);
     auto webroot = project_options.webpage_folder;
 
     auto dir_host = get_host(request_headers);
@@ -336,21 +350,28 @@ task<bool> handle_request(http_ctx& connection) {
 
 task<bool> handle_redirect(http_ctx& connection) {
     const std::vector<entry_t> request_headers = connection.get_headers();
-    auto method = find_header(request_headers, ":method");
-    auto path = find_header(request_headers, ":path");
-    auto authority = find_header(request_headers, ":authority");
+    const auto method = find_header(request_headers, ":method");
+    const auto path = find_header(request_headers, ":path");
+    const auto authority = find_header(request_headers, ":authority");
+    const auto host = find_header(request_headers, "host");
     [[maybe_unused]] auto scheme = find_header(request_headers, ":scheme");
 
     if (!method.has_value() or !path.has_value()) {
         throw http_error(400, "Bad Request");
     }
 
-    if(!authority) {
-        authority = project_options.default_subfolder;
-    }
-    auto domain = *authority;
-    if(authority->starts_with("localhost")) {
-        authority = project_options.default_subfolder;
+    std::string domain = "";
+    if(authority.has_value()) {
+        if(host.has_value()) {
+            throw http_error(400, "Bad Request");
+        }
+        domain = *authority;
+    } else {
+        if(host.has_value()) {
+            domain = *host;
+        } else {
+            domain = project_options.default_subfolder;
+        }
     }
     size_t colon = domain.rfind(':');
     if (colon != std::string::npos) {
@@ -373,7 +394,7 @@ task<bool> handle_redirect(http_ctx& connection) {
 
     std::string body = moved_301();
     
-    std::filesystem::path safe_path = fix_filename(*path);
+    std::filesystem::path safe_path = *path;
     std::string MIME = Mime_from_file(safe_path);
     
     std::string https_port = project_options.server_port;

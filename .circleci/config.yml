@@ -35,23 +35,59 @@ jobs:
             # cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
             # openssl s_client -connect localhost:8443 -tls1_3 -early_data request.txt -sess_in session.pem 2>&1 
 
-  docker-test:
+  docker-build:
     docker:
       - image: cimg/base:stable
     steps:
       - checkout
       - setup_remote_docker
       - run:
-          name: Build server
+          name: Build server binary
           command: |
-            sudo docker build --progress=plain -t server .
+            docker build --progress=plain -t containerymccontainerface -f Dockerfile.armv6 .
+            c_id=$(docker create containerymccontainerface)
+            mkdir -p target
+            docker cp $c_id:/target/codeymccodeface target/codeymccodeface.armv6
+            sudo docker rm -f "$c_id" >/dev/null
+            test -x target/codeymccodeface.armv6
+      - persist_to_workspace:
+          root: .
+          paths:
+            - target/codeymccodeface.armv6
+
+  deploy:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - add_ssh_keys
       - run:
-          name: Build armv6
+          name: Copy binary to Raspberry Pi
           command: |
-            sudo docker build -f Dockerfile.armv6 --progress=plain -t server-armv6 .
+            scp -o StrictHostKeyChecking=no target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
+      - run:
+          name: Restart server
+          command: |
+            ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
+              cd ~/doc/deploy;
+              [ -f codey.pid ] && sudo kill $(cat codey.pid) || true;
+              rm -f codey.pid;
+              mv codeymccodeface.armv6 codeymccodeface
+              sudo sh -c "nohup ./codeymccodeface --config /home/freddiewoodruff/doc/HTTPS23/config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
+            '
 
 workflows:
-  run_tests:
+  build_and_deploy:
     jobs:
       - test
-      - docker-test
+      - docker-build
+      - deploy:
+          requires:
+            - test
+            - docker-build
+          filters:
+            branches:
+              only:
+                - main

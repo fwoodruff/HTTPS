@@ -64,9 +64,16 @@ jobs:
           at: .
       - add_ssh_keys
       - run:
+          name: Install rsync
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y rsync
+      - run:
           name: Copy binary to Raspberry Pi
           command: |
             scp -o StrictHostKeyChecking=no target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
+            rsync -avz --delete resources/MIME/ resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
+            scp -o StrictHostKeyChecking=no live_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/config.txt
       - run:
           name: Restart server
           command: |
@@ -75,7 +82,7 @@ jobs:
               [ -f codey.pid ] && sudo kill $(cat codey.pid) || true;
               rm -f codey.pid;
               mv codeymccodeface.armv6 codeymccodeface
-              sudo sh -c "nohup ./codeymccodeface --config /home/freddiewoodruff/doc/HTTPS23/config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
+              sudo sh -c "nohup ./codeymccodeface --config config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
             '
 
 workflows:
@@ -91,3 +98,4 @@ workflows:
             branches:
               only:
                 - main
+                - fix-ci

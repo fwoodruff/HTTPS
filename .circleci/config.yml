@@ -53,7 +53,7 @@ jobs:
       - persist_to_workspace:
           root: .
           paths:
-            - target/codeymccodeface.docker
+            - target/codeymccodeface.armv6
 
   deploy:
     docker:

@@ -166,6 +166,10 @@ std::string choose_server_name(const std::vector<std::string>& server_names) {
             return name;
         }
     }
+    auto default_cert = project_options.key_folder / project_options.default_subfolder / project_options.certificate_file;
+    if (std::filesystem::exists(default_cert)) {
+        return "";
+    }
     throw ssl_error("unrecognised name", AlertLevel::fatal, AlertDescription::unrecognized_name);
 }
 

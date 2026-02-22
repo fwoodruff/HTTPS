@@ -382,7 +382,14 @@ task<bool> handle_redirect(http_ctx& connection) {
 
     if (*method == "GET" && a_path.string().starts_with("/.well-known/acme-challenge/")) {
         auto webroot = project_options.webpage_folder;
-        auto file_path = (webroot / project_options.default_subfolder / a_path.relative_path());
+        std::string acme_domain = domain;
+        if (acme_domain.starts_with("www.")) {
+            acme_domain = acme_domain.substr(4);
+        }
+        if (acme_domain.empty()) {
+            acme_domain = project_options.default_subfolder;
+        }
+        auto file_path = (webroot / acme_domain / a_path.relative_path());
         auto canonical_webroot = std::filesystem::canonical(webroot);
         auto canonical_file = std::filesystem::weakly_canonical(file_path);
         if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {

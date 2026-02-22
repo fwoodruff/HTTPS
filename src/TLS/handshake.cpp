@@ -156,15 +156,19 @@ std::string choose_alpn(const std::vector<std::string>& client_alpn) {
 }
 
 std::string choose_server_name(const std::vector<std::string>& server_names) {
-    if(server_names.empty() or project_options.domain_names.empty()) {
+    if (server_names.empty()) {
         return "";
     }
-    for(const auto& n : project_options.domain_names) {
-        for(const auto& m :server_names) {
-            if(n == m) {
-                return n;
-            }
+    for (const auto& name : server_names) {
+        std::string base = name.starts_with("www.") ? name.substr(4) : name;
+        auto cert = project_options.key_folder / base / project_options.certificate_file;
+        if (std::filesystem::exists(cert)) {
+            return name;
         }
+    }
+    auto default_cert = project_options.key_folder / project_options.default_subfolder / project_options.certificate_file;
+    if (std::filesystem::exists(default_cert)) {
+        return "";
     }
     throw ssl_error("unrecognised name", AlertLevel::fatal, AlertDescription::unrecognized_name);
 }

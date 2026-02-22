@@ -72,7 +72,6 @@ void init_options(std::filesystem::path config_file) {
 
     project_options.redirect_port = option_map.at("REDIRECT_PORT");
     project_options.server_port = option_map.at("SERVER_PORT");
-    project_options.domain_names = split(option_map.at("DOMAIN_NAMES"), ",");
     project_options.default_subfolder = option_map.at("DEFAULT_SUBFOLDER");
     project_options.http_strict_transport_security = (option_map.at( "HTTP_STRICT_TRANSPORT_SECURITY") == "true");
     project_options.certificate_file = option_map.at("CERTIFICATE_FILE");

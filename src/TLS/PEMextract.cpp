@@ -77,7 +77,10 @@ std::array<uint8_t,32> deserialise(std::vector<uint8_t> asn1) {
 
 std::array<uint8_t,32> privkey_for_domain(std::string domain) {
     auto privkey_file = project_options.key_folder / domain / project_options.key_file;
-    if(!std::filesystem::exists(privkey_file) or domain == "") {
+    if (!std::filesystem::exists(privkey_file) && domain.starts_with("www.")) {
+        privkey_file = project_options.key_folder / domain.substr(4) / project_options.key_file;
+    }
+    if (!std::filesystem::exists(privkey_file) || domain.empty()) {
         privkey_file = project_options.key_folder / project_options.default_subfolder / project_options.key_file;
     }
     return privkey_from_file(privkey_file);
@@ -113,7 +116,10 @@ std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
 
 std::vector<std::vector<uint8_t>> der_cert_for_domain(std::string domain) {
     auto cert_file = project_options.key_folder / domain / project_options.certificate_file;
-    if(!std::filesystem::exists(cert_file) or domain == "") {
+    if (!std::filesystem::exists(cert_file) && domain.starts_with("www.")) {
+        cert_file = project_options.key_folder / domain.substr(4) / project_options.certificate_file;
+    }
+    if (!std::filesystem::exists(cert_file) || domain.empty()) {
         cert_file = project_options.key_folder / project_options.default_subfolder / project_options.certificate_file;
     }
     return der_cert_from_file(cert_file);

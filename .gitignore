@@ -4,3 +4,4 @@ target/
 objects/
 .vscode
 resources/ip_ban.txt
+**.DS_Store

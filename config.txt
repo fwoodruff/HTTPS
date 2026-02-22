@@ -1,6 +1,5 @@
 REDIRECT_PORT=8080
 SERVER_PORT=8443
-DOMAIN_NAMES=localhost, www.localhost
 KEY_FOLDER=resources/keypair
 CERTIFICATE_FILE=ecc_cert.pem
 KEY_FILE=ecc_key.pem

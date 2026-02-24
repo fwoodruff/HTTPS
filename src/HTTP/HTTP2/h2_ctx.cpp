@@ -155,7 +155,7 @@ std::vector<id_new> h2_context::receive_peer_settings(const h2_settings& frame) 
 
     std::vector<id_new> out;
     
-    const int32_t delta = server_settings.initial_window_size - old_initial_window;
+    const int32_t delta = client_settings.initial_window_size - old_initial_window;
     for (auto & [sid, stream] : stream_ctx_map) {
         if (delta > 0) {
             if (stream.stream_current_window_remaining > INT32_MAX - delta) {
@@ -278,7 +278,7 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         }
     } else {
         auto& stream = it->second;
-        if(!(stream.strm_state != stream_state::open and stream.strm_state != stream_state::half_closed_local)) {
+        if(stream.strm_state != stream_state::open and stream.strm_state != stream_state::half_closed_local) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
         }
         if (!(frame.flags & h2_flags::END_STREAM)) {

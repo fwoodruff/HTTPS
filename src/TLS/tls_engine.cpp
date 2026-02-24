@@ -244,7 +244,7 @@ std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshak
     if (offset == fragment.size()) {
         fragment.clear();
     }
-    return { handshake_record.m_contents };
+    return messages;
 }
 
 void tls_engine::client_handshake_record_sync(std::queue<packet_timed>& output, tls_record record) {

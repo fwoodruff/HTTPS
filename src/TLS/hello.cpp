@@ -52,6 +52,9 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
 
 std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_data) {
     std::vector<NamedGroup> out;
+    if(extension_data.size() < 2) {
+        return out;
+    }
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
         auto group = try_bigend_read(supported_groups_data, i, 2);
@@ -62,6 +65,9 @@ std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_
 
 std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> extension_data) {
     std::vector<SignatureScheme> out;
+    if(extension_data.size() < 2) {
+        return out;
+    }
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
         auto group = try_bigend_read(supported_groups_data, i, 2);
@@ -86,6 +92,9 @@ std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> exten
 
 std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_data) {
     std::vector<uint16_t> out;
+    if(extension_data.empty()) {
+        return {};
+    }
     size_t versions = extension_data[0];
     if(versions + 1 != extension_data.size() or versions % 2 != 0) {
         return {};

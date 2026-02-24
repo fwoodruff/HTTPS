@@ -92,7 +92,7 @@ std::string trim(std::string str) {
     auto start = str.find_first_not_of(" \t\r\n");
     auto end = str.find_last_not_of(" \t\r\n");
     if(start == std::string::npos or end == std::string::npos) {
-        str = "";
+        return "";
     }
     return str.substr(start, end - start + 1);
 }

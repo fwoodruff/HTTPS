@@ -324,7 +324,10 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
         headers_partially_sent_stream_id = 0;
         *headers = m_hpack.parse_field_block(strm.header_block);
         strm.header_block.clear();
-        return {{frame.stream_id, wake_action::new_stream}};
+        if(strm.strm_state == stream_state::open) {
+            return {{frame.stream_id, wake_action::new_stream}};
+        }
+        return {{frame.stream_id, wake_action::wake_read}};
     }
     return {};
 }
@@ -591,6 +594,10 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
     if (frame.window_size_increment == 0) {
         raise_stream_error(h2_code::STREAM_CLOSED, frame.stream_id);
         return {{frame.stream_id, wake_action::wake_write}};
+    }
+    if (stream.stream_current_window_remaining > INT32_MAX - int32_t(frame.window_size_increment)) {
+        raise_stream_error(h2_code::FLOW_CONTROL_ERROR, frame.stream_id);
+        return {};
     }
     stream.stream_current_window_remaining += frame.window_size_increment;
     stream_result suspend = stage_buffer(stream);

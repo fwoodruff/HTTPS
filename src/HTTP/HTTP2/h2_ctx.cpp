@@ -619,6 +619,11 @@ void h2_context::enqueue_goaway(h2_code code, std::string message) {
     outbox.push_back(goawayframe.serialise());
 }
 
+void h2_context::handle_connection_error(h2_code code, std::string message) {
+    std::scoped_lock lk(m_mut);
+    enqueue_goaway(code, std::move(message));
+}
+
 void h2_context::raise_stream_error(h2_code code, uint32_t stream_id) {
     auto it = stream_ctx_map.find(stream_id);
     if(it == stream_ctx_map.end()) {

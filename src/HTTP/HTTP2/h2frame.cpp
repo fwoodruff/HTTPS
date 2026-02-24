@@ -91,6 +91,8 @@ std::unique_ptr<h2frame> h2frame::deserialise(const std::vector<uint8_t>& frame_
             default:
                 return nullptr;
         }
+    } catch(const h2_error&) {
+        throw;
     } catch(const std::out_of_range& e) {
         throw h2_error("malformed frame", h2_code::FRAME_SIZE_ERROR);
     } catch(const std::exception& e) {

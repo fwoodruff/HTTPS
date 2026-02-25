@@ -469,6 +469,7 @@ std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_ret
         if(std::equal(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.begin() + 4, server_random.begin()+24)) {
             continue;
         }
+        break;
     } while(true);
     assert(server_random != std::vector<uint8_t>(32, 0));
     if(version < TLS12) {

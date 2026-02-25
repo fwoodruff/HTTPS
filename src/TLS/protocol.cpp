@@ -170,7 +170,7 @@ task<void> TLS::close_notify() {
         co_return;
     }
     auto guard = co_await m_async_read_mut.lock();
-    do {
+    while(true) {
         std::deque<uint8_t> input_data;
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return;
@@ -189,7 +189,7 @@ task<void> TLS::close_notify() {
         }
         co_await m_client->close_notify();
         co_return;
-    } while(true);
+    }
 }
 
 task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t>& buffer, std::optional<std::chrono::milliseconds> timeout) {

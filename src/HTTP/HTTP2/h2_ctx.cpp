@@ -226,8 +226,11 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
             stream.strm_state = stream_state::half_closed_remote;
         }
     }
-    
-    return {{frame.stream_id, wake_action::wake_read}};
+
+    if (data_length > 0 || (frame.flags & h2_flags::END_STREAM)) {
+        return {{frame.stream_id, wake_action::wake_read}};
+    }
+    return {};
 }
 
 bool is_higher_odd(uint32_t curr, uint32_t next) {

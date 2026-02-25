@@ -105,7 +105,9 @@ std::pair<size_t, bool> h2readable::await_resume() {
         auto& cx = h2_contx->h2_ctx;
         m_bytes_read = cx.read_data(m_data, m_stream_id);
     }
-    assert(m_bytes_read != std::nullopt);
+    if(m_bytes_read == std::nullopt) {
+        return {0, false}; // defensive
+    }
     return *m_bytes_read;
 }
 

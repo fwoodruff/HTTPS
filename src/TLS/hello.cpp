@@ -125,9 +125,15 @@ std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_d
     extension_data = extension_data.subspan(2);
     std::vector<key_share> shared_keys;
     while(!extension_data.empty()) {
+        if(extension_data.size() < 4) {
+            throw ssl_error("truncated key share entry", AlertLevel::fatal, AlertDescription::decode_error);
+        }
         auto key_type = extension_data.subspan(0, 2);
         auto group = static_cast<NamedGroup>(try_bigend_read(key_type, 0, 2));
         size_t len = try_bigend_read(extension_data, 2, 2);
+        if(extension_data.size() < 4 + len) {
+            throw ssl_error("key share entry length overflow", AlertLevel::fatal, AlertDescription::decode_error);
+        }
         auto key_value = extension_data.subspan(4, len);
         auto typed_key = key_share({group, std::vector<uint8_t>(key_value.begin(), key_value.end())});
         shared_keys.push_back(std::move(typed_key));
@@ -463,7 +469,7 @@ std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_ret
         if(std::equal(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.begin() + 4, server_random.begin()+24)) {
             continue;
         }
-    } while(false);
+    } while(true);
     assert(server_random != std::vector<uint8_t>(32, 0));
     if(version < TLS12) {
         std::copy(tls_11_downgrade_protection_sentinel.begin(), tls_11_downgrade_protection_sentinel.end(), server_random.begin()+24);

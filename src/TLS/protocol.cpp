@@ -155,6 +155,7 @@ task<stream_result> TLS::net_write_all() {
         }
         stream_result res = co_await m_client->write(packet.data, packet.timeout);
         if(res != stream_result::ok) {
+            m_write_region.store(false);
             co_return res;
         }
     }
@@ -188,7 +189,7 @@ task<void> TLS::close_notify() {
         }
         co_await m_client->close_notify();
         co_return;
-    } while(false);
+    } while(true);
 }
 
 task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t>& buffer, std::optional<std::chrono::milliseconds> timeout) {

@@ -102,6 +102,9 @@ void chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             const std::array<uint8_t, IV_SIZE>& number_once,
                             const std::span<uint8_t> message) {
 
+    if(message.empty()) {
+        return;
+    }
     auto state = chacha20_state(key, number_once);
     constexpr size_t max_chunk_size = 64;
     size_t k = 0;

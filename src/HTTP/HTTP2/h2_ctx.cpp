@@ -108,6 +108,9 @@ void update_client_settings(setting_values& client_settings, const h2_settings& 
             client_settings.max_concurrent_streams = setting.value;
             break;
         case SETTINGS_INITIAL_WINDOW_SIZE:
+            if (setting.value > static_cast<uint32_t>(INT32_MAX)) {
+                throw h2_error("initial window size exceeds maximum", h2_code::FLOW_CONTROL_ERROR);
+            }
             client_settings.initial_window_size = setting.value;
             break;
         case SETTINGS_MAX_FRAME_SIZE:
@@ -595,12 +598,12 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
     }
 
     if (frame.window_size_increment == 0) {
-        raise_stream_error(h2_code::STREAM_CLOSED, frame.stream_id);
+        raise_stream_error(h2_code::PROTOCOL_ERROR, frame.stream_id);
         return {{frame.stream_id, wake_action::wake_write}};
     }
     if (stream.stream_current_window_remaining > INT32_MAX - int32_t(frame.window_size_increment)) {
         raise_stream_error(h2_code::FLOW_CONTROL_ERROR, frame.stream_id);
-        return {};
+        return {{frame.stream_id, wake_action::wake_write}};
     }
     stream.stream_current_window_remaining += frame.window_size_increment;
     stream_result suspend = stage_buffer(stream);

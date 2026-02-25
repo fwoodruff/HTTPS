@@ -1,5 +1,9 @@
 REDIRECT_PORT=80
 SERVER_PORT=443
+<<<<<<< Updated upstream
+=======
+DOMAIN_NAMES=freddiewoodruff.co.uk, www.freddiewoodruff.co.uk, countryhouseguide.com, www.countryhouseguide.com
+>>>>>>> Stashed changes
 KEY_FOLDER=/etc/letsencrypt/live
 CERTIFICATE_FILE=fullchain.pem
 KEY_FILE=privkey.pem

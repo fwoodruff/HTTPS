@@ -510,6 +510,7 @@ void tls_engine::client_handshake_finished12(const std::vector<uint8_t>& handsha
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     handshake.client_handshake_finished12_record(handshake_message);
+    can_heartbeat = handshake.client_hello.parsed_extensions.contains(ExtensionType::heartbeat);
     m_expected_read_record = HandshakeStage::application_data;
 }
 

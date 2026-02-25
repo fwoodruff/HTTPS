@@ -77,7 +77,7 @@ std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> exte
 }
 
 std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> extension_data) {
-    const std::vector<uint8_t> peer_may_send {0x00, 0x01, 0x00};
+    const std::vector<uint8_t> peer_may_send {0x00, 0x01, 0x01};
     const std::vector<uint8_t> peer_no_send { 0x00, 0x01, 0x02};
     if(extension_data.size() == 3) [[likely]] {
         if(std::equal(extension_data.begin(), extension_data.end(), peer_may_send.begin())) {
@@ -350,7 +350,7 @@ void write_renegotiation_info(tls_record& record) {
 void write_heartbeat(tls_record& record) {
     record.write2(ExtensionType::heartbeat);
     record.start_size_header(2);
-    record.write1(0);
+    record.write1(1);
     record.end_size_header();
 }
 

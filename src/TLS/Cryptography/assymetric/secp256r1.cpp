@@ -76,7 +76,7 @@ ct_u256 add_mod(ct_u256 x, ct_u256 y , ct_u256 mod) noexcept {
     assert(x < mod);
     assert(y < mod);
     auto sum = x + y;
-    if (sum < x or sum > mod) {
+    if (sum < x or sum >= mod) {
         sum -= mod;
     }
     return sum;

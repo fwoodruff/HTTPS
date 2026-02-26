@@ -24,7 +24,11 @@ ssize_t get_file_size(std::filesystem::path filename) {
     if(t.fail()) {
         throw http_error(404, "Not Found");
     }
-    return t.tellg();
+    auto size = t.tellg();
+    if(size < 0) {
+        throw http_error(500, "Internal Server Error");
+    }
+    return size;
 }
 
 std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string domain) {

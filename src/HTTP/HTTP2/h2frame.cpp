@@ -285,13 +285,15 @@ std::vector<uint8_t> h2frame::serialise_common(size_t reserved) const {
     return out;
 }
 
-std::vector<uint8_t> h2_data::serialise() const { 
+std::vector<uint8_t> h2_data::serialise() const {
     std::vector<uint8_t> out = serialise_common();
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
     }
     out.insert(out.end(), contents.begin(), contents.end());
-    out.resize(out.size() + pad_length);
+    if(flags & h2_flags::PADDED) {
+        out.resize(out.size() + pad_length);
+    }
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
@@ -319,7 +321,7 @@ std::string h2_data::pretty() const {
     return out.str();
 }
 
-std::vector<uint8_t> h2_headers::serialise() const { 
+std::vector<uint8_t> h2_headers::serialise() const {
     std::vector<uint8_t> out = serialise_common();
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
@@ -331,7 +333,9 @@ std::vector<uint8_t> h2_headers::serialise() const {
         out.push_back(weight);
     }
     out.insert(out.end(), field_block_fragment.begin(), field_block_fragment.end());
-    out.resize(out.size() + pad_length);
+    if(flags & h2_flags::PADDED) {
+        out.resize(out.size() + pad_length);
+    }
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }

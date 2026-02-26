@@ -19,7 +19,9 @@ reactor::reactor() {
     assert(err == 0);
     m_pipe_read = rw[0];
     m_pipe_write = rw[1];
-    ::fcntl(m_pipe_read, F_SETFL, O_NONBLOCK);
+    if(::fcntl(m_pipe_read, F_SETFL, O_NONBLOCK) == -1) {
+        throw std::system_error(errno, std::generic_category(), "fcntl O_NONBLOCK on pipe");
+    }
 }
 
 void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read_write,

@@ -30,7 +30,9 @@ tls_record wrap13(tls_record record) {
 }
 
 tls_record unwrap13(tls_record record) {
-    assert(record.m_contents.size() > 1);
+    if(record.m_contents.size() < 2) [[unlikely]] {
+        throw ssl_error("TLS 1.3 inner plaintext too short", AlertLevel::fatal, AlertDescription::decode_error);
+    }
     while(record.m_contents.size() > 1 and record.m_contents.back() == 0) {
         record.m_contents.pop_back();
     }

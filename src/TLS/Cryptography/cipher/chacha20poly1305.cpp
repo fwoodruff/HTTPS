@@ -359,7 +359,7 @@ tls_record ChaCha20_Poly1305_tls12::protect(tls_record record) noexcept {
 }
 
 tls_record ChaCha20_Poly1305_tls13::deprotect(tls_record record) {
-    if(record.m_contents.size() < TAG_SIZE) {
+    if(record.m_contents.size() < TAG_SIZE + 2) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
     std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, 0);

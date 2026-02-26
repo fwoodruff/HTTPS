@@ -283,7 +283,7 @@ std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> handshake_ctx::get
         auto ticket_number = ticket->number_once;
         auto& cached_number_once = session_ticket_numbers_once[ticket->number_once % SESSION_HASHSET_SIZE];
         using enum std::memory_order;
-        if(!cached_number_once.compare_exchange_weak(ticket_number, 0, relaxed, relaxed)) {
+        if(!cached_number_once.compare_exchange_weak(ticket_number, 0, acq_rel, relaxed)) {
             // try to reset the cache; spurious failures are ok
             continue;
         }

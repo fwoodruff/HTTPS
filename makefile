@@ -52,7 +52,17 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET_DIR)
 
+# Run the integration test suite against a locally built server.
+# The server is started and stopped automatically by pytest's session fixture.
+# Prerequisites: python3 and pytest (pip3 install -r tests/requirements.txt).
+test: $(TARGET)
+	python3 -m pytest tests/ -v
+
+# Install Python test dependencies
+test-deps:
+	pip3 install -r tests/requirements.txt --break-system-packages
+
 # Phony target to prevent conflicts with files named "clean"
-.PHONY: clean
+.PHONY: clean test test-deps
 
 

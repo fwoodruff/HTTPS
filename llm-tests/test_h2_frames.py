@@ -15,12 +15,9 @@ Flag constants:
 import struct
 import time
 
-import pytest
-
 from helpers import (
     collect_frames,
     h2_frame_bytes,
-    minimal_hpack_get,
 )
 
 GOAWAY     = 0x07

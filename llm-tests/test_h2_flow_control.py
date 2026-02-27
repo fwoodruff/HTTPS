@@ -18,8 +18,6 @@ Error code constants (RFC 9113 §7):
 import struct
 import time
 
-import pytest
-
 from helpers import (
     collect_frames,
     h2_frame_bytes,

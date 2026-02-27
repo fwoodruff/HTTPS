@@ -7,7 +7,6 @@ import os
 import ssl
 import socket
 import struct
-import time
 
 TEST_HOST       = os.environ.get("TEST_HOST",       "127.0.0.1")
 TEST_HTTPS_PORT = int(os.environ.get("TEST_HTTPS_PORT", "8443"))

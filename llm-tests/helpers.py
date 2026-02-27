@@ -12,6 +12,8 @@ import time
 TEST_HOST       = os.environ.get("TEST_HOST",       "127.0.0.1")
 TEST_HTTPS_PORT = int(os.environ.get("TEST_HTTPS_PORT", "8443"))
 
+SERVER_HOSTNAME = "freddiewoodruff.co.uk"
+
 HTTP2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 # ── HTTP/2 frame primitives ────────────────────────────────────────────────────
@@ -108,12 +110,12 @@ def make_h2_connection():
     ctx.verify_mode = ssl.CERT_NONE
     ctx.set_alpn_protocols(["h2"])
     raw = socket.create_connection((TEST_HOST, TEST_HTTPS_PORT), timeout=5)
-    tls = ctx.wrap_socket(raw, server_hostname="localhost")
+    tls = ctx.wrap_socket(raw, server_hostname=SERVER_HOSTNAME)
     do_h2_handshake(tls)
     return tls
 
 
-def minimal_hpack_get(authority: str = "localhost") -> bytes:
+def minimal_hpack_get(authority: str = SERVER_HOSTNAME) -> bytes:
     """
     Return an HPACK-encoded minimal GET / request.
     Uses only static-table indexed entries to keep the encoding trivial.

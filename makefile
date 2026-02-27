@@ -52,17 +52,11 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET_DIR)
 
-# Run the integration test suite against an already-running server.
-# Default target: localhost:8443.  Override with --server=host:port.
-# Prerequisites: python3 and pytest (pip3 install -r tests/requirements.txt).
 test:
-	python3 -m pytest tests/ -v
+	python3 -m pytest llm-tests/ -v
 
-# Install Python test dependencies
 test-deps:
 	pip3 install -r tests/requirements.txt --break-system-packages
 
 # Phony target to prevent conflicts with files named "clean"
 .PHONY: clean test test-deps
-
-

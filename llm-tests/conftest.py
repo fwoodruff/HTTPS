@@ -1,5 +1,5 @@
 """
-pytest configuration for the crash-regression test suite.
+pytest configuration for the integration test suite.
 
 The tests always connect to an already-running server; they never start one
 themselves.  The default target is localhost:8443.

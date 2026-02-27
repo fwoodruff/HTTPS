@@ -56,7 +56,7 @@ test:
 	python3 -m pytest llm-tests/ -v
 
 test-deps:
-	pip3 install -r tests/requirements.txt --break-system-packages
+	pip3 install -r llm-tests/requirements.txt --break-system-packages
 
 # Phony target to prevent conflicts with files named "clean"
 .PHONY: clean test test-deps

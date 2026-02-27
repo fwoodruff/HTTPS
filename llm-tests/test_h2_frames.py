@@ -20,8 +20,7 @@ from helpers import (
     h2_frame_bytes,
 )
 
-GOAWAY     = 0x07
-RST_STREAM = 0x03
+GOAWAY = 0x07
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -97,7 +97,7 @@ def server(request):
 
 
 @pytest.fixture
-def h2_conn(server):
+def h2_conn():
     """Open a fresh TLS+HTTP/2 connection for each test and close it afterwards."""
     from helpers import make_h2_connection
     conn = make_h2_connection()

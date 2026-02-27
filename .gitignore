@@ -5,8 +5,6 @@ objects/
 .vscode
 resources/ip_ban.txt
 **.DS_Store
-# Generated test artifacts (cert, config, ip_ban)
-tests/resources/
-tests/test_config.txt
+
 **/__pycache__/
 **/*.pyc

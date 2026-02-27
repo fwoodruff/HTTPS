@@ -51,7 +51,9 @@ std::string to_upper(std::string s) {
 std::string timestring(time_t t) {
     char buf[48];
     std::tm* tm_ptr = std::gmtime(&t);
-    assert(tm_ptr != nullptr);
+    if(tm_ptr == nullptr) {
+        throw std::runtime_error("gmtime failed");
+    }
     const std::tm tm = *tm_ptr;
     auto err = std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm);
     assert(err != 0);
@@ -92,7 +94,7 @@ std::string trim(std::string str) {
     auto start = str.find_first_not_of(" \t\r\n");
     auto end = str.find_last_not_of(" \t\r\n");
     if(start == std::string::npos or end == std::string::npos) {
-        str = "";
+        return "";
     }
     return str.substr(start, end - start + 1);
 }

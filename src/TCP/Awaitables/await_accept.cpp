@@ -12,6 +12,7 @@
 
 #include <sys/socket.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <sys/types.h> 
@@ -25,11 +26,11 @@ std::pair<std::string, uint16_t> get_ip_port(const struct sockaddr& sa) {
     char ipstr[INET6_ADDRSTRLEN];
     uint16_t port = 0;
     if (sa.sa_family == AF_INET) {
-        struct sockaddr_in& sin = (struct sockaddr_in&)sa;
+        const struct sockaddr_in& sin = reinterpret_cast<const struct sockaddr_in&>(sa);
         inet_ntop(AF_INET, &sin.sin_addr, ipstr, INET_ADDRSTRLEN);
         port = ntohs(sin.sin_port);
     } else if (sa.sa_family == AF_INET6) {
-        struct sockaddr_in6& sin6 = (struct sockaddr_in6& )sa;
+        const struct sockaddr_in6& sin6 = reinterpret_cast<const struct sockaddr_in6&>(sa);
         inet_ntop(AF_INET6, &sin6.sin6_addr, ipstr, INET6_ADDRSTRLEN);
         port = ntohs(sin6.sin6_port);
     }
@@ -47,8 +48,10 @@ std::optional<tcp_stream> acceptable::await_resume() {
     }
     auto [ip, port] = get_ip_port((struct sockaddr &)client_address);
     std::string stip = ip;
-    int res = ::fcntl(client_fd, F_SETFL, O_NONBLOCK);
-    assert(res == 0);
+    if(::fcntl(client_fd, F_SETFL, O_NONBLOCK) == -1) {
+        ::close(client_fd);
+        return std::nullopt;
+    }
     return {{client_fd, ip, port}};
 }
 

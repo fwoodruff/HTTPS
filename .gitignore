@@ -5,3 +5,6 @@ objects/
 .vscode
 resources/ip_ban.txt
 **.DS_Store
+
+**/__pycache__/
+**/*.pyc

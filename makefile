@@ -52,7 +52,11 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET_DIR)
 
+test:
+	python3 -m pytest llm-tests/ -v
+
+test-deps:
+	pip3 install -r llm-tests/requirements.txt --break-system-packages
+
 # Phony target to prevent conflicts with files named "clean"
-.PHONY: clean
-
-
+.PHONY: clean test test-deps

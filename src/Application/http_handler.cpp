@@ -39,6 +39,9 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 
 void write_body(std::string body) {
     std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
+    if(!fout.is_open()) {
+        return;
+    }
     body = replace_all(std::move(body), "username=", "username: ");
     body = replace_all(std::move(body), "&password=", ", password: ");
     body = replace_all(std::move(body), "&confirm=", ", confirmed: ");

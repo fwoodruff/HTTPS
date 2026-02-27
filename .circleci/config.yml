@@ -7,6 +7,11 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install test dependencies
+          command: |
+            apt-get update && apt-get install -y python3-pip
+            make test-deps
+      - run:
           name: Build server
           command: |
             make -j$(nproc)
@@ -25,6 +30,10 @@ jobs:
             curl -kv --http2-prior-knowledge https://localhost:8443/final.html
             curl -kv --http1.1 https://localhost:8443/
             curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost:8443
+      - run:
+          name: Run pytest integration tests
+          command: |
+            make test
       - run:
           name: Test session tickets
           command: |

@@ -108,6 +108,9 @@ void update_client_settings(setting_values& client_settings, const h2_settings& 
             client_settings.max_concurrent_streams = setting.value;
             break;
         case SETTINGS_INITIAL_WINDOW_SIZE:
+            if (setting.value > static_cast<uint32_t>(INT32_MAX)) {
+                throw h2_error("initial window size exceeds maximum", h2_code::FLOW_CONTROL_ERROR);
+            }
             client_settings.initial_window_size = setting.value;
             break;
         case SETTINGS_MAX_FRAME_SIZE:
@@ -155,7 +158,7 @@ std::vector<id_new> h2_context::receive_peer_settings(const h2_settings& frame) 
 
     std::vector<id_new> out;
     
-    const int32_t delta = server_settings.initial_window_size - old_initial_window;
+    const int32_t delta = client_settings.initial_window_size - old_initial_window;
     for (auto & [sid, stream] : stream_ctx_map) {
         if (delta > 0) {
             if (stream.stream_current_window_remaining > INT32_MAX - delta) {
@@ -226,8 +229,11 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
             stream.strm_state = stream_state::half_closed_remote;
         }
     }
-    
-    return {{frame.stream_id, wake_action::wake_read}};
+
+    if (data_length > 0 || (frame.flags & h2_flags::END_STREAM)) {
+        return {{frame.stream_id, wake_action::wake_read}};
+    }
+    return {};
 }
 
 bool is_higher_odd(uint32_t curr, uint32_t next) {
@@ -278,7 +284,7 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         }
     } else {
         auto& stream = it->second;
-        if(!(stream.strm_state != stream_state::open and stream.strm_state != stream_state::half_closed_local)) {
+        if(stream.strm_state != stream_state::open and stream.strm_state != stream_state::half_closed_local) {
             throw h2_error("trailers frame not expected", h2_code::PROTOCOL_ERROR);
         }
         if (!(frame.flags & h2_flags::END_STREAM)) {
@@ -324,7 +330,10 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
         headers_partially_sent_stream_id = 0;
         *headers = m_hpack.parse_field_block(strm.header_block);
         strm.header_block.clear();
-        return {{frame.stream_id, wake_action::new_stream}};
+        if(strm.strm_state == stream_state::open) {
+            return {{frame.stream_id, wake_action::new_stream}};
+        }
+        return {{frame.stream_id, wake_action::wake_read}};
     }
     return {};
 }
@@ -589,7 +598,11 @@ std::vector<id_new> h2_context::receive_window_frame(const h2_window_update& fra
     }
 
     if (frame.window_size_increment == 0) {
-        raise_stream_error(h2_code::STREAM_CLOSED, frame.stream_id);
+        raise_stream_error(h2_code::PROTOCOL_ERROR, frame.stream_id);
+        return {{frame.stream_id, wake_action::wake_write}};
+    }
+    if (stream.stream_current_window_remaining > INT32_MAX - int32_t(frame.window_size_increment)) {
+        raise_stream_error(h2_code::FLOW_CONTROL_ERROR, frame.stream_id);
         return {{frame.stream_id, wake_action::wake_write}};
     }
     stream.stream_current_window_remaining += frame.window_size_increment;
@@ -610,6 +623,11 @@ void h2_context::enqueue_goaway(h2_code code, std::string message) {
     goawayframe.additional_debug_data = std::move(message);
     go_away_sent = true;
     outbox.push_back(goawayframe.serialise());
+}
+
+void h2_context::handle_connection_error(h2_code code, std::string message) {
+    std::scoped_lock lk(m_mut);
+    enqueue_goaway(code, std::move(message));
 }
 
 void h2_context::raise_stream_error(h2_code code, uint32_t stream_id) {

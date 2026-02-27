@@ -52,10 +52,10 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET_DIR)
 
-# Run the integration test suite against a locally built server.
-# The server is started and stopped automatically by pytest's session fixture.
+# Run the integration test suite against an already-running server.
+# Default target: localhost:8443.  Override with --server=host:port.
 # Prerequisites: python3 and pytest (pip3 install -r tests/requirements.txt).
-test: $(TARGET)
+test:
 	python3 -m pytest tests/ -v
 
 # Install Python test dependencies

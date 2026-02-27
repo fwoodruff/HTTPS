@@ -9,10 +9,8 @@ import socket
 import struct
 import time
 
-TEST_HOST = "127.0.0.1"
-# Can be overridden at collection time via the TEST_HTTPS_PORT env var,
-# which conftest.py sets when --server-port is passed.
-TEST_HTTPS_PORT = int(os.environ.get("TEST_HTTPS_PORT", "19443"))
+TEST_HOST       = os.environ.get("TEST_HOST",       "127.0.0.1")
+TEST_HTTPS_PORT = int(os.environ.get("TEST_HTTPS_PORT", "8443"))
 
 HTTP2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 

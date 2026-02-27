@@ -30,6 +30,7 @@ This has thrown up many curiosities and helped me harden the server.
 * Log output for a `fail2ban` dynamic firewall
 * Includes `gcc-14` C++23 features and some homemade implementations of C++26 [features](https://en.cppreference.com/w/cpp/header/hazard_pointer) for achieving lock-freedom
 * Supports FIPS 203 ML-KEM to protect against "harvest-now, decrypt-later" attacks
+* LLM-driven integration test suite in /tests/ folder
 
 </details>
 

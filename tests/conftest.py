@@ -12,6 +12,17 @@ Directory layout created under tests/resources/:
 The test config (tests/test_config.txt) uses paths relative to its own
 location, so global.cpp's relative_to() resolves them correctly regardless
 of the working directory.
+
+CLI options
+-----------
+--server-binary  : path to the binary to start (default: target/codeymccodeface)
+--server-port    : HTTPS port to connect to (default: 19443)
+--no-start-server: skip launching a binary; connect to an already-running server
+                   (combine with --server-port to target e.g. localhost:8443)
+
+Example — crash the unfixed main-branch server already running on port 8443:
+
+    python3 -m pytest tests/ -v --no-start-server --server-port=8443
 """
 
 import os
@@ -30,8 +41,51 @@ TEST_CONFIG_PATH = os.path.join(_HERE, "test_config.txt")
 TEST_RESOURCES   = os.path.join(_HERE, "resources")
 
 TEST_DOMAIN      = "localhost"
-TEST_HTTPS_PORT  = 19443
+TEST_HTTPS_PORT  = 19443          # default; overridden by --server-port
 TEST_HTTP_PORT   = 19080
+
+
+# ── CLI options ────────────────────────────────────────────────────────────────
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--server-binary",
+        action="store",
+        default=None,
+        help=(
+            "Path to the server binary under test.  "
+            "Defaults to target/codeymccodeface in the repo root.  "
+            "Pass a main-branch binary here to verify that the pre-fix "
+            "crashes are detected."
+        ),
+    )
+    parser.addoption(
+        "--server-port",
+        action="store",
+        default=None,
+        help=(
+            "HTTPS port to connect to (default: 19443).  "
+            "When --no-start-server is also passed this lets you target an "
+            "already-running server on a non-default port."
+        ),
+    )
+    parser.addoption(
+        "--no-start-server",
+        action="store_true",
+        default=False,
+        help=(
+            "Do not launch a server subprocess.  Instead, connect to a server "
+            "that is already running on --server-port (default 19443).  "
+            "Use this to run the crash tests against a live main-branch server."
+        ),
+    )
+
+
+def pytest_configure(config):
+    """Propagate --server-port to helpers.py via env var before test collection."""
+    port = config.getoption("--server-port", default=None)
+    if port is not None:
+        os.environ["TEST_HTTPS_PORT"] = str(port)
 
 
 # ── Resource setup ─────────────────────────────────────────────────────────────
@@ -106,25 +160,74 @@ def _wait_for_port(host: str, port: int, timeout: float = 10.0) -> bool:
     return False
 
 
+# ── External-server shim ───────────────────────────────────────────────────────
+
+class _ExternalServer:
+    """
+    Drop-in replacement for subprocess.Popen used when --no-start-server is
+    given.  Tests call server.poll() to check whether the server is still
+    alive; here we probe the port rather than a process exit code.
+
+    Returns None  (alive)   if a TCP connection to the port succeeds.
+    Returns -1    (dead)    if the connection is refused / times out.
+    """
+    def __init__(self, port: int) -> None:
+        self._port = port
+
+    def poll(self):
+        try:
+            s = socket.create_connection(("127.0.0.1", self._port), timeout=0.5)
+            s.close()
+            return None
+        except OSError:
+            return -1
+
+    def terminate(self): pass
+    def kill(self):      pass
+
+
 # ── Session-scoped server fixture ──────────────────────────────────────────────
 
 @pytest.fixture(scope="session")
-def server():
+def server(request):
     """
-    Start the HTTPS server with the test configuration.
-    The fixture yields the subprocess.Popen object so individual tests can
-    assert ``server.poll() is None`` to verify the process has not crashed.
+    Start the HTTPS server with the test configuration, or connect to one that
+    is already running (when --no-start-server is given).
+
+    The fixture yields an object whose .poll() method returns None while the
+    server is alive and non-None once it has crashed, allowing individual tests
+    to assert ``server.poll() is None``.
+
+    Typical usage:
+        make test                                  # test the bugs-branch binary
+        pytest tests/ --server-binary=<path>       # test an arbitrary binary
+        pytest tests/ --no-start-server            # target server on port 19443
+        pytest tests/ --no-start-server \\
+                      --server-port=8443           # target server on port 8443
     """
+    port      = int(request.config.getoption("--server-port") or TEST_HTTPS_PORT)
+    no_start  = request.config.getoption("--no-start-server")
+    binary    = request.config.getoption("--server-binary") or SERVER_BINARY
+
+    if no_start:
+        if not _wait_for_port("127.0.0.1", port, timeout=5.0):
+            pytest.fail(
+                f"--no-start-server: no server found on 127.0.0.1:{port} "
+                f"(is the server running?)"
+            )
+        yield _ExternalServer(port)
+        return
+
     _setup_resources()
 
     proc = subprocess.Popen(
-        [SERVER_BINARY, "--config", TEST_CONFIG_PATH],
+        [binary, "--config", TEST_CONFIG_PATH],
         cwd=_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,     # capture stderr to aid debugging on failure
     )
 
-    if not _wait_for_port("127.0.0.1", TEST_HTTPS_PORT, timeout=15.0):
+    if not _wait_for_port("127.0.0.1", port, timeout=15.0):
         proc.terminate()
         _, err = proc.communicate(timeout=5)
         pytest.fail(

@@ -10,7 +10,9 @@ import struct
 import time
 
 TEST_HOST = "127.0.0.1"
-TEST_HTTPS_PORT = 19443
+# Can be overridden at collection time via the TEST_HTTPS_PORT env var,
+# which conftest.py sets when --server-port is passed.
+TEST_HTTPS_PORT = int(os.environ.get("TEST_HTTPS_PORT", "19443"))
 
 HTTP2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
@@ -156,23 +158,36 @@ def ext_alpn_h2() -> bytes:
     return build_extension(0x0010, struct.pack(">H", len(proto_list)) + proto_list)
 
 
-def build_raw_client_hello(extra_extensions: bytes) -> bytes:
+def build_raw_client_hello(
+    extra_extensions: bytes,
+    *,
+    skip_supported_versions: bool = False,
+    skip_key_share: bool = False,
+) -> bytes:
     """
-    Build a TLS record wrapping a ClientHello.  The hello contains the
-    minimum extensions required for TLS 1.3 (supported_versions, key_share,
-    ALPN) plus any *extra_extensions* appended at the end.
+    Build a TLS record wrapping a ClientHello.
+
+    By default the hello contains the minimum extensions required for TLS 1.3
+    (supported_versions, key_share, ALPN) plus any *extra_extensions* appended
+    at the end.
+
+    Pass ``skip_supported_versions=True`` or ``skip_key_share=True`` to omit
+    the corresponding standard extension.  This is useful when a test needs to
+    supply its own (possibly malformed) copy of that extension as the *only*
+    occurrence in the hello so that the server must process it.
     """
     random_bytes = os.urandom(32)
     session_id = bytes([32]) + bytes(32)            # 32-byte fake session ID
     ciphers = struct.pack(">H", 0x1301)             # TLS_AES_128_GCM_SHA256
     compression = bytes([1, 0])                     # null compression
 
-    extensions = (
-        ext_supported_versions_tls13()
-        + ext_key_share_x25519()
-        + ext_alpn_h2()
-        + extra_extensions
-    )
+    extensions = b""
+    if not skip_supported_versions:
+        extensions += ext_supported_versions_tls13()
+    if not skip_key_share:
+        extensions += ext_key_share_x25519()
+    extensions += ext_alpn_h2()
+    extensions += extra_extensions
 
     hello_body = (
         bytes([0x03, 0x03])                         # legacy version: TLS 1.2
@@ -188,11 +203,14 @@ def build_raw_client_hello(extra_extensions: bytes) -> bytes:
     return bytes([0x16, 0x03, 0x01]) + struct.pack(">H", len(handshake)) + handshake
 
 
-def send_raw_client_hello(extra_extensions: bytes) -> socket.socket:
+def send_raw_client_hello(extra_extensions: bytes, **kw) -> socket.socket:
     """
     Send a ClientHello with extra_extensions over a plain TCP socket and
     return the socket (caller is responsible for closing it).
+
+    Keyword arguments are forwarded to ``build_raw_client_hello``
+    (e.g. ``skip_supported_versions=True``).
     """
     s = socket.create_connection((TEST_HOST, TEST_HTTPS_PORT), timeout=5)
-    s.sendall(build_raw_client_hello(extra_extensions))
+    s.sendall(build_raw_client_hello(extra_extensions, **kw))
     return s

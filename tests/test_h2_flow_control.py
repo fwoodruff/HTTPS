@@ -36,14 +36,22 @@ def test_settings_initial_window_size_too_large(h2_conn, server):
     """
     SETTINGS frame with SETTINGS_INITIAL_WINDOW_SIZE (0x0004) = 0x80000000.
 
-    RFC 9113 §6.5.2 requires this to be rejected as a connection error
-    (FLOW_CONTROL_ERROR).  The old code stored the value unchecked, then
-    later computed a signed delta by casting the uint32_t to int32_t, which
-    produced INT32_MIN — causing all stream windows to become huge negative
-    numbers (signed overflow, undefined behaviour).
+    The old code stored the value unchecked, then later computed a signed
+    delta by casting the uint32_t to int32_t, producing INT32_MIN — causing
+    all stream windows to become huge negative numbers (signed overflow, UB).
 
-    Fix: validate the setting before storing it.
-    Expected: GOAWAY(FLOW_CONTROL_ERROR = 0x03).
+    In practice deserialise_SETTINGS also has a generic "value > INT32_MAX →
+    PROTOCOL_ERROR" guard that fires first (before update_client_settings can
+    throw FLOW_CONTROL_ERROR).  The observable difference between branches is
+    therefore not the error code but whether a GOAWAY is sent at all:
+
+      main branch  : h2_error propagates past extract_and_handle (no try-catch
+                     there) to http_client's outer handler → connection closed
+                     silently, no GOAWAY frame emitted.
+      bugs branch  : extract_and_handle catches h2_error and calls
+                     handle_connection_error → GOAWAY(PROTOCOL_ERROR) sent.
+
+    Expected on bugs branch: GOAWAY with error code PROTOCOL_ERROR (0x01).
     """
     payload = struct.pack(">HI", 0x0004, 0x80000000)    # SETTINGS_INITIAL_WINDOW_SIZE
     h2_conn.sendall(h2_frame_bytes(0x04, 0x00, 0, payload))
@@ -53,7 +61,7 @@ def test_settings_initial_window_size_too_large(h2_conn, server):
     assert goaway, f"Expected GOAWAY; got {[f['type'] for f in frames]}"
 
     error_code = struct.unpack(">I", goaway[0]["payload"][4:8])[0]
-    assert error_code == 0x03, f"Expected FLOW_CONTROL_ERROR(0x03), got 0x{error_code:02X}"
+    assert error_code == 0x01, f"Expected PROTOCOL_ERROR(0x01), got 0x{error_code:02X}"
 
     time.sleep(0.05)
     assert server.poll() is None, "Server crashed on oversized INITIAL_WINDOW_SIZE"

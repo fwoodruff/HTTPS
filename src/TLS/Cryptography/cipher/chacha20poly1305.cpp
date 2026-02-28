@@ -136,7 +136,7 @@ constexpr u192 prime130_5 ("0x3fffffffffffffffffffffffffffffffb");
 constexpr u192 magic_poly("0xa3d70a3d70a3d70cccccccccccccccccccccccccccccccd");
 constexpr u192 poly_RRP ("0x190000000000000000000000000000000");
 
-u192 add_mod(u192 x, u192 y, u192 mod) noexcept {
+[[gnu::always_inline]] u192 add_mod(u192 x, u192 y, u192 mod) noexcept {
     auto sum = x + y;
     ct_u256 wide = ct_u256(sum) - ct_u256(mod);
     u192 borrow = u192(wide >> 192);
@@ -153,7 +153,7 @@ ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
 }
 
 // program bottlenecks here so using the intrusive REDC form
-constexpr u192 REDCpoly(u384 aR) noexcept {
+[[gnu::always_inline]] constexpr u192 REDCpoly(u384 aR) noexcept {
     using radix = u192::radix;
     using radix2 = u192::radix2;
     u192 a;
@@ -179,7 +179,7 @@ constexpr u192 REDCpoly(u384 aR) noexcept {
     return add_mod(a, u192{}, prime130_5);
 }
 
-void poly1305_absorb(u192& accumulator, const u192& rMonty, std::span<const uint8_t> block) noexcept {
+[[gnu::always_inline]] void poly1305_absorb(u192& accumulator, const u192& rMonty, std::span<const uint8_t> block) noexcept {
     std::array<uint8_t, 24> inp {};
     std::copy_n(block.data(), block.size(), inp.rbegin());
     inp[23 - block.size()] = 1;

@@ -35,6 +35,11 @@ jobs:
           command: |
             make test
       - run:
+          name: Build and run benchmark
+          command: |
+            make bench
+            ./target/bench_chacha
+      - run:
           name: Test session tickets
           command: |
             echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" > request.txt

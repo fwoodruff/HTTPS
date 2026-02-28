@@ -195,28 +195,15 @@ void poly1305_absorb(u192& accumulator, const u192& rMonty, std::span<const uint
     accumulator = REDCpoly(accumulator * rMonty);
 }
 
-void poly1305_update(u192& accumulator, const u192& rMonty, std::span<const uint8_t> data) noexcept {
+void poly1305_update_padded(u192& accumulator, const u192& rMonty, std::span<const uint8_t> data) noexcept {
     size_t i = 0;
     for (; i + 16 <= data.size(); i += 16)
         poly1305_absorb(accumulator, rMonty, data.subspan(i, 16));
-    if (i < data.size())
-        poly1305_absorb(accumulator, rMonty, data.subspan(i));
-}
-
-std::array<uint8_t, TAG_SIZE> poly1305_mac(u192& accumulator, const u192& rMonty, const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
-
-    std::array<uint8_t, 24> s_bytes {0};
-    std::copy_n(&key[16], 16, s_bytes.rbegin());
-    u192 s(s_bytes);
-
-    poly1305_update(accumulator, rMonty, message);
-    accumulator = REDCpoly(u384(accumulator));
-
-    accumulator += s;
-    auto out = accumulator.serialise();
-    std::array<uint8_t, TAG_SIZE> out_str;
-    std::copy_n(out.rbegin(), TAG_SIZE, out_str.begin());
-    return out_str;
+    if (i < data.size()) {
+        std::array<uint8_t, 16> block {};
+        std::copy_n(data.data() + i, data.size() - i, block.begin());
+        poly1305_absorb(accumulator, rMonty, block);
+    }
 }
 
 std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once) {
@@ -232,41 +219,38 @@ chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t
     
     auto otk = poly1305_key_gen(key, number_once);
 
-    size_t padaad = ((aad.size()+15)/16)*16 - aad.size();
-    std::array<uint8_t, 8> aad_size {};
-    std::array<uint8_t, 8> cip_size {};
-    for(int i = 0; i < 4; i++) {
-        aad_size[i] = (aad.size() >> (8*i)) & 0xff;
-        cip_size[i] = (text.size() >> (8*i)) & 0xff;
-    }
-
-    size_t padcipher = ((text.size()+15)/16)*16 - text.size();
-    std::vector<uint8_t> mac_data;
-    mac_data.insert(mac_data.end(), aad.begin(), aad.end());
-    mac_data.insert(mac_data.end(), padaad, 0);
-
-    if(do_encrypt) {
-        chacha20_xorcrypt(key, 1, number_once, text);
-        auto ciphertext = std::span<uint8_t>(text);
-        mac_data.insert(mac_data.end(), ciphertext.begin(), ciphertext.end());
-    } else {
-        mac_data.insert(mac_data.end(), text.begin(), text.end());
-        chacha20_xorcrypt(key, 1, number_once, text);
-    }
-    
-    mac_data.insert(mac_data.end(), padcipher, 0);
-    mac_data.insert(mac_data.end(), aad_size.begin(), aad_size.end());
-    mac_data.insert(mac_data.end(), cip_size.begin(), cip_size.end());
-
     std::array<uint8_t, 24> r_bytes {};
     std::copy_n(otk.data(), 16, r_bytes.begin());
     poly1305_clamp(r_bytes.data());
     std::reverse(r_bytes.begin(), r_bytes.end());
     u192 rMonty = REDCpoly(u192(r_bytes) * poly_RRP);
 
+    std::array<uint8_t, 24> s_bytes {};
+    std::copy_n(&otk[16], 16, s_bytes.rbegin());
+    u192 s(s_bytes);
     u192 accumulator {"0x0"};
-    auto tag = poly1305_mac(accumulator, rMonty, mac_data, otk);
-    return tag;
+
+    std::array<uint8_t, 16> footer {};
+    for(int i = 0; i < 4; i++) {
+        footer[i]   = (aad.size()  >> (8*i)) & 0xff;
+        footer[8+i] = (text.size() >> (8*i)) & 0xff;
+    }
+
+    poly1305_update_padded(accumulator, rMonty, aad);
+    if(do_encrypt) {
+        chacha20_xorcrypt(key, 1, number_once, text);
+        poly1305_update_padded(accumulator, rMonty, text);
+    } else {
+        poly1305_update_padded(accumulator, rMonty, text);
+        chacha20_xorcrypt(key, 1, number_once, text);
+    }
+    poly1305_absorb(accumulator, rMonty, footer);
+    accumulator = REDCpoly(u384(accumulator));
+    accumulator += s;
+    auto out = accumulator.serialise();
+    std::array<uint8_t, TAG_SIZE> out_str;
+    std::copy_n(out.rbegin(), TAG_SIZE, out_str.begin());
+    return out_str;
 }
 
 void ChaCha20_Poly1305_tls13::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {

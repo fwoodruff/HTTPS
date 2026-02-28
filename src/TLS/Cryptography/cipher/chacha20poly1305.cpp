@@ -203,8 +203,8 @@ void poly1305_update(u192& accumulator, const u192& rMonty, std::span<const uint
         poly1305_absorb(accumulator, rMonty, data.subspan(i));
 }
 
-std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
-    
+std::array<uint8_t, TAG_SIZE> poly1305_mac(u192& accumulator, const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
+
     std::array<uint8_t, 24> r_bytes {0};
     std::copy_n(&key[0], 16, r_bytes.begin());
     poly1305_clamp(&r_bytes[0]);
@@ -213,7 +213,6 @@ std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> messag
     std::array<uint8_t, 24> s_bytes {0};
     std::copy_n(&key[16], 16, s_bytes.rbegin());
 
-    u192 accumulator{"0x0"};
     u192 r(r_bytes);
     u192 s(s_bytes);
 
@@ -268,7 +267,8 @@ chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t
     mac_data.insert(mac_data.end(), aad_size.begin(), aad_size.end());
     mac_data.insert(mac_data.end(), cip_size.begin(), cip_size.end());
 
-    auto tag = poly1305_mac(mac_data, otk);
+    u192 accumulator {"0x0"};
+    auto tag = poly1305_mac(accumulator, mac_data, otk);
     return tag;
 }
 

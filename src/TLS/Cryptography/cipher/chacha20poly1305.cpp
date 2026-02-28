@@ -99,7 +99,7 @@ void chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             const std::array<uint8_t, IV_SIZE>& number_once,
                             const std::span<uint8_t> message) {
 
-    if(message.empty()) {
+    if(message.empty()) [[unlikely]]{
         return;
     }
     auto state = chacha20_state(key, number_once);
@@ -136,6 +136,22 @@ constexpr u192 prime130_5 ("0x3fffffffffffffffffffffffffffffffb");
 constexpr u192 magic_poly("0xa3d70a3d70a3d70cccccccccccccccccccccccccccccccd");
 constexpr u192 poly_RRP ("0x190000000000000000000000000000000");
 
+u192 add_mod(u192 x, u192 y, u192 mod) noexcept {
+    auto sum = x + y;
+    ct_u256 wide = ct_u256(sum) - ct_u256(mod);
+    u192 borrow = u192(wide >> 192);
+    u192 mask = borrow | (borrow << 64) | (borrow << 128);
+    return (u192(wide) & ~mask) | (sum & mask);
+}
+
+ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
+    ct_u512 wide = ct_u512(x) - ct_u512(y);
+    ct_u256 diff = ct_u256(wide);
+    ct_u256 wrapped = diff + mod;
+    ct_u256 mask = ct_u256(wide >> 256);
+    return (diff & ~mask) | (wrapped & mask);
+}
+
 // program bottlenecks here so using the intrusive REDC form
 constexpr u192 REDCpoly(u384 aR) noexcept {
     using radix = u192::radix;
@@ -160,28 +176,7 @@ constexpr u192 REDCpoly(u384 aR) noexcept {
     for(size_t i = 0; i < prime130_5.v.size(); i++) {
         a.v[i] = aR.v[i + prime130_5.v.size()];
     }
-    if(a > prime130_5) [[unlikely]] {
-        return a - prime130_5;
-    }
-    return a;
-}
-
-
-u192 add_mod(u192 x, u192 y , u192 mod) noexcept {
-    auto sum = x + y;
-    assert(sum >= x);
-    if (sum > mod) { // todo constant time
-        sum -= mod;
-    }
-    return sum;
-}
-
-ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
-    if(x > y) { // todo: constant time
-        return x - y;
-    } else {
-        return (mod - y) + x;
-    }
+    return add_mod(a, u192{}, prime130_5);
 }
 
 void poly1305_absorb(u192& accumulator, const u192& rMonty, std::span<const uint8_t> block) noexcept {
@@ -317,7 +312,11 @@ std::vector<uint8_t> ChaCha20_Poly1305_ctx::decrypt(std::vector<uint8_t> ciphert
     auto number_once = make_number_once(client_implicit_write_IV, seqno_client);
     seqno_client++;
     auto tag_recalc = chacha20_aead_crypt(additional_data, client_write_key, number_once, ciphertext, false);
-    if(tag != tag_recalc) [[unlikely]] {
+    uint8_t diff = 0;
+    for (size_t i = 0; i < TAG_SIZE; i++) {
+        diff |= tag[i] ^ tag_recalc[i];
+    }
+    if(diff != 0) [[unlikely]] {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     if(ciphertext.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {

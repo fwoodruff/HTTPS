@@ -187,38 +187,41 @@ ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
     }
 }
 
+void poly1305_absorb(u192& accumulator, const u192& rMonty, std::span<const uint8_t> block) noexcept {
+    std::array<uint8_t, 24> inp {};
+    std::copy_n(block.data(), block.size(), inp.rbegin());
+    inp[23 - block.size()] = 1;
+    accumulator = add_mod(accumulator, REDCpoly(u192(inp) * poly_RRP), prime130_5);
+    accumulator = REDCpoly(accumulator * rMonty);
+}
+
+void poly1305_update(u192& accumulator, const u192& rMonty, std::span<const uint8_t> data) noexcept {
+    size_t i = 0;
+    for (; i + 16 <= data.size(); i += 16)
+        poly1305_absorb(accumulator, rMonty, data.subspan(i, 16));
+    if (i < data.size())
+        poly1305_absorb(accumulator, rMonty, data.subspan(i));
+}
+
 std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
     
     std::array<uint8_t, 24> r_bytes {0};
     std::copy_n(&key[0], 16, r_bytes.begin());
     poly1305_clamp(&r_bytes[0]);
     std::reverse(r_bytes.begin(), r_bytes.end());
-    
+
     std::array<uint8_t, 24> s_bytes {0};
     std::copy_n(&key[16], 16, s_bytes.rbegin());
 
     u192 accumulator{"0x0"};
     u192 r(r_bytes);
     u192 s(s_bytes);
-    
+
     auto rMonty = REDCpoly(r * poly_RRP);
 
-    for(size_t i = 0; i < ((message.size()+15)/16)*16; i+=16) {
-        std::array<uint8_t,24> inp {0};
-        assert(message.size() > i);
-        
-        auto siz = std::min(static_cast<size_t>(16), message.size() - i);
-        
-        std::copy_n(&message[i], siz, inp.rbegin());
-        inp[23-siz] = 1;
-
-        accumulator = add_mod(accumulator, REDCpoly(u192(inp) * poly_RRP), prime130_5);
-        accumulator = REDCpoly(accumulator * rMonty);
-        
-         
-    }
+    poly1305_update(accumulator, rMonty, message);
     accumulator = REDCpoly(u384(accumulator));
-    
+
     accumulator += s;
     auto out = accumulator.serialise();
     std::array<uint8_t, TAG_SIZE> out_str;

@@ -48,6 +48,17 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 -include $(patsubst %.o,%.d,$(OBJ))
 
+BENCH_OBJ := $(filter-out $(OBJ_DIR)/main.o, $(OBJ)) $(OBJ_DIR)/bench/bench_chacha.o
+
+$(OBJ_DIR)/bench/bench_chacha.o: bench/bench_chacha.cpp
+	@mkdir -p $(OBJ_DIR)/bench
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+bench: $(BENCH_OBJ)
+	@mkdir -p $(TARGET_DIR)
+	$(CXX) $(CXXFLAGS) $(BENCH_OBJ) $(LDFLAGS) -o $(TARGET_DIR)/bench_chacha
+
+
 # Clean rule
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET_DIR)
@@ -59,4 +70,4 @@ test-deps:
 	pip3 install -r llm-tests/requirements.txt --break-system-packages
 
 # Phony target to prevent conflicts with files named "clean"
-.PHONY: clean test test-deps
+.PHONY: clean test test-deps bench

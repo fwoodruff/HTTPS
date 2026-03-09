@@ -35,6 +35,11 @@ jobs:
           command: |
             make test
       - run:
+          name: Build and run benchmark
+          command: |
+            make bench
+            ./target/bench_chacha
+      - run:
           name: Test session tickets
           command: |
             echo -e "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n" > request.txt
@@ -57,12 +62,15 @@ jobs:
             c_id=$(docker create containerymccontainerface)
             mkdir -p target
             docker cp $c_id:/target/codeymccodeface target/codeymccodeface.armv6
+            docker cp $c_id:/target/bench_chacha target/bench_chacha.armv6
             sudo docker rm -f "$c_id" >/dev/null
             test -x target/codeymccodeface.armv6
+            test -x target/bench_chacha.armv6
       - persist_to_workspace:
           root: .
           paths:
             - target/codeymccodeface.armv6
+            - target/bench_chacha.armv6
 
   deploy:
     docker:
@@ -81,6 +89,7 @@ jobs:
           name: Copy binary to Raspberry Pi
           command: |
             scp -o StrictHostKeyChecking=no -o BatchMode=yes target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
+            scp -o StrictHostKeyChecking=no -o BatchMode=yes target/bench_chacha.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
             rsync -avz --delete resources/MIME/ freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/MIME/
             rsync -avz --delete resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
             scp -o StrictHostKeyChecking=no live_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/config.txt
@@ -92,6 +101,7 @@ jobs:
               [ -f codey.pid ] && sudo kill $(cat codey.pid) || true;
               rm -f codey.pid;
               mv codeymccodeface.armv6 codeymccodeface
+              mv bench_chacha.armv6 bench_chacha
               sudo sh -c "nohup ./codeymccodeface --config config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
             '
 

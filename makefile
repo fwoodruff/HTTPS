@@ -21,6 +21,8 @@ SRC_DIR := src
 OBJ_DIR := objects
 TARGET_DIR := target
 
+CXXFLAGS += -I $(SRC_DIR)
+
 # Source files
 SRC := $(wildcard $(SRC_DIR)/*.cpp) \
 	   $(wildcard $(SRC_DIR)/**/*.cpp) \
@@ -34,21 +36,24 @@ OBJ_SUBDIRS := $(sort $(dir $(OBJ)))
 
 # Target executable
 TARGET := $(TARGET_DIR)/codeymccodeface
+MAIN_OBJ := $(OBJ_DIR)/main.o
 
-# Compile and link
-$(TARGET): $(OBJ)
+$(TARGET): $(OBJ) $(MAIN_OBJ)
 	@mkdir -p $(TARGET_DIR)
 	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
-#	strip $(TARGET)
 
 # Compile source files into object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(OBJ_SUBDIRS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
--include $(patsubst %.o,%.d,$(OBJ))
+$(MAIN_OBJ): main.cpp
+	@mkdir -p $(OBJ_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-BENCH_OBJ := $(filter-out $(OBJ_DIR)/main.o, $(OBJ)) $(OBJ_DIR)/bench/bench_chacha.o
+-include $(patsubst %.o,%.d,$(OBJ) $(MAIN_OBJ))
+
+BENCH_OBJ := $(OBJ) $(OBJ_DIR)/bench/bench_chacha.o
 
 $(OBJ_DIR)/bench/bench_chacha.o: bench/bench_chacha.cpp
 	@mkdir -p $(OBJ_DIR)/bench

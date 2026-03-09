@@ -14,8 +14,11 @@ ENV PATH="/opt/x-tools/armv6-rpi-linux-gnueabihf/bin:${PATH}"
 
 WORKDIR /
 COPY src/ src/
+COPY bench/ bench/
+COPY main.cpp .
 COPY makefile .
 
-RUN make PLATFORM=armv6 -j$(nproc)
+RUN make PLATFORM=armv6 -j$(nproc) && make PLATFORM=armv6 bench
 
 RUN readelf -A /target/codeymccodeface | grep Tag_
+RUN readelf -A /target/bench_chacha | grep Tag_

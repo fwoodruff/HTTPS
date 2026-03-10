@@ -21,4 +21,4 @@ COPY makefile .
 RUN make PLATFORM=armv6 -j$(nproc) && make PLATFORM=armv6 bench
 
 RUN readelf -A /target/codeymccodeface | grep Tag_
-RUN readelf -A /target/bench_chacha | grep Tag_
+RUN readelf -A /target/bench_crypto | grep Tag_

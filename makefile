@@ -53,15 +53,15 @@ $(MAIN_OBJ): main.cpp
 
 -include $(patsubst %.o,%.d,$(OBJ) $(MAIN_OBJ))
 
-BENCH_OBJ := $(OBJ) $(OBJ_DIR)/bench/bench_chacha.o
+BENCH_OBJ := $(OBJ) $(OBJ_DIR)/bench/bench_crypto.o
 
-$(OBJ_DIR)/bench/bench_chacha.o: bench/bench_chacha.cpp
+$(OBJ_DIR)/bench/bench_crypto.o: bench/bench_crypto.cpp
 	@mkdir -p $(OBJ_DIR)/bench
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 bench: $(BENCH_OBJ)
 	@mkdir -p $(TARGET_DIR)
-	$(CXX) $(CXXFLAGS) $(BENCH_OBJ) $(LDFLAGS) -o $(TARGET_DIR)/bench_chacha
+	$(CXX) $(CXXFLAGS) $(BENCH_OBJ) $(LDFLAGS) -o $(TARGET_DIR)/bench_crypto
 
 
 # Clean rule

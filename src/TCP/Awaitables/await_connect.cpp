@@ -22,18 +22,30 @@ namespace fbw {
 // Opens a non-blocking socket and calls connect(). Returns the fd, or -1 on hard error.
 // Sets out_immediate=true if the connection succeeded without EINPROGRESS.
 static int begin_connect(const std::string& host, uint16_t port, bool& out_immediate) {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    bool is_ipv6 = host.find(':') != std::string::npos;
+    int fd = ::socket(is_ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
     if (::fcntl(fd, F_SETFL, O_NONBLOCK) < 0) {
         ::close(fd); return -1;
     }
-    struct sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
-        ::close(fd); return -1;
+    int r;
+    if (is_ipv6) {
+        struct sockaddr_in6 addr{};
+        addr.sin6_family = AF_INET6;
+        addr.sin6_port = htons(port);
+        if (::inet_pton(AF_INET6, host.c_str(), &addr.sin6_addr) <= 0) {
+            ::close(fd); return -1;
+        }
+        r = ::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    } else {
+        struct sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        if (::inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
+            ::close(fd); return -1;
+        }
+        r = ::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
     }
-    int r = ::connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
     if (r < 0 && errno != EINPROGRESS) {
         ::close(fd); return -1;
     }

@@ -106,10 +106,22 @@ void init_options(std::filesystem::path config_file) {
             }
             // parse backend: "host:port[/path]"
             auto& back = parts[1];
-            auto colon = back.find(':');
-            if (colon == std::string::npos) continue;
-            rule.backend_host = back.substr(0, colon);
-            auto port_and_path = back.substr(colon + 1);
+            std::string port_and_path;
+            if (!back.empty() && back[0] == '[') {
+                auto close = back.find(']');
+                if (close == std::string::npos || close + 1 >= back.size() || back[close + 1] != ':') {
+                    continue;
+                }
+                rule.backend_host = back.substr(1, close - 1);
+                port_and_path = back.substr(close + 2);
+            } else {
+                auto colon = back.find(':');
+                if (colon == std::string::npos) {
+                    continue;
+                }
+                rule.backend_host = back.substr(0, colon);
+                port_and_path = back.substr(colon + 1);
+            }
             auto path_slash = port_and_path.find('/');
             if (path_slash != std::string::npos) {
                 rule.backend_port = static_cast<uint16_t>(std::stoi(port_and_path.substr(0, path_slash)));

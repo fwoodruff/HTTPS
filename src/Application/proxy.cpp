@@ -28,7 +28,9 @@ task<void> handle_proxy_request(http_ctx& conn,
     }
     auto& backend = *backend_opt;
     std::string stripped = path.substr(rule.frontend_path.size());
-    if (stripped.empty() || stripped[0] == '?') stripped = "/" + stripped;
+    if (stripped.empty() || stripped[0] == '?') {
+        stripped = "/" + stripped;
+    }
     std::string backend_request_path = rule.backend_path + stripped;
 
     // Build HTTP/1.1 request

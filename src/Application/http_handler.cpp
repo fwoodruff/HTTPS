@@ -347,8 +347,12 @@ task<bool> handle_request(http_ctx& connection) {
         }
     }
     
-    auto file_host = dir_host.starts_with("localhost") ? project_options.default_subfolder.string() : dir_host;
-    auto file_path = (webroot/file_host/(safe_path.relative_path()));
+    auto file_path = webroot / dir_host / safe_path.relative_path();
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::weakly_canonical(file_path), ec)) {
+        file_path = webroot / project_options.default_subfolder / safe_path.relative_path();
+    }
+
     auto canonical_webroot = std::filesystem::canonical(webroot);
     auto canonical_file = std::filesystem::weakly_canonical(file_path);
 

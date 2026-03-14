@@ -9,3 +9,4 @@ TLD_FILE=resources/tld.txt
 MIME_FOLDER=resources/MIME
 HTTP_STRICT_TRANSPORT_SECURITY=false
 IP_BAN_PATH=/var/log/ip_ban.txt
+PROXY_ENDPOINTS=freddiewoodruff.co.uk/llm,192.168.1.152:50000

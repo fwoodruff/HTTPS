@@ -88,6 +88,44 @@ void init_options(std::filesystem::path config_file) {
     auto ip_log_file = option_map.at( "IP_BAN_PATH");
     project_options.ip_ban_file = relative_to(ip_log_file, config_file);
 
+    // PROXY_ENDPOINTS=host/path,backend:port/bpath;host2/path2,backend2:port2
+    auto proxy_it = option_map.find("PROXY_ENDPOINTS");
+    if (proxy_it != option_map.end()) {
+        for (const auto& entry : split(proxy_it->second, ";")) {
+            auto parts = split(entry, ",");
+            if (parts.size() != 2) continue;
+            proxy_rule rule;
+            // parse frontend: "host/path"
+            auto& front = parts[0];
+            auto slash = front.find('/');
+            if (slash == std::string::npos) {
+                rule.frontend_host = front; // no path → match any path on this host
+            } else {
+                rule.frontend_host = front.substr(0, slash);
+                rule.frontend_path = front.substr(slash); // includes leading '/'
+            }
+            // parse backend: "host:port[/path]"
+            auto& back = parts[1];
+            auto colon = back.find(':');
+            if (colon == std::string::npos) continue;
+            rule.backend_host = back.substr(0, colon);
+            auto port_and_path = back.substr(colon + 1);
+            auto path_slash = port_and_path.find('/');
+            if (path_slash != std::string::npos) {
+                rule.backend_port = static_cast<uint16_t>(std::stoi(port_and_path.substr(0, path_slash)));
+                rule.backend_path = port_and_path.substr(path_slash);
+            } else {
+                rule.backend_port = static_cast<uint16_t>(std::stoi(port_and_path));
+            }
+            project_options.proxy_endpoints.push_back(std::move(rule));
+        }
+        // longer frontend_path wins over shorter one (most specific first)
+        std::stable_sort(project_options.proxy_endpoints.begin(), project_options.proxy_endpoints.end(),
+            [](const proxy_rule& a, const proxy_rule& b) {
+                return a.frontend_path.size() > b.frontend_path.size();
+            });
+    }
+
     using namespace std::chrono_literals;
     // static configurables
     project_options.session_timeout = 3600s;

@@ -13,6 +13,7 @@
 #include "../TLS/Cryptography/one_way/keccak.hpp"
 #include "../global.hpp"
 #include "websockets.hpp"
+#include "proxy.hpp"
 
 #include <algorithm>
 #include <string>
@@ -331,6 +332,23 @@ task<bool> handle_request(http_ctx& connection) {
     auto webroot = project_options.webpage_folder;
 
     auto dir_host = get_host(request_headers);
+
+    // Reverse proxy: match by host + path prefix
+    if (!project_options.proxy_endpoints.empty()) {
+        std::string path_str = *path;
+        auto qmark = path_str.find('?');
+        std::string path_only = (qmark != std::string::npos) ? path_str.substr(0, qmark) : path_str;
+        for (const auto& rule : project_options.proxy_endpoints) {
+            bool path_matches = rule.frontend_path.empty() ||
+                                path_only == rule.frontend_path ||
+                                path_only.starts_with(rule.frontend_path + "/") ||
+                                path_only.starts_with(rule.frontend_path + "?");
+            if (rule.frontend_host == dir_host && path_matches) {
+                co_await handle_proxy_request(connection, *method, path_str, request_headers, rule);
+                co_return true;
+            }
+        }
+    }
     
     auto file_path = (webroot/dir_host/(safe_path.relative_path()));
     auto canonical_webroot = std::filesystem::canonical(webroot);

@@ -32,6 +32,16 @@ constexpr long MAX_HEADER_FIELD_SIZE = 5000;
 constexpr long MAX_URI_SIZE = 5000;
 constexpr long MAX_BODY_SIZE = 8192;
 
+// One entry from PROXY_ENDPOINTS=host/path,backend:port/backend_path;...
+// Requests matching frontend_host + frontend_path prefix are forwarded to backend_host:backend_port.
+struct proxy_rule {
+    std::string frontend_host;
+    std::string frontend_path;
+    std::string backend_host;
+    uint16_t    backend_port = 0;
+    std::string backend_path;
+};
+
 struct options {
     std::string redirect_port;
     std::string server_port;
@@ -48,6 +58,7 @@ struct options {
     std::chrono::milliseconds keep_alive;
     std::chrono::milliseconds error_timeout;
     std::chrono::milliseconds handshake_timeout;
+    std::vector<proxy_rule> proxy_endpoints;
 };
 
 extern options project_options;

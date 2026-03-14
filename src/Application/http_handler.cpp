@@ -291,9 +291,6 @@ std::string get_host(const std::vector<entry_t>& request_headers) {
     } else if(host) {
         dir_host = *host;
     }
-    if(dir_host.starts_with("localhost")) {
-        dir_host = project_options.default_subfolder;
-    }
     auto p = dir_host.rfind(':');
     if(p != std::string::npos) {
         dir_host.erase(p);
@@ -350,7 +347,8 @@ task<bool> handle_request(http_ctx& connection) {
         }
     }
     
-    auto file_path = (webroot/dir_host/(safe_path.relative_path()));
+    auto file_host = dir_host.starts_with("localhost") ? project_options.default_subfolder.string() : dir_host;
+    auto file_path = (webroot/file_host/(safe_path.relative_path()));
     auto canonical_webroot = std::filesystem::canonical(webroot);
     auto canonical_file = std::filesystem::weakly_canonical(file_path);
 

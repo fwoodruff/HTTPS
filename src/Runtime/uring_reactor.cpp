@@ -34,7 +34,7 @@ static int sys_io_uring_setup(uint32_t entries, struct io_uring_params* p) {
 }
 static int sys_io_uring_enter(int fd, uint32_t to_submit, uint32_t min_complete,
                                uint32_t flags) {
-    // Last two args: sigset_t* and size_t — pass null/0 for no signal mask change
+    // Last two args: sigset_t* and size_t - pass null/0 for no signal mask change
     return (int)syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags,
                         (sigset_t*)nullptr, (size_t)(_NSIG / 8));
 }
@@ -61,7 +61,7 @@ uring_reactor::uring_reactor() {
         throw std::runtime_error("mmap SQ/CQ ring failed");
     }
 
-    // SQE array — separate mmap
+    // SQE array - separate mmap
     m_sqes_sz = p.sq_entries * sizeof(struct io_uring_sqe);
     m_sqes_ptr = ::mmap(nullptr, m_sqes_sz, PROT_READ | PROT_WRITE,
                         MAP_SHARED | MAP_POPULATE, m_ring_fd, IORING_OFF_SQES);
@@ -96,7 +96,7 @@ struct io_uring_sqe* uring_reactor::get_sqe_locked() {
     // Caller holds m_mut; advance the shadow tail so consecutive calls get distinct slots
     uint32_t head = __atomic_load_n(m_sq_head, __ATOMIC_ACQUIRE);
     if (m_sq_tail_local - head > m_sq_ring_mask) {
-        // Ring full — this should not happen with a 256-entry ring in practice
+        // Ring full - this should not happen with a 256-entry ring in practice
         assert(false && "SQ ring full");
     }
     uint32_t idx = m_sq_tail_local & m_sq_ring_mask;
@@ -228,7 +228,7 @@ void uring_reactor::sleep_until(std::coroutine_handle<> handle,
 }
 
 // -----------------------------------------------------------------------
-// Notification — submit a NOP that completes immediately
+// Notification - submit a NOP that completes immediately
 // -----------------------------------------------------------------------
 
 void uring_reactor::notify() {
@@ -245,7 +245,7 @@ size_t uring_reactor::task_count() {
 }
 
 // -----------------------------------------------------------------------
-// CQ drain — collect ready coroutine handles (no locking needed: single consumer)
+// CQ drain - collect ready coroutine handles (no locking needed: single consumer)
 // -----------------------------------------------------------------------
 
 std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
@@ -274,7 +274,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
 }
 
 // -----------------------------------------------------------------------
-// wait() — the main reactor loop entry point
+// wait() - the main reactor loop entry point
 // -----------------------------------------------------------------------
 
 std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
@@ -308,7 +308,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
     if (next_wake) {
         auto dur = *next_wake - steady_clock::now();
         if (dur.count() <= 0) {
-            // Already expired — collect and return
+            // Already expired - collect and return
             std::scoped_lock lk { m_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
                 out.push_back(m_timers.top().handle);
@@ -332,10 +332,10 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
             sqe->user_data = URING_IGNORE;
             flush_locked(1);
         }
-        // Block until ≥1 CQE (either the timeout or a real op)
+        // Block until >=1 CQE (either the timeout or a real op)
         sys_io_uring_enter(m_ring_fd, 0, 1, IORING_ENTER_GETEVENTS);
     } else {
-        // No timers — block indefinitely until any CQE
+        // No timers - block indefinitely until any CQE
         sys_io_uring_enter(m_ring_fd, 0, 1, IORING_ENTER_GETEVENTS);
     }
 

@@ -36,7 +36,7 @@ struct uring_token {
     uring_timespec ts {};   // stable buffer for an optional linked timeout SQE
 };
 
-// Sentinel user_data value — CQEs with this are discarded (timeout SQEs, NOPs)
+// Sentinel user_data value - CQEs with this are discarded (timeout SQEs, NOPs)
 static constexpr uint64_t URING_IGNORE = UINT64_MAX;
 
 struct io_uring_sqe;
@@ -50,7 +50,7 @@ public:
     uring_reactor(const uring_reactor&) = delete;
     uring_reactor& operator=(const uring_reactor&) = delete;
 
-    // Async operations — fill an SQE and return immediately; coroutine suspends.
+    // Async operations - fill an SQE and return immediately; coroutine suspends.
     // token must remain valid (i.e. live in the coroutine frame) until await_resume().
     void submit_recv   (int fd, void* buf, uint32_t len,
                         uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
@@ -61,7 +61,7 @@ public:
     void submit_connect(int fd, struct sockaddr* addr, socklen_t addrlen,
                         uring_token* token);
 
-    // Timer support — same interface as the poll reactor
+    // Timer support - same interface as the poll reactor
     void sleep_for  (std::coroutine_handle<> handle, milliseconds dur);
     void sleep_until(std::coroutine_handle<> handle, time_point<steady_clock> when);
 
@@ -69,7 +69,7 @@ public:
     void   notify();
 
     // Returns coroutines that became ready.
-    // noblock=true: non-blocking peek; noblock=false: block until ≥1 is ready.
+    // noblock=true: non-blocking peek; noblock=false: block until >=1 is ready.
     std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 
 private:

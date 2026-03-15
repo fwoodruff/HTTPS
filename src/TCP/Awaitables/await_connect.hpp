@@ -23,7 +23,7 @@ namespace fbw {
 
 class tcp_stream;
 
-// co_await connectable{"192.168.1.1", 8080} → optional<tcp_stream>
+// co_await connectable{"192.168.1.1", 8080} -> optional<tcp_stream>
 class connectable {
 public:
     connectable(std::string host, uint16_t port) noexcept;

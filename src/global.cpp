@@ -99,7 +99,7 @@ void init_options(std::filesystem::path config_file) {
             auto& front = parts[0];
             auto slash = front.find('/');
             if (slash == std::string::npos) {
-                rule.frontend_host = front; // no path → match any path on this host
+                rule.frontend_host = front; // no path -> match any path on this host
             } else {
                 rule.frontend_host = front.substr(0, slash);
                 rule.frontend_path = front.substr(slash); // includes leading '/'

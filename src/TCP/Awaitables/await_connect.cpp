@@ -62,10 +62,25 @@ bool connectable::await_suspend(std::coroutine_handle<> cont) {
         }
         m_addrlen = sizeof(m_addr.v4);
     }
-    m_token.handle = cont;
-    executor_singleton().m_reactor.submit_connect(
-        m_fd, reinterpret_cast<struct sockaddr*>(&m_addr), m_addrlen, &m_token);
-    return true;
+    if (executor_singleton().m_reactor.uring_ok()) {
+        m_token.handle = cont;
+        executor_singleton().m_reactor.submit_connect(
+            m_fd, reinterpret_cast<struct sockaddr*>(&m_addr), m_addrlen, &m_token);
+        return true;
+    }
+    // Poll fallback: addr already filled in m_addr union above
+    {
+        int r;
+        if (is_ipv6) {
+            r = ::connect(m_fd, reinterpret_cast<struct sockaddr*>(&m_addr.v6), sizeof(m_addr.v6));
+        } else {
+            r = ::connect(m_fd, reinterpret_cast<struct sockaddr*>(&m_addr.v4), sizeof(m_addr.v4));
+        }
+        if (r == 0) return false;
+        if (errno != EINPROGRESS) { ::close(m_fd); m_fd = -1; return false; }
+        executor_singleton().m_reactor.add_task(m_fd, cont, IO_direction::Write);
+        return true;
+    }
 #else
     int r;
     if (is_ipv6) {
@@ -95,18 +110,19 @@ bool connectable::await_suspend(std::coroutine_handle<> cont) {
 std::optional<tcp_stream> connectable::await_resume() {
     if (m_fd == -1) return std::nullopt;
 #ifdef __linux__
-    if (m_token.res < 0) {
-        ::close(m_fd); m_fd = -1; return std::nullopt;
+    if (executor_singleton().m_reactor.uring_ok()) {
+        if (m_token.res < 0) {
+            ::close(m_fd); m_fd = -1; return std::nullopt;
+        }
+        return tcp_stream { std::exchange(m_fd, -1), m_host, m_port };
     }
-    return tcp_stream { std::exchange(m_fd, -1), m_host, m_port };
-#else
+#endif
     int err = 0;
     socklen_t len = sizeof(err);
     if (::getsockopt(m_fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
         return std::nullopt;
     }
     return tcp_stream { std::exchange(m_fd, -1), m_host, m_port };
-#endif
 }
 
 } // namespace fbw

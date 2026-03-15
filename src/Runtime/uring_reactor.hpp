@@ -10,6 +10,8 @@
 
 #ifdef __linux__
 
+#include "reactor.hpp"
+
 #include <coroutine>
 #include <chrono>
 #include <optional>
@@ -50,6 +52,8 @@ public:
     uring_reactor(const uring_reactor&) = delete;
     uring_reactor& operator=(const uring_reactor&) = delete;
 
+    bool uring_ok() const { return m_uring_ok; }
+
     // Async operations - fill an SQE and return immediately; coroutine suspends.
     // token must remain valid (i.e. live in the coroutine frame) until await_resume().
     void submit_recv   (int fd, void* buf, uint32_t len,
@@ -60,6 +64,10 @@ public:
                         uring_token* token);
     void submit_connect(int fd, struct sockaddr* addr, socklen_t addrlen,
                         uring_token* token);
+
+    // Poll-reactor fallback: used when io_uring is unavailable
+    void add_task(int fd, std::coroutine_handle<> handle, IO_direction rw,
+                  std::optional<milliseconds> timeout = std::nullopt);
 
     // Timer support - same interface as the poll reactor
     void sleep_for  (std::coroutine_handle<> handle, milliseconds dur);
@@ -78,6 +86,9 @@ private:
     void flush_locked(int n);               // must hold m_mut
 
     std::vector<std::coroutine_handle<>> drain_cq();
+
+    bool m_uring_ok = false;
+    reactor m_fallback;     // used when io_uring is unavailable
 
     int m_ring_fd = -1;
 

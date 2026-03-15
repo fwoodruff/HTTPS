@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
-#include <sys/types.h> 
+#include <sys/types.h>
 #include <arpa/inet.h>
 #include <optional>
 #include <cerrno>
@@ -44,14 +44,16 @@ namespace fbw {
 
 std::optional<tcp_stream> acceptable::await_resume() {
 #ifdef __linux__
-    int client_fd = m_token.res;
-    if (client_fd < 0) {
-        return std::nullopt;
+    if (executor_singleton().m_reactor.uring_ok()) {
+        int client_fd = m_token.res;
+        if (client_fd < 0) {
+            return std::nullopt;
+        }
+        // SOCK_NONBLOCK was requested in accept_flags so no fcntl needed
+        auto [ip, port] = get_ip_port(reinterpret_cast<const struct sockaddr&>(m_addr));
+        return tcp_stream { client_fd, ip, port };
     }
-    // SOCK_NONBLOCK was requested in accept_flags so no fcntl needed
-    auto [ip, port] = get_ip_port(reinterpret_cast<const struct sockaddr&>(m_addr));
-    return tcp_stream { client_fd, ip, port };
-#else
+#endif
     struct sockaddr_storage client_address;
     socklen_t shrink_address_size = sizeof client_address;
     int client_fd = ::accept(m_server_fd, (struct sockaddr *)&client_address, &shrink_address_size);
@@ -64,7 +66,6 @@ std::optional<tcp_stream> acceptable::await_resume() {
         return std::nullopt;
     }
     return {{client_fd, ip, port}};
-#endif
 }
 
 acceptable::acceptable(int sfd) : m_server_fd(sfd) {}
@@ -75,12 +76,13 @@ bool acceptable::await_ready() const noexcept {
 
 void acceptable::await_suspend(std::coroutine_handle<> coroutine) noexcept {
 #ifdef __linux__
-    m_token.handle = coroutine;
-    executor_singleton().m_reactor.submit_accept(m_server_fd, &m_addr, &m_addrlen, &m_token);
-#else
-    auto& exec = executor_singleton();
-    exec.m_reactor.add_task(m_server_fd, coroutine, IO_direction::Read);
+    if (executor_singleton().m_reactor.uring_ok()) {
+        m_token.handle = coroutine;
+        executor_singleton().m_reactor.submit_accept(m_server_fd, &m_addr, &m_addrlen, &m_token);
+        return;
+    }
 #endif
+    executor_singleton().m_reactor.add_task(m_server_fd, coroutine, IO_direction::Read);
 }
 
 } // namespace

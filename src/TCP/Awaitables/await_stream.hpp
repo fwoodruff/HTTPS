@@ -39,11 +39,10 @@ private:
     int m_fd;
     std::span<uint8_t>* m_buffer;
     std::optional<milliseconds> m_millis;
+    stream_result m_res {};
+    std::span<uint8_t> m_bytes_read;
 #ifdef __linux__
     uring_token m_token {};
-#else
-    stream_result m_res;
-    std::span<uint8_t> m_bytes_read;
 #endif
 };
 
@@ -55,15 +54,13 @@ public:
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<const uint8_t>, stream_result> await_resume();
 private:
-    
     int m_fd;
     std::span<const uint8_t>* m_buffer;
     std::optional<milliseconds> m_millis;
+    stream_result m_res {};
+    std::span<const uint8_t> m_bytes_written;
 #ifdef __linux__
     uring_token m_token {};
-#else
-    stream_result m_res;
-    std::span<const uint8_t> m_bytes_written;
 #endif
 };
 

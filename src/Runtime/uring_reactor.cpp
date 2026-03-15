@@ -47,9 +47,14 @@ uring_reactor::uring_reactor() {
     struct io_uring_params p {};
     m_ring_fd = sys_io_uring_setup(256, &p);
     if (m_ring_fd < 0) {
-        throw std::runtime_error("io_uring_setup failed");
+        // io_uring unavailable (old kernel or restricted environment) - fall back to poll reactor
+        return;
     }
-    assert(p.features & IORING_FEAT_SINGLE_MMAP);
+    if (!(p.features & IORING_FEAT_SINGLE_MMAP)) {
+        ::close(m_ring_fd);
+        m_ring_fd = -1;
+        return;
+    }
 
     // Single mmap for both SQ and CQ rings
     size_t sq_sz = p.sq_off.array + p.sq_entries * sizeof(uint32_t);
@@ -58,7 +63,10 @@ uring_reactor::uring_reactor() {
     m_ring_ptr = ::mmap(nullptr, m_ring_sz, PROT_READ | PROT_WRITE,
                         MAP_SHARED | MAP_POPULATE, m_ring_fd, IORING_OFF_SQ_RING);
     if (m_ring_ptr == MAP_FAILED) {
-        throw std::runtime_error("mmap SQ/CQ ring failed");
+        ::close(m_ring_fd);
+        m_ring_fd = -1;
+        m_ring_ptr = nullptr;
+        return;
     }
 
     // SQE array - separate mmap
@@ -66,7 +74,12 @@ uring_reactor::uring_reactor() {
     m_sqes_ptr = ::mmap(nullptr, m_sqes_sz, PROT_READ | PROT_WRITE,
                         MAP_SHARED | MAP_POPULATE, m_ring_fd, IORING_OFF_SQES);
     if (m_sqes_ptr == MAP_FAILED) {
-        throw std::runtime_error("mmap SQE array failed");
+        ::munmap(m_ring_ptr, m_ring_sz);
+        ::close(m_ring_fd);
+        m_ring_fd = -1;
+        m_ring_ptr = nullptr;
+        m_sqes_ptr = nullptr;
+        return;
     }
 
     auto* ring = static_cast<char*>(m_ring_ptr);
@@ -80,6 +93,8 @@ uring_reactor::uring_reactor() {
     m_cq_tail      = reinterpret_cast<uint32_t*>(ring + p.cq_off.tail);
     m_cq_ring_mask = *reinterpret_cast<uint32_t*>(ring + p.cq_off.ring_mask);
     m_cqes         = reinterpret_cast<struct io_uring_cqe*>(ring + p.cq_off.cqes);
+
+    m_uring_ok = true;
 }
 
 uring_reactor::~uring_reactor() {
@@ -204,10 +219,20 @@ void uring_reactor::submit_connect(int fd, struct sockaddr* addr,
 }
 
 // -----------------------------------------------------------------------
+// Poll reactor fallback delegation
+// -----------------------------------------------------------------------
+
+void uring_reactor::add_task(int fd, std::coroutine_handle<> handle,
+                              IO_direction rw, std::optional<milliseconds> timeout) {
+    m_fallback.add_task(fd, handle, rw, timeout);
+}
+
+// -----------------------------------------------------------------------
 // Timer support
 // -----------------------------------------------------------------------
 
 void uring_reactor::sleep_for(std::coroutine_handle<> handle, milliseconds dur) {
+    if (!m_uring_ok) { m_fallback.sleep_for(handle, dur); return; }
     if (!handle) return;
     const auto when = steady_clock::now() + dur;
     {
@@ -219,6 +244,7 @@ void uring_reactor::sleep_for(std::coroutine_handle<> handle, milliseconds dur) 
 
 void uring_reactor::sleep_until(std::coroutine_handle<> handle,
                                   time_point<steady_clock> when) {
+    if (!m_uring_ok) { m_fallback.sleep_until(handle, when); return; }
     if (!handle) return;
     {
         std::scoped_lock lk { m_mut };
@@ -232,6 +258,7 @@ void uring_reactor::sleep_until(std::coroutine_handle<> handle,
 // -----------------------------------------------------------------------
 
 void uring_reactor::notify() {
+    if (!m_uring_ok) { m_fallback.notify(); return; }
     std::scoped_lock lk { m_mut };
     auto* sqe = get_sqe_locked();
     std::memset(sqe, 0, sizeof(*sqe));
@@ -241,6 +268,7 @@ void uring_reactor::notify() {
 }
 
 size_t uring_reactor::task_count() {
+    if (!m_uring_ok) return m_fallback.task_count();
     return m_in_flight.load(std::memory_order_relaxed);
 }
 
@@ -278,6 +306,8 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
 // -----------------------------------------------------------------------
 
 std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
+    if (!m_uring_ok) return m_fallback.wait(noblock);
+
     // Check timers first
     const auto now = steady_clock::now();
     std::vector<std::coroutine_handle<>> out;

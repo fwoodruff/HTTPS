@@ -17,8 +17,11 @@
 
 #include <coroutine>
 
-
 #include "../stream_base.hpp"
+
+#ifdef __linux__
+#include "../../Runtime/uring_reactor.hpp"
+#endif
 
 using namespace std::chrono;
 
@@ -33,12 +36,14 @@ public:
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<uint8_t>, stream_result> await_resume();
 private:
-    
     int m_fd;
-    stream_result m_res;
-    std::span<uint8_t> m_bytes_read;  // scoped to await_resume and await_suspend
-    std::span<uint8_t>* m_buffer; // scoped to caller, todo: does this need to be doubly dereferenced?
+    std::span<uint8_t>* m_buffer;
     std::optional<milliseconds> m_millis;
+    stream_result m_res {};
+    std::span<uint8_t> m_bytes_read;
+#ifdef __linux__
+    uring_token m_token {};
+#endif
 };
 
 // co_await a writeable, shrinks the input buffer to the remaining buffer, and returns the bytes written
@@ -49,12 +54,14 @@ public:
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<std::span<const uint8_t>, stream_result> await_resume();
 private:
-    
     int m_fd;
-    stream_result m_res;
     std::span<const uint8_t>* m_buffer;
-    std::span<const uint8_t> m_bytes_written; // scoped to await_resume and await_suspend
     std::optional<milliseconds> m_millis;
+    stream_result m_res {};
+    std::span<const uint8_t> m_bytes_written;
+#ifdef __linux__
+    uring_token m_token {};
+#endif
 };
 
 }

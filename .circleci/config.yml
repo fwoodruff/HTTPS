@@ -23,7 +23,7 @@ jobs:
       - run:
           name: Test server
           command: |
-            sleep 0.01 # wait for server
+            timeout 30 bash -c 'until curl -sk https://localhost:8443 -o /dev/null; do sleep 0.1; done'
             curl -kv https://localhost:8443
             curl http://localhost:8080
             curl -kv --tlsv1.3 --http2 https://localhost:8443

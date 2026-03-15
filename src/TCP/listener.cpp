@@ -7,6 +7,7 @@
 
 #include "listener.hpp"
 #include "Awaitables/await_accept.hpp"
+#include "../Runtime/executor.hpp"
 
 #include <fcntl.h>
 #include <cstdio>
@@ -125,10 +126,20 @@ int get_listener_socket(const std::string &service) {
         throw std::runtime_error("listen: failed");
     }
 
+#ifdef __linux__
+    // io_uring ACCEPT requires a blocking listen socket; poll reactor needs O_NONBLOCK.
+    if (!executor_singleton().m_reactor.uring_ok()) {
+        if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
+            close(sockfd);
+            throw std::runtime_error("fcntl: failed to set non-blocking");
+        }
+    }
+#else
     if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
         close(sockfd);
         throw std::runtime_error("fcntl: failed to set non-blocking");
     }
+#endif
     return sockfd;
 }
 

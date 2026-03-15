@@ -13,6 +13,12 @@
 #include <coroutine>
 #include <cstdint>
 
+#ifdef __linux__
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include "../../Runtime/uring_reactor.hpp"
+#endif
+
 namespace fbw {
 
 class tcp_stream;
@@ -33,6 +39,14 @@ private:
     std::string m_host;
     uint16_t m_port;
     int m_fd = -1;
+#ifdef __linux__
+    uring_token m_token {};
+    union {
+        struct sockaddr_in  v4;
+        struct sockaddr_in6 v6;
+    } m_addr {};
+    socklen_t m_addrlen = 0;
+#endif
 };
 
 } // namespace fbw

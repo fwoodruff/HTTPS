@@ -14,6 +14,11 @@
 
 #include <coroutine>
 
+#ifdef __linux__
+#include <sys/socket.h>
+#include "../../Runtime/uring_reactor.hpp"
+#endif
+
 
 
 namespace fbw {
@@ -28,6 +33,11 @@ public:
     std::optional<tcp_stream> await_resume();
 private:
     int m_server_fd;
+#ifdef __linux__
+    uring_token m_token {};
+    struct sockaddr_storage m_addr {};
+    socklen_t m_addrlen = sizeof(struct sockaddr_storage);
+#endif
 };
 }
 

@@ -125,10 +125,14 @@ int get_listener_socket(const std::string &service) {
         throw std::runtime_error("listen: failed");
     }
 
+#ifndef __linux__
+    // io_uring ACCEPT requires a blocking listen socket on Linux;
+    // the poll reactor needs O_NONBLOCK on other platforms.
     if (fcntl(sockfd, F_SETFL, O_NONBLOCK) == -1) {
         close(sockfd);
         throw std::runtime_error("fcntl: failed to set non-blocking");
     }
+#endif
     return sockfd;
 }
 

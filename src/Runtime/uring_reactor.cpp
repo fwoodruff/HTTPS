@@ -27,6 +27,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
+#include <print>
 
 // Raw io_uring syscall wrappers
 static int sys_io_uring_setup(uint32_t entries, struct io_uring_params* p) {
@@ -47,10 +48,11 @@ uring_reactor::uring_reactor() {
     struct io_uring_params p {};
     m_ring_fd = sys_io_uring_setup(256, &p);
     if (m_ring_fd < 0) {
-        // io_uring unavailable (old kernel or restricted environment) - fall back to poll reactor
+        std::println(stderr, "io_uring unavailable (errno {}), falling back to poll reactor", errno);
         return;
     }
     if (!(p.features & IORING_FEAT_SINGLE_MMAP)) {
+        std::println(stderr, "io_uring lacks IORING_FEAT_SINGLE_MMAP, falling back to poll reactor");
         ::close(m_ring_fd);
         m_ring_fd = -1;
         return;

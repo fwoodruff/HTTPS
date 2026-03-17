@@ -63,6 +63,9 @@ public:
     // Returns false if the SQ ring is full; caller must handle without throwing.
     bool submit_accept (int fd, struct sockaddr_storage* addr, socklen_t* addrlen,
                         uring_token* token);
+    // Returns false if the SQ ring is full; caller must fall back to pread.
+    bool submit_read   (int fd, void* buf, uint32_t len, uint64_t offset,
+                        uring_token* token);
     void submit_connect(int fd, struct sockaddr* addr, socklen_t addrlen,
                         uring_token* token);
 

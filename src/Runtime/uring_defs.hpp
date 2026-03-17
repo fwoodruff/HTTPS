@@ -80,6 +80,7 @@ enum {
     IORING_OP_LINK_TIMEOUT = 15,
     IORING_OP_ACCEPT       = 13,
     IORING_OP_CONNECT      = 16,
+    IORING_OP_READ         = 22,  // fixed-offset read (pread); added in Linux 5.6
     IORING_OP_SEND         = 26,
     IORING_OP_RECV         = 27,
 };

@@ -213,6 +213,22 @@ bool uring_reactor::submit_accept(int fd, struct sockaddr_storage* addr,
     return true;
 }
 
+bool uring_reactor::submit_read(int fd, void* buf, uint32_t len, uint64_t offset,
+                                 uring_token* token) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = get_sqe();
+    if (!sqe) return false;
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode    = IORING_OP_READ;
+    sqe->fd        = fd;
+    sqe->addr      = reinterpret_cast<uint64_t>(buf);
+    sqe->len       = len;
+    sqe->off       = offset;
+    sqe->user_data = reinterpret_cast<uint64_t>(token);
+    flush(1);
+    return true;
+}
+
 void uring_reactor::submit_connect(int fd, struct sockaddr* addr,
                                     socklen_t addrlen, uring_token* token) {
     std::scoped_lock lk { m_sq_mut };

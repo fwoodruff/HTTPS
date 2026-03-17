@@ -109,24 +109,24 @@ uring_reactor::~uring_reactor() {
 // SQE helpers
 // -----------------------------------------------------------------------
 
-struct io_uring_sqe* uring_reactor::get_sqe_locked() {
-    // Caller holds m_mut; advance the shadow tail so consecutive calls get distinct slots
-    uint32_t head = __atomic_load_n(m_sq_head, __ATOMIC_ACQUIRE);
+struct io_uring_sqe* uring_reactor::get_sqe() {
+    // Caller must hold m_sq_mut.  Claim one slot; return nullptr if ring is full.
+    uint32_t head = std::atomic_ref<uint32_t>(*m_sq_head).load(std::memory_order_acquire);
     if (m_sq_tail_local - head > m_sq_ring_mask) {
-        // Ring full - this should not happen with a 256-entry ring in practice
-        assert(false && "SQ ring full");
+        return nullptr;
     }
     uint32_t idx = m_sq_tail_local & m_sq_ring_mask;
     m_sq_array[idx] = idx;
-    m_sq_tail_local++;
+    ++m_sq_tail_local;
     return &m_sqes[idx];
 }
 
-void uring_reactor::flush_locked(int n) {
-    // Caller holds m_mut; publish the shadow tail atomically then submit
-    __atomic_store_n(m_sq_tail, m_sq_tail_local, __ATOMIC_RELEASE);
+void uring_reactor::flush(int n) {
+    // Caller must hold m_sq_mut.
+    // Publish the shadow tail; release ordering ensures all SQE field writes are visible.
+    std::atomic_ref<uint32_t>(*m_sq_tail).store(m_sq_tail_local, std::memory_order_release);
     int r = sys_io_uring_enter(m_ring_fd, n, 0, 0);
-    (void)r; // best-effort; if it fails the op just won't complete
+    (void)r;
     m_in_flight.fetch_add(n, std::memory_order_relaxed);
 }
 
@@ -137,8 +137,9 @@ void uring_reactor::flush_locked(int n) {
 void uring_reactor::submit_recv(int fd, void* buf, uint32_t len,
                                  uring_token* token,
                                  std::optional<milliseconds> timeout) {
-    std::scoped_lock lk { m_mut };
-    auto* sqe = get_sqe_locked();
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = get_sqe();
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_recv)");
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode    = IORING_OP_RECV;
     sqe->fd        = fd;
@@ -152,7 +153,8 @@ void uring_reactor::submit_recv(int fd, void* buf, uint32_t len,
         token->ts.tv_sec  = timeout->count() / 1000;
         token->ts.tv_nsec = (timeout->count() % 1000) * 1'000'000LL;
 
-        auto* tsqe = get_sqe_locked();
+        auto* tsqe = get_sqe();
+        if (!tsqe) throw std::runtime_error("io_uring SQ ring full (submit_recv timeout)");
         std::memset(tsqe, 0, sizeof(*tsqe));
         tsqe->opcode    = IORING_OP_LINK_TIMEOUT;
         tsqe->addr      = reinterpret_cast<uint64_t>(&token->ts);
@@ -160,14 +162,15 @@ void uring_reactor::submit_recv(int fd, void* buf, uint32_t len,
         tsqe->user_data = URING_IGNORE;
         n = 2;
     }
-    flush_locked(n);
+    flush(n);
 }
 
 void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
                                  uring_token* token,
                                  std::optional<milliseconds> timeout) {
-    std::scoped_lock lk { m_mut };
-    auto* sqe = get_sqe_locked();
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = get_sqe();
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_send)");
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode    = IORING_OP_SEND;
     sqe->fd        = fd;
@@ -182,7 +185,8 @@ void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
         token->ts.tv_sec  = timeout->count() / 1000;
         token->ts.tv_nsec = (timeout->count() % 1000) * 1'000'000LL;
 
-        auto* tsqe = get_sqe_locked();
+        auto* tsqe = get_sqe();
+        if (!tsqe) throw std::runtime_error("io_uring SQ ring full (submit_send timeout)");
         std::memset(tsqe, 0, sizeof(*tsqe));
         tsqe->opcode    = IORING_OP_LINK_TIMEOUT;
         tsqe->addr      = reinterpret_cast<uint64_t>(&token->ts);
@@ -190,34 +194,37 @@ void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
         tsqe->user_data = URING_IGNORE;
         n = 2;
     }
-    flush_locked(n);
+    flush(n);
 }
 
-void uring_reactor::submit_accept(int fd, struct sockaddr_storage* addr,
+bool uring_reactor::submit_accept(int fd, struct sockaddr_storage* addr,
                                    socklen_t* addrlen, uring_token* token) {
-    std::scoped_lock lk { m_mut };
-    auto* sqe = get_sqe_locked();
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = get_sqe();
+    if (!sqe) return false;
     std::memset(sqe, 0, sizeof(*sqe));
-    sqe->opcode      = IORING_OP_ACCEPT;
-    sqe->fd          = fd;
-    sqe->addr        = reinterpret_cast<uint64_t>(addr);
-    sqe->addr2       = reinterpret_cast<uint64_t>(addrlen);
+    sqe->opcode       = IORING_OP_ACCEPT;
+    sqe->fd           = fd;
+    sqe->addr         = reinterpret_cast<uint64_t>(addr);
+    sqe->addr2        = reinterpret_cast<uint64_t>(addrlen);
     sqe->accept_flags = SOCK_NONBLOCK;
-    sqe->user_data   = reinterpret_cast<uint64_t>(token);
-    flush_locked(1);
+    sqe->user_data    = reinterpret_cast<uint64_t>(token);
+    flush(1);
+    return true;
 }
 
 void uring_reactor::submit_connect(int fd, struct sockaddr* addr,
                                     socklen_t addrlen, uring_token* token) {
-    std::scoped_lock lk { m_mut };
-    auto* sqe = get_sqe_locked();
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = get_sqe();
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_connect)");
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode    = IORING_OP_CONNECT;
     sqe->fd        = fd;
     sqe->addr      = reinterpret_cast<uint64_t>(addr);
     sqe->off       = addrlen;
     sqe->user_data = reinterpret_cast<uint64_t>(token);
-    flush_locked(1);
+    flush(1);
 }
 
 // -----------------------------------------------------------------------
@@ -238,7 +245,7 @@ void uring_reactor::sleep_for(std::coroutine_handle<> handle, milliseconds dur) 
     if (!handle) return;
     const auto when = steady_clock::now() + dur;
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock lk { m_timer_mut };
         m_timers.emplace(when, handle);
     }
     notify();
@@ -249,7 +256,7 @@ void uring_reactor::sleep_until(std::coroutine_handle<> handle,
     if (!m_uring_ok) { m_fallback.sleep_until(handle, when); return; }
     if (!handle) return;
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock lk { m_timer_mut };
         m_timers.emplace(when, handle);
     }
     notify();
@@ -261,12 +268,15 @@ void uring_reactor::sleep_until(std::coroutine_handle<> handle,
 
 void uring_reactor::notify() {
     if (!m_uring_ok) { m_fallback.notify(); return; }
-    std::scoped_lock lk { m_mut };
-    auto* sqe = get_sqe_locked();
+    // m_mut serialises notify() calls coming from other threads against each other
+    // and against the timer SQE submission in wait().
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = get_sqe();
+    if (!sqe) return;  // ring full - wait() will wake on the next real CQE anyway
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode    = IORING_OP_NOP;
     sqe->user_data = URING_IGNORE;
-    flush_locked(1);
+    flush(1);
 }
 
 size_t uring_reactor::task_count() {
@@ -281,14 +291,14 @@ size_t uring_reactor::task_count() {
 std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
     std::vector<std::coroutine_handle<>> out;
     for (;;) {
-        uint32_t head = *m_cq_head;
-        uint32_t tail = __atomic_load_n(m_cq_tail, __ATOMIC_ACQUIRE);
+        uint32_t head = std::atomic_ref<uint32_t>(*m_cq_head).load(std::memory_order_relaxed);
+        uint32_t tail = std::atomic_ref<uint32_t>(*m_cq_tail).load(std::memory_order_acquire);
         if (head == tail) break;
 
         auto* cqe = &m_cqes[head & m_cq_ring_mask];
-        uint64_t ud = cqe->user_data;
+        uint64_t ud  = cqe->user_data;
         int32_t  res = cqe->res;
-        __atomic_store_n(m_cq_head, head + 1, __ATOMIC_RELEASE);
+        std::atomic_ref<uint32_t>(*m_cq_head).store(head + 1, std::memory_order_release);
 
         m_in_flight.fetch_sub(1, std::memory_order_relaxed);
 
@@ -314,7 +324,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
     const auto now = steady_clock::now();
     std::vector<std::coroutine_handle<>> out;
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= now) {
             out.push_back(m_timers.top().handle);
             m_timers.pop();
@@ -332,7 +342,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
     // Compute how long until the next timer fires
     std::optional<time_point<steady_clock>> next_wake;
     {
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock lk { m_timer_mut };
         if (!m_timers.empty()) next_wake = m_timers.top().when;
     }
 
@@ -341,7 +351,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
         auto dur = *next_wake - steady_clock::now();
         if (dur.count() <= 0) {
             // Already expired - collect and return
-            std::scoped_lock lk { m_mut };
+            std::scoped_lock lk { m_timer_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
                 out.push_back(m_timers.top().handle);
                 m_timers.pop();
@@ -355,14 +365,16 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
         // Placing it on the stack is safe because the call to io_uring_enter is synchronous.
         uring_timespec ts { ms.count() / 1000, (ms.count() % 1000) * 1'000'000LL };
         {
-            std::scoped_lock lk { m_mut };
-            auto* sqe = get_sqe_locked();
-            std::memset(sqe, 0, sizeof(*sqe));
-            sqe->opcode    = IORING_OP_TIMEOUT;
-            sqe->addr      = reinterpret_cast<uint64_t>(&ts);
-            sqe->len       = 1;
-            sqe->user_data = URING_IGNORE;
-            flush_locked(1);
+            std::scoped_lock lk { m_sq_mut };
+            auto* sqe = get_sqe();
+            if (sqe) {
+                std::memset(sqe, 0, sizeof(*sqe));
+                sqe->opcode    = IORING_OP_TIMEOUT;
+                sqe->addr      = reinterpret_cast<uint64_t>(&ts);
+                sqe->len       = 1;
+                sqe->user_data = URING_IGNORE;
+                flush(1);
+            }
         }
         // Block until >=1 CQE (either the timeout or a real op)
         sys_io_uring_enter(m_ring_fd, 0, 1, IORING_ENTER_GETEVENTS);
@@ -378,7 +390,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
     // Re-check timers (timer SQE may have fired)
     {
         const auto after = steady_clock::now();
-        std::scoped_lock lk { m_mut };
+        std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= after) {
             out.push_back(m_timers.top().handle);
             m_timers.pop();

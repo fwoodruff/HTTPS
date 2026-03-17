@@ -60,7 +60,8 @@ public:
                         uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
     void submit_send   (int fd, const void* buf, uint32_t len,
                         uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
-    void submit_accept (int fd, struct sockaddr_storage* addr, socklen_t* addrlen,
+    // Returns false if the SQ ring is full; caller must handle without throwing.
+    bool submit_accept (int fd, struct sockaddr_storage* addr, socklen_t* addrlen,
                         uring_token* token);
     void submit_connect(int fd, struct sockaddr* addr, socklen_t addrlen,
                         uring_token* token);
@@ -81,9 +82,10 @@ public:
     std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 
 private:
-    // SQE helpers
-    struct io_uring_sqe* get_sqe_locked();  // must hold m_mut
-    void flush_locked(int n);               // must hold m_mut
+    // get_sqe() and flush() must be called with m_sq_mut held.
+    // get_sqe() returns nullptr if the SQ ring is full; callers must handle it.
+    struct io_uring_sqe* get_sqe();
+    void flush(int n);
 
     std::vector<std::coroutine_handle<>> drain_cq();
 
@@ -92,19 +94,20 @@ private:
 
     int m_ring_fd = -1;
 
-    // SQ ring
-    uint32_t* m_sq_head         = nullptr;
-    uint32_t* m_sq_tail         = nullptr;  // kernel-visible tail (mmap region)
-    uint32_t  m_sq_tail_local   = 0;        // shadow tail; published atomically in flush_locked
-    uint32_t  m_sq_ring_mask    = 0;
-    uint32_t* m_sq_array        = nullptr;
-    struct io_uring_sqe* m_sqes = nullptr;
+    // SQ ring.  The kernel-visible head/tail live in the mmap region; we access them
+    // via std::atomic_ref<uint32_t> at each call site for acquire/release semantics.
+    uint32_t*            m_sq_head       = nullptr;
+    uint32_t*            m_sq_tail       = nullptr;
+    uint32_t             m_sq_tail_local = 0;        // shadow tail — always under m_sq_mut
+    uint32_t             m_sq_ring_mask  = 0;
+    uint32_t*            m_sq_array      = nullptr;
+    struct io_uring_sqe* m_sqes          = nullptr;
 
-    // CQ ring
-    uint32_t* m_cq_head      = nullptr;
-    uint32_t* m_cq_tail      = nullptr;
-    uint32_t  m_cq_ring_mask = 0;
-    struct io_uring_cqe* m_cqes = nullptr;
+    // CQ ring (single consumer — no lock needed, but atomic_ref for kernel sharing)
+    uint32_t*            m_cq_head      = nullptr;
+    uint32_t*            m_cq_tail      = nullptr;
+    uint32_t             m_cq_ring_mask = 0;
+    struct io_uring_cqe* m_cqes         = nullptr;
 
     void*  m_ring_ptr = nullptr;
     size_t m_ring_sz  = 0;
@@ -122,7 +125,8 @@ private:
         }
     };
 
-    std::mutex m_mut;   // serialises all SQ writes and timer-queue access
+    std::mutex m_sq_mut;     // serialises all SQ producers (submit_*, notify)
+    std::mutex m_timer_mut;  // guards the timer priority queue
     std::priority_queue<timer_entry, std::vector<timer_entry>, timer_cmp> m_timers;
     std::atomic<size_t> m_in_flight { 0 };
 };

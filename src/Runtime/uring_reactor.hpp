@@ -94,20 +94,20 @@ private:
 
     int m_ring_fd = -1;
 
-    // SQ ring.  The kernel-visible head/tail are in the mmap region; we cast them
-    // to std::atomic<uint32_t>* for correct acquire/release semantics.
-    std::atomic<uint32_t>* m_sq_head       = nullptr;  // kernel advances; we read (acquire)
-    std::atomic<uint32_t>* m_sq_tail       = nullptr;  // we advance; kernel reads (release)
-    uint32_t               m_sq_tail_local = 0;        // shadow tail - always under m_sq_mut
-    uint32_t               m_sq_ring_mask  = 0;
-    uint32_t*              m_sq_array      = nullptr;
-    struct io_uring_sqe*   m_sqes          = nullptr;
+    // SQ ring.  The kernel-visible head/tail live in the mmap region; we access them
+    // via std::atomic_ref<uint32_t> at each call site for acquire/release semantics.
+    uint32_t*            m_sq_head       = nullptr;
+    uint32_t*            m_sq_tail       = nullptr;
+    uint32_t             m_sq_tail_local = 0;        // shadow tail — always under m_sq_mut
+    uint32_t             m_sq_ring_mask  = 0;
+    uint32_t*            m_sq_array      = nullptr;
+    struct io_uring_sqe* m_sqes          = nullptr;
 
-    // CQ ring (single consumer - no lock needed, but atomic for kernel sharing)
-    std::atomic<uint32_t>* m_cq_head     = nullptr;
-    std::atomic<uint32_t>* m_cq_tail     = nullptr;
-    uint32_t               m_cq_ring_mask = 0;
-    struct io_uring_cqe*   m_cqes         = nullptr;
+    // CQ ring (single consumer — no lock needed, but atomic_ref for kernel sharing)
+    uint32_t*            m_cq_head      = nullptr;
+    uint32_t*            m_cq_tail      = nullptr;
+    uint32_t             m_cq_ring_mask = 0;
+    struct io_uring_cqe* m_cqes         = nullptr;
 
     void*  m_ring_ptr = nullptr;
     size_t m_ring_sz  = 0;

@@ -85,15 +85,14 @@ uring_reactor::uring_reactor() {
     }
 
     auto* ring = static_cast<char*>(m_ring_ptr);
-    // Cast mmap'd ring fields to std::atomic<uint32_t>* for acquire/release semantics.
-    m_sq_head      = reinterpret_cast<std::atomic<uint32_t>*>(ring + p.sq_off.head);
-    m_sq_tail      = reinterpret_cast<std::atomic<uint32_t>*>(ring + p.sq_off.tail);
+    m_sq_head      = reinterpret_cast<uint32_t*>(ring + p.sq_off.head);
+    m_sq_tail      = reinterpret_cast<uint32_t*>(ring + p.sq_off.tail);
     m_sq_ring_mask = *reinterpret_cast<uint32_t*>(ring + p.sq_off.ring_mask);
     m_sq_array     = reinterpret_cast<uint32_t*>(ring + p.sq_off.array);
     m_sqes         = static_cast<struct io_uring_sqe*>(m_sqes_ptr);
 
-    m_cq_head      = reinterpret_cast<std::atomic<uint32_t>*>(ring + p.cq_off.head);
-    m_cq_tail      = reinterpret_cast<std::atomic<uint32_t>*>(ring + p.cq_off.tail);
+    m_cq_head      = reinterpret_cast<uint32_t*>(ring + p.cq_off.head);
+    m_cq_tail      = reinterpret_cast<uint32_t*>(ring + p.cq_off.tail);
     m_cq_ring_mask = *reinterpret_cast<uint32_t*>(ring + p.cq_off.ring_mask);
     m_cqes         = reinterpret_cast<struct io_uring_cqe*>(ring + p.cq_off.cqes);
 
@@ -112,7 +111,7 @@ uring_reactor::~uring_reactor() {
 
 struct io_uring_sqe* uring_reactor::get_sqe() {
     // Caller must hold m_sq_mut.  Claim one slot; return nullptr if ring is full.
-    uint32_t head = m_sq_head->load(std::memory_order_acquire);
+    uint32_t head = std::atomic_ref<uint32_t>(*m_sq_head).load(std::memory_order_acquire);
     if (m_sq_tail_local - head > m_sq_ring_mask) {
         return nullptr;
     }
@@ -125,7 +124,7 @@ struct io_uring_sqe* uring_reactor::get_sqe() {
 void uring_reactor::flush(int n) {
     // Caller must hold m_sq_mut.
     // Publish the shadow tail; release ordering ensures all SQE field writes are visible.
-    m_sq_tail->store(m_sq_tail_local, std::memory_order_release);
+    std::atomic_ref<uint32_t>(*m_sq_tail).store(m_sq_tail_local, std::memory_order_release);
     int r = sys_io_uring_enter(m_ring_fd, n, 0, 0);
     (void)r;
     m_in_flight.fetch_add(n, std::memory_order_relaxed);
@@ -292,14 +291,14 @@ size_t uring_reactor::task_count() {
 std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
     std::vector<std::coroutine_handle<>> out;
     for (;;) {
-        uint32_t head = m_cq_head->load(std::memory_order_relaxed);
-        uint32_t tail = m_cq_tail->load(std::memory_order_acquire);
+        uint32_t head = std::atomic_ref<uint32_t>(*m_cq_head).load(std::memory_order_relaxed);
+        uint32_t tail = std::atomic_ref<uint32_t>(*m_cq_tail).load(std::memory_order_acquire);
         if (head == tail) break;
 
         auto* cqe = &m_cqes[head & m_cq_ring_mask];
         uint64_t ud  = cqe->user_data;
         int32_t  res = cqe->res;
-        m_cq_head->store(head + 1, std::memory_order_release);
+        std::atomic_ref<uint32_t>(*m_cq_head).store(head + 1, std::memory_order_release);
 
         m_in_flight.fetch_sub(1, std::memory_order_relaxed);
 

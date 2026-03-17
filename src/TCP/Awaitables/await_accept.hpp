@@ -37,7 +37,6 @@ private:
     uring_token m_token {};
     struct sockaddr_storage m_addr {};
     socklen_t m_addrlen = sizeof(struct sockaddr_storage);
-    bool m_used_uring = false;
 #endif
 };
 }

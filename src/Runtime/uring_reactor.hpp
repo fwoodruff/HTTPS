@@ -81,9 +81,10 @@ public:
     std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 
 private:
-    // SQE helpers
-    struct io_uring_sqe* get_sqe_locked();  // must hold m_mut
-    void flush_locked(int n);               // must hold m_mut
+    // SQE helpers — lock-free; called only from the executor thread (single producer).
+    // get_sqe() returns nullptr if the SQ ring is full; callers must handle it.
+    struct io_uring_sqe* get_sqe();
+    void flush(int n);
 
     std::vector<std::coroutine_handle<>> drain_cq();
 
@@ -92,10 +93,11 @@ private:
 
     int m_ring_fd = -1;
 
-    // SQ ring
-    uint32_t* m_sq_head         = nullptr;
-    uint32_t* m_sq_tail         = nullptr;  // kernel-visible tail (mmap region)
-    uint32_t  m_sq_tail_local   = 0;        // shadow tail; published atomically in flush_locked
+    // SQ ring — kernel-visible head/tail live in the mmap region and are accessed
+    // via std::atomic_ref<uint32_t> to get proper acquire/release ordering.
+    uint32_t* m_sq_head         = nullptr;  // kernel advances; we read (acquire)
+    uint32_t* m_sq_tail         = nullptr;  // we advance; kernel reads (we write release)
+    std::atomic<uint32_t> m_sq_tail_local { 0 };  // shadow tail — published in flush()
     uint32_t  m_sq_ring_mask    = 0;
     uint32_t* m_sq_array        = nullptr;
     struct io_uring_sqe* m_sqes = nullptr;
@@ -122,7 +124,7 @@ private:
         }
     };
 
-    std::mutex m_mut;   // serialises all SQ writes and timer-queue access
+    std::mutex m_mut;   // guards timer queue and notify() SQE submission only
     std::priority_queue<timer_entry, std::vector<timer_entry>, timer_cmp> m_timers;
     std::atomic<size_t> m_in_flight { 0 };
 };

@@ -29,7 +29,7 @@ class acceptable {
 public:
     acceptable(int sfd);
     bool await_ready() const noexcept;
-    void await_suspend(std::coroutine_handle<> awaiting_coroutine) noexcept;
+    bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::optional<tcp_stream> await_resume();
 private:
     int m_server_fd;
@@ -37,6 +37,7 @@ private:
     uring_token m_token {};
     struct sockaddr_storage m_addr {};
     socklen_t m_addrlen = sizeof(struct sockaddr_storage);
+    bool m_used_uring = false;
 #endif
 };
 }

@@ -44,7 +44,7 @@ namespace fbw {
 
 std::optional<tcp_stream> acceptable::await_resume() {
 #ifdef __linux__
-    if (executor_singleton().m_reactor.uring_ok()) {
+    if (m_used_uring) {
         int client_fd = m_token.res;
         if (client_fd < 0) {
             return std::nullopt;
@@ -74,15 +74,19 @@ bool acceptable::await_ready() const noexcept {
     return false;
 }
 
-void acceptable::await_suspend(std::coroutine_handle<> coroutine) noexcept {
+bool acceptable::await_suspend(std::coroutine_handle<> coroutine) {
 #ifdef __linux__
     if (executor_singleton().m_reactor.uring_ok()) {
         m_token.handle = coroutine;
-        executor_singleton().m_reactor.submit_accept(m_server_fd, &m_addr, &m_addrlen, &m_token);
-        return;
+        if (executor_singleton().m_reactor.submit_accept(m_server_fd, &m_addr, &m_addrlen, &m_token)) {
+            m_used_uring = true;
+            return true;  // suspend; will resume via CQE
+        }
+        // Ring full — fall back to poll reactor so we still get woken when the fd is ready.
     }
 #endif
     executor_singleton().m_reactor.add_task(m_server_fd, coroutine, IO_direction::Read);
+    return true;
 }
 
 } // namespace

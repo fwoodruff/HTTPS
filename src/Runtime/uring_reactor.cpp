@@ -273,7 +273,7 @@ void uring_reactor::notify() {
     // and against the timer SQE submission in wait().
     std::scoped_lock lk { m_sq_mut };
     auto* sqe = get_sqe();
-    if (!sqe) return;  // ring full — wait() will wake on the next real CQE anyway
+    if (!sqe) return;  // ring full - wait() will wake on the next real CQE anyway
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode    = IORING_OP_NOP;
     sqe->user_data = URING_IGNORE;

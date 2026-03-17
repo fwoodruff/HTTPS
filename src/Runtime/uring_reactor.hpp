@@ -98,12 +98,12 @@ private:
     // to std::atomic<uint32_t>* for correct acquire/release semantics.
     std::atomic<uint32_t>* m_sq_head       = nullptr;  // kernel advances; we read (acquire)
     std::atomic<uint32_t>* m_sq_tail       = nullptr;  // we advance; kernel reads (release)
-    uint32_t               m_sq_tail_local = 0;        // shadow tail — always under m_sq_mut
+    uint32_t               m_sq_tail_local = 0;        // shadow tail - always under m_sq_mut
     uint32_t               m_sq_ring_mask  = 0;
     uint32_t*              m_sq_array      = nullptr;
     struct io_uring_sqe*   m_sqes          = nullptr;
 
-    // CQ ring (single consumer — no lock needed, but atomic for kernel sharing)
+    // CQ ring (single consumer - no lock needed, but atomic for kernel sharing)
     std::atomic<uint32_t>* m_cq_head     = nullptr;
     std::atomic<uint32_t>* m_cq_tail     = nullptr;
     uint32_t               m_cq_ring_mask = 0;

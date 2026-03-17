@@ -82,7 +82,7 @@ bool acceptable::await_suspend(std::coroutine_handle<> coroutine) {
             m_used_uring = true;
             return true;  // suspend; will resume via CQE
         }
-        // Ring full — fall back to poll reactor so we still get woken when the fd is ready.
+        // Ring full - fall back to poll reactor so we still get woken when the fd is ready.
     }
 #endif
     executor_singleton().m_reactor.add_task(m_server_fd, coroutine, IO_direction::Read);

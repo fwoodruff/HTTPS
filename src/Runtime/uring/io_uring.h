@@ -143,6 +143,16 @@ static inline void io_uring_prep_timeout(struct io_uring_sqe* sqe,
     sqe->timeout_flags = flags;
 }
 
+static inline void io_uring_prep_read(struct io_uring_sqe* sqe, int fd,
+                                       void* buf, unsigned len, uint64_t offset) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode = IORING_OP_READ;
+    sqe->fd     = fd;
+    sqe->off    = offset;
+    sqe->addr   = reinterpret_cast<uint64_t>(buf);
+    sqe->len    = len;
+}
+
 static inline void io_uring_prep_nop(struct io_uring_sqe* sqe) {
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode = IORING_OP_NOP;

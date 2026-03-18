@@ -33,7 +33,7 @@ struct uring_token {
     uring_timespec ts {};   // stable buffer for an optional linked timeout SQE
 };
 
-// Sentinel user_data value — CQEs with this are discarded (timeout SQEs, NOPs)
+// Sentinel user_data value - CQEs with this are discarded (timeout SQEs, NOPs)
 static constexpr uint64_t URING_IGNORE = UINT64_MAX;
 
 class uring_reactor {
@@ -46,7 +46,7 @@ public:
 
     bool uring_ok() const { return m_uring_ok; }
 
-    // Async operations — fill an SQE and return immediately; coroutine suspends.
+    // Async operations - fill an SQE and return immediately; coroutine suspends.
     // token must remain valid (i.e. live in the coroutine frame) until await_resume().
     void submit_recv   (int fd, void* buf, uint32_t len,
                         uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
@@ -62,7 +62,7 @@ public:
     void add_task(int fd, std::coroutine_handle<> handle, IO_direction rw,
                   std::optional<milliseconds> timeout = std::nullopt);
 
-    // Timer support — same interface as the poll reactor
+    // Timer support - same interface as the poll reactor
     void sleep_for  (std::coroutine_handle<> handle, milliseconds dur);
     void sleep_until(std::coroutine_handle<> handle, time_point<steady_clock> when);
 

@@ -130,7 +130,7 @@ void uring_reactor::sleep_until(std::coroutine_handle<> handle,
 }
 
 // -----------------------------------------------------------------------
-// Notification — submit a NOP that completes immediately
+// Notification - submit a NOP that completes immediately
 // -----------------------------------------------------------------------
 
 void uring_reactor::notify() {
@@ -168,7 +168,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
 }
 
 // -----------------------------------------------------------------------
-// wait() — the main reactor loop entry point
+// wait() - the main reactor loop entry point
 // -----------------------------------------------------------------------
 
 std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
@@ -201,7 +201,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
     if (next_wake) {
         auto dur = *next_wake - steady_clock::now();
         if (dur.count() <= 0) {
-            // Already expired — collect and return
+            // Already expired - collect and return
             std::scoped_lock lk { m_timer_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
                 out.push_back(m_timers.top().handle);

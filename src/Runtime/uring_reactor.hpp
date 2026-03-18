@@ -11,6 +11,7 @@
 #ifdef __linux__
 
 #include "reactor.hpp"
+#include "uring/io_uring.h"
 
 #include <coroutine>
 #include <chrono>
@@ -24,12 +25,6 @@
 
 using namespace std::chrono;
 
-// Kernel-compatible 64-bit timespec (matches struct __kernel_timespec)
-struct uring_timespec {
-    int64_t tv_sec;
-    int64_t tv_nsec;
-};
-
 // Completion token stored in the awaitable (coroutine frame).
 // user_data in the SQE points here; the reactor writes res on CQE arrival.
 struct uring_token {
@@ -40,9 +35,6 @@ struct uring_token {
 
 // Sentinel user_data value - CQEs with this are discarded (timeout SQEs, NOPs)
 static constexpr uint64_t URING_IGNORE = UINT64_MAX;
-
-struct io_uring_sqe;
-struct io_uring_cqe;
 
 class uring_reactor {
 public:
@@ -82,37 +74,11 @@ public:
     std::vector<std::coroutine_handle<>> wait(bool noblock = false);
 
 private:
-    // get_sqe() and flush() must be called with m_sq_mut held.
-    // get_sqe() returns nullptr if the SQ ring is full; callers must handle it.
-    struct io_uring_sqe* get_sqe();
-    void flush(int n);
-
     std::vector<std::coroutine_handle<>> drain_cq();
 
-    bool m_uring_ok = false;
+    bool    m_uring_ok = false;
     reactor m_fallback;     // used when io_uring is unavailable
-
-    int m_ring_fd = -1;
-
-    // SQ ring.  The kernel-visible head/tail live in the mmap region; we access them
-    // via std::atomic_ref<uint32_t> at each call site for acquire/release semantics.
-    uint32_t*            m_sq_head       = nullptr;
-    uint32_t*            m_sq_tail       = nullptr;
-    uint32_t             m_sq_tail_local = 0;        // shadow tail — always under m_sq_mut
-    uint32_t             m_sq_ring_mask  = 0;
-    uint32_t*            m_sq_array      = nullptr;
-    struct io_uring_sqe* m_sqes          = nullptr;
-
-    // CQ ring (single consumer — no lock needed, but atomic_ref for kernel sharing)
-    uint32_t*            m_cq_head      = nullptr;
-    uint32_t*            m_cq_tail      = nullptr;
-    uint32_t             m_cq_ring_mask = 0;
-    struct io_uring_cqe* m_cqes         = nullptr;
-
-    void*  m_ring_ptr = nullptr;
-    size_t m_ring_sz  = 0;
-    void*  m_sqes_ptr = nullptr;
-    size_t m_sqes_sz  = 0;
+    struct io_uring m_ring;
 
     // Timer queue for sleep_for / sleep_until
     struct timer_entry {
@@ -128,7 +94,6 @@ private:
     std::mutex m_sq_mut;     // serialises all SQ producers (submit_*, notify)
     std::mutex m_timer_mut;  // guards the timer priority queue
     std::priority_queue<timer_entry, std::vector<timer_entry>, timer_cmp> m_timers;
-    std::atomic<size_t> m_in_flight { 0 };
 };
 
 #endif // __linux__

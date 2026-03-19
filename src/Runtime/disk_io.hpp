@@ -3,8 +3,8 @@
 //  HTTPS Server
 //
 //  Awaitable for async disk reads.
-//  On Linux:     io_uring IORING_OP_READ via the reactor (non-blocking).
-//  Otherwise:    synchronous pread (always-ready awaitable).
+//  On Linux with io_uring available: IORING_OP_READ via the reactor (non-blocking).
+//  Fallback (non-Linux or io_uring unavailable): synchronous pread, always-ready.
 //
 
 #ifndef disk_io_hpp
@@ -25,13 +25,23 @@ struct disk_read_awaitable {
     uint32_t len;
     uint64_t offset;
     uring_token token {};
+    ssize_t     sync_result = 0;
+    bool        m_sync      = false;
 
-    bool    await_ready() const noexcept { return false; }
-    void    await_suspend(std::coroutine_handle<> h) {
+    // If io_uring is unavailable, do a synchronous pread here and return true
+    // so the coroutine is never suspended and await_suspend is never called.
+    bool await_ready() noexcept {
+        m_sync = !executor_singleton().m_reactor.uring_ok();
+        if (m_sync) sync_result = ::pread(fd, buf, len, static_cast<off_t>(offset));
+        return m_sync;
+    }
+    void await_suspend(std::coroutine_handle<> h) {
         token.handle = h;
         executor_singleton().m_reactor.submit_read(fd, buf, len, offset, &token);
     }
-    ssize_t await_resume() const noexcept { return token.res; }
+    ssize_t await_resume() const noexcept {
+        return m_sync ? sync_result : token.res;
+    }
 };
 
 #else // non-Linux: synchronous pread wrapped as an always-ready awaitable

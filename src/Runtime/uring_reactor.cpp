@@ -208,13 +208,13 @@ handle_chain uring_reactor::wait(bool noblock) {
         if (!m_timers.empty()) next_wake = m_timers.top().when;
     }
 
-    // Declared here so it outlives the io_uring_wait_cqe_nr call below —
+    // Declared here so it outlives the io_uring_wait_cqe_nr call below
     // the kernel may read the timespec asynchronously until the op completes.
     uring_timespec ts {};
     if (next_wake) {
         auto dur = *next_wake - steady_clock::now();
         if (dur.count() <= 0) {
-            // Already expired — collect and return without blocking.
+            // Already expired, collect and return without blocking.
             std::scoped_lock lk { m_timer_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
                 out.push(m_timers.top().handle);

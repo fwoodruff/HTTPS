@@ -113,25 +113,27 @@ void executor::block_until_ready() {
 void executor::main_thread_function() {
     for(;;) {
         try_poll();
-        auto task = m_ready.try_pop();
-        if (!task) {
-            block_until_ready();
-            continue;
+        for(int i = 0; i < 4; i++) {
+            auto task = m_ready.try_pop();
+            if (!task) {
+                block_until_ready();
+                break;
+            } else if (*task == nullptr) {
+                notify_runtime();
+                reap_done();
+                return;
+            } else {
+                auto active = num_active_threads.load(std::memory_order::relaxed);
+                if(num_tasks.load() > active + 3 && active < long(NUM_THREADS)) {
+                    std::scoped_lock lk {thread_mut};
+                    num_active_threads.fetch_add(1, std::memory_order_relaxed);
+                    m_threadpool.emplace_back(&executor::thread_function, this);
+                }
+                reap_done();
+                upcast(*task).promise().affinity = std::this_thread::get_id();
+                task->resume();
+            }
         }
-        if (*task == nullptr) {
-            notify_runtime();
-            reap_done();
-            return;
-        }
-        auto active = num_active_threads.load(std::memory_order::relaxed);
-        if(num_tasks.load() > active + 3 && active < long(NUM_THREADS)) {
-            std::scoped_lock lk {thread_mut};
-            num_active_threads.fetch_add(1, std::memory_order_relaxed);
-            m_threadpool.emplace_back(&executor::thread_function, this);
-        }
-        reap_done();
-        upcast(*task).promise().affinity = std::this_thread::get_id();
-        task->resume();
     }
 }
 

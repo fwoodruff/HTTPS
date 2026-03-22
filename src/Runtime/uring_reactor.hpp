@@ -11,6 +11,7 @@
 #ifdef __linux__
 
 #include "reactor.hpp"
+#include "concurrent_queue.hpp"
 #include "uring/io_uring.h"
 
 #include <coroutine>
@@ -71,12 +72,12 @@ public:
     size_t task_count();
     void   notify();
 
-    // Returns coroutines that became ready.
+    // Returns a chain of coroutines that became ready.
     // noblock=true: non-blocking peek; noblock=false: block until >=1 is ready.
-    std::vector<std::coroutine_handle<>> wait(bool noblock = false);
+    concurrent_queue<std::coroutine_handle<>>::chain wait(bool noblock = false);
 
 private:
-    std::vector<std::coroutine_handle<>> drain_cq();
+    concurrent_queue<std::coroutine_handle<>>::chain drain_cq();
 
     bool    m_uring_ok = false;
     reactor m_fallback;     // used when io_uring is unavailable

@@ -162,8 +162,8 @@ size_t uring_reactor::task_count() {
 // CQ drain - resolve tokens into coroutine handles
 // -----------------------------------------------------------------------
 
-std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
-    std::vector<std::coroutine_handle<>> out;
+concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::drain_cq() {
+    concurrent_queue<std::coroutine_handle<>>::chain out;
     struct io_uring_cqe* cqe;
     while (io_uring_peek_cqe(&m_ring, &cqe) == 0) {
         uint64_t ud  = cqe->user_data;
@@ -172,7 +172,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
         if (ud == URING_IGNORE) continue;
         auto* token = reinterpret_cast<uring_token*>(static_cast<uintptr_t>(ud));
         token->res = res;
-        if (token->handle) out.push_back(token->handle);
+        if (token->handle) out.push(token->handle);
     }
     return out;
 }
@@ -181,49 +181,59 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
 // wait() - the main reactor loop entry point
 // -----------------------------------------------------------------------
 
-std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
+// Merge src into dst, leaving src empty.
+static void append_chain(concurrent_queue<std::coroutine_handle<>>::chain& dst,
+                          concurrent_queue<std::coroutine_handle<>>::chain src) {
+    if (!src.head) return;
+    if (!dst.tail) { dst = std::move(src); return; }
+    dst.tail->next.store(src.head, std::memory_order_relaxed);
+    dst.tail   = src.tail;
+    dst.count += src.count;
+    src.head   = src.tail = nullptr;
+}
+
+concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::wait(bool noblock) {
+    using chain_t = concurrent_queue<std::coroutine_handle<>>::chain;
     if (!m_uring_ok) return m_fallback.wait(noblock);
 
     // Check timers first
     const auto now = steady_clock::now();
-    std::vector<std::coroutine_handle<>> out;
+    chain_t out;
     {
         std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= now) {
-            out.push_back(m_timers.top().handle);
+            out.push(m_timers.top().handle);
             m_timers.pop();
         }
     }
 
-    // Non-blocking peek at the CQ
-    auto cq_ready = drain_cq();
-    out.insert(out.end(), cq_ready.begin(), cq_ready.end());
+    append_chain(out, drain_cq());
 
-    if (!out.empty() || noblock) return out;
+    if (out.count || noblock) return out;
 
-    // Compute how long until the next timer fires
+    // Compute how long until the next timer fires.
     std::optional<time_point<steady_clock>> next_wake;
     {
         std::scoped_lock lk { m_timer_mut };
         if (!m_timers.empty()) next_wake = m_timers.top().when;
     }
 
+    // Declared here so it outlives the io_uring_wait_cqe_nr call below —
+    // the kernel may read the timespec asynchronously until the op completes.
+    uring_timespec ts {};
     if (next_wake) {
         auto dur = *next_wake - steady_clock::now();
         if (dur.count() <= 0) {
-            // Already expired - collect and return
+            // Already expired — collect and return without blocking.
             std::scoped_lock lk { m_timer_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
-                out.push_back(m_timers.top().handle);
+                out.push(m_timers.top().handle);
                 m_timers.pop();
             }
             return out;
         }
         auto ms = duration_cast<milliseconds>(dur) + 1ms;
-
-        // Stack-allocated timespec is safe: io_uring_wait_cqe_nr is synchronous so it
-        // remains valid until the call returns.
-        uring_timespec ts { ms.count() / 1000, (ms.count() % 1000) * 1'000'000LL };
+        ts = { ms.count() / 1000, (ms.count() % 1000) * 1'000'000LL };
         {
             std::scoped_lock lk { m_sq_mut };
             auto* sqe = io_uring_get_sqe(&m_ring);
@@ -237,16 +247,21 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
 
     io_uring_wait_cqe_nr(&m_ring, 1);
 
-    // Drain CQEs that arrived while we were blocked
-    auto more = drain_cq();
-    out.insert(out.end(), more.begin(), more.end());
+    // Drain all ready CQEs. If the CQ overflowed while we were blocked,
+    // flush the kernel overflow list back into the ring and drain again,
+    // repeating until no overflow remains.
+    append_chain(out, drain_cq());
+    while (io_uring_cq_has_overflow(&m_ring)) {
+        io_uring_get_events(&m_ring);
+        append_chain(out, drain_cq());
+    }
 
-    // Re-check timers (timer SQE may have fired)
+    // Re-check timers (the timeout SQE may have fired).
     {
         const auto after = steady_clock::now();
         std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= after) {
-            out.push_back(m_timers.top().handle);
+            out.push(m_timers.top().handle);
             m_timers.pop();
         }
     }

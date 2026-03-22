@@ -146,7 +146,14 @@ std::optional<T> min_optional(std::optional<T> a, std::optional<T> b) {
     return a ? a : b;
 }
 
-std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
+concurrent_queue<std::coroutine_handle<>>::chain reactor::wait(bool noblock) {
+    using chain_t = concurrent_queue<std::coroutine_handle<>>::chain;
+    auto to_chain = [](std::vector<std::coroutine_handle<>>& v) {
+        chain_t c;
+        for (auto h : v) c.push(h);
+        return c;
+    };
+
     auto now = steady_clock::now();
     auto [first_wake_fd, out] = wakeup_timeouts(now);
     auto [first_wake_timer, out_timers] = wakeup_timers(now);
@@ -154,11 +161,11 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
         out.insert(out.end(), out_timers.begin(), out_timers.end());
     }
     if(!out.empty()) {
-        return out;
+        return to_chain(out);
     }
-    
+
     std::optional<milliseconds> timeout_duration = std::nullopt;
-    
+
     auto first_wake = min_optional(first_wake_fd, first_wake_timer);
     if(first_wake) {
         timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
@@ -166,7 +173,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     if(noblock) {
         timeout_duration = 0ms;
     }
-    
+
     std::vector<pollfd> to_poll;
     {
         std::scoped_lock lk { m_mut };
@@ -189,7 +196,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     int num_descriptors = ::poll(to_poll.data(), (int) to_poll.size(), timeout_duration? (int) timeout_duration->count() : -1);
     if(num_descriptors == -1) {
         if(errno == EINTR) {
-            return out;
+            return to_chain(out);
         } else {
             assert(false);
         }
@@ -211,7 +218,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
         }
     }
     to_poll.pop_back(); // exclude the pipe
-    
+
     {
         std::scoped_lock lk { m_mut };
         for(auto& fdd : to_poll) {
@@ -241,7 +248,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
         out.insert(out.end(), wakeups_after.begin(), wakeups_after.end());
     }
 
-    return out;
+    return to_chain(out);
 }
 
 wait_for::wait_for(milliseconds duration) : m_duration(duration) {}

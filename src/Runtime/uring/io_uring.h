@@ -47,6 +47,9 @@ struct io_uring {
     uint32_t             cq_ring_mask = 0;
     struct io_uring_cqe* cqes         = nullptr;
 
+    // SQ ring flags word (kernel writes IORING_SQ_CQ_OVERFLOW here when the CQ is full)
+    uint32_t*            sq_flags    = nullptr;
+
     // Mapped regions
     void*  ring_ptr = nullptr;
     size_t ring_sz  = 0;
@@ -183,6 +186,16 @@ void io_uring_cq_advance(struct io_uring* ring, unsigned nr);
 
 // Block until at least wait_nr CQEs are available.
 int io_uring_wait_cqe_nr(struct io_uring* ring, unsigned wait_nr);
+
+// Flush the kernel's CQ overflow list back into the CQ ring (no blocking wait).
+int io_uring_get_events(struct io_uring* ring);
+
+// True when the kernel has queued CQEs in the overflow list because the CQ ring was full.
+// Matches liburing: checks the SQ flags word for IORING_SQ_CQ_OVERFLOW.
+static inline bool io_uring_cq_has_overflow(const struct io_uring* ring) {
+    return std::atomic_ref<uint32_t>(*ring->sq_flags).load(std::memory_order_relaxed)
+               & IORING_SQ_CQ_OVERFLOW;
+}
 
 #endif // __linux__
 #endif // io_uring_h

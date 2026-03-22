@@ -52,6 +52,9 @@ struct io_uring_sqe {
 // SQE flags
 static constexpr uint8_t IOSQE_IO_LINK = (1u << 2);
 
+// SQ ring flags (written by the kernel into sq_off.flags)
+static constexpr uint32_t IORING_SQ_CQ_OVERFLOW = (1u << 1);  // CQ ring is full; call GETEVENTS to flush
+
 // Completion Queue Entry
 struct io_uring_cqe {
     uint64_t user_data;

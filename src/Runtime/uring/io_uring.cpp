@@ -80,6 +80,7 @@ int io_uring_queue_init(unsigned entries, struct io_uring* ring, unsigned /*flag
     ring->sq_head      = reinterpret_cast<uint32_t*>(base + p.sq_off.head);
     ring->sq_tail      = reinterpret_cast<uint32_t*>(base + p.sq_off.tail);
     ring->sq_ring_mask = *reinterpret_cast<uint32_t*>(base + p.sq_off.ring_mask);
+    ring->sq_flags     = reinterpret_cast<uint32_t*>(base + p.sq_off.flags);
     ring->sq_array     = reinterpret_cast<uint32_t*>(base + p.sq_off.array);
     ring->sqes         = static_cast<struct io_uring_sqe*>(ring->sqes_ptr);
 
@@ -151,6 +152,10 @@ void io_uring_cq_advance(struct io_uring* ring, unsigned nr) {
 
 int io_uring_wait_cqe_nr(struct io_uring* ring, unsigned wait_nr) {
     return sys_io_uring_enter(ring->ring_fd, 0, wait_nr, IORING_ENTER_GETEVENTS);
+}
+
+int io_uring_get_events(struct io_uring* ring) {
+    return sys_io_uring_enter(ring->ring_fd, 0, 0, IORING_ENTER_GETEVENTS);
 }
 
 #endif // __linux__

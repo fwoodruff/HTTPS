@@ -19,6 +19,7 @@
 #include <queue>
 
 #include <coroutine>
+#include "concurrent_queue.hpp"
 
 using namespace std::chrono;
 enum class IO_direction { Read, Write };
@@ -32,11 +33,11 @@ public:
 
     void sleep_for(std::coroutine_handle<> handle, milliseconds duration);
     void sleep_until(std::coroutine_handle<> handle, time_point<steady_clock> when);
-    
+
     size_t task_count();
     void notify();
 
-    std::vector<std::coroutine_handle<>> wait(bool noblock = false);
+    concurrent_queue<std::coroutine_handle<>>::chain wait(bool noblock = false);
 private:
     std::pair<std::optional<time_point<steady_clock>>, std::vector<std::coroutine_handle<>>>
         wakeup_timeouts( const time_point<steady_clock> &now);
@@ -53,7 +54,7 @@ private:
             return a.when > b.when;
         }
     };
-    
+
     struct io_handle {
         std::array<std::coroutine_handle<>,2> handle;
         std::array<std::optional<time_point<steady_clock>>,2> wake_up;

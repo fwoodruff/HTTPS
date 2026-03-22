@@ -73,6 +73,16 @@ void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
     io_uring_submit(&m_ring);
 }
 
+void uring_reactor::submit_read(int fd, void* buf, uint32_t len,
+                                 uint64_t offset, uring_token* token) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_read)");
+    io_uring_prep_read(sqe, fd, buf, len, offset);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+    io_uring_submit(&m_ring);
+}
+
 bool uring_reactor::submit_accept(int fd, struct sockaddr_storage* addr,
                                    socklen_t* addrlen, uring_token* token) {
     std::scoped_lock lk { m_sq_mut };

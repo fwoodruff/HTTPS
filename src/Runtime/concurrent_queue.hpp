@@ -13,7 +13,6 @@
 #include <atomic>
 #include <optional>
 #include <utility>
-#include <vector>
 
 // Standard Michael-Scott lock-free FIFO queue.
 // head is a dummy sentinel node; tail is the last enqueued node (or == head if empty).
@@ -59,6 +58,16 @@ public:
                 count = std::exchange(o.count, 0);
             }
             return *this;
+        }
+
+        // Append other to the end of this chain, leaving other empty.
+        void append(chain&& other) {
+            if (!other.head) return;
+            if (!tail) { *this = std::move(other); return; }
+            tail->next.store(other.head, std::memory_order_relaxed);
+            tail   = other.tail;
+            count += other.count;
+            other.head = other.tail = nullptr;
         }
 
         ~chain() {
@@ -145,12 +154,6 @@ public:
                 return val;
             }
         }
-    }
-
-    void push_bulk(std::vector<T> values) {
-        chain c;
-        for (auto&& v : values) c.push(std::move(v));
-        splice(std::move(c));
     }
 
 private:

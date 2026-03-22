@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <algorithm>
 
+using handle_chain = concurrent_queue<std::coroutine_handle<>>::chain;
+
 // -----------------------------------------------------------------------
 // Construction / destruction
 // -----------------------------------------------------------------------
@@ -162,8 +164,8 @@ size_t uring_reactor::task_count() {
 // CQ drain - resolve tokens into coroutine handles
 // -----------------------------------------------------------------------
 
-concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::drain_cq() {
-    concurrent_queue<std::coroutine_handle<>>::chain out;
+handle_chain uring_reactor::drain_cq() {
+    handle_chain out;
     struct io_uring_cqe* cqe;
     while (io_uring_peek_cqe(&m_ring, &cqe) == 0) {
         uint64_t ud  = cqe->user_data;
@@ -181,24 +183,12 @@ concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::drain_cq() {
 // wait() - the main reactor loop entry point
 // -----------------------------------------------------------------------
 
-// Merge src into dst, leaving src empty.
-static void append_chain(concurrent_queue<std::coroutine_handle<>>::chain& dst,
-                          concurrent_queue<std::coroutine_handle<>>::chain src) {
-    if (!src.head) return;
-    if (!dst.tail) { dst = std::move(src); return; }
-    dst.tail->next.store(src.head, std::memory_order_relaxed);
-    dst.tail   = src.tail;
-    dst.count += src.count;
-    src.head   = src.tail = nullptr;
-}
-
-concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::wait(bool noblock) {
-    using chain_t = concurrent_queue<std::coroutine_handle<>>::chain;
+handle_chain uring_reactor::wait(bool noblock) {
     if (!m_uring_ok) return m_fallback.wait(noblock);
 
     // Check timers first
     const auto now = steady_clock::now();
-    chain_t out;
+    handle_chain out;
     {
         std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= now) {
@@ -207,7 +197,7 @@ concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::wait(bool nobloc
         }
     }
 
-    append_chain(out, drain_cq());
+    out.append(drain_cq());
 
     if (out.count || noblock) return out;
 
@@ -250,10 +240,10 @@ concurrent_queue<std::coroutine_handle<>>::chain uring_reactor::wait(bool nobloc
     // Drain all ready CQEs. If the CQ overflowed while we were blocked,
     // flush the kernel overflow list back into the ring and drain again,
     // repeating until no overflow remains.
-    append_chain(out, drain_cq());
+    out.append(drain_cq());
     while (io_uring_cq_has_overflow(&m_ring)) {
         io_uring_get_events(&m_ring);
-        append_chain(out, drain_cq());
+        out.append(drain_cq());
     }
 
     // Re-check timers (the timeout SQE may have fired).

@@ -146,14 +146,7 @@ std::optional<T> min_optional(std::optional<T> a, std::optional<T> b) {
     return a ? a : b;
 }
 
-concurrent_queue<std::coroutine_handle<>>::chain reactor::wait(bool noblock) {
-    using chain_t = concurrent_queue<std::coroutine_handle<>>::chain;
-    auto to_chain = [](std::vector<std::coroutine_handle<>>& v) {
-        chain_t c;
-        for (auto h : v) c.push(h);
-        return c;
-    };
-
+std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     auto now = steady_clock::now();
     auto [first_wake_fd, out] = wakeup_timeouts(now);
     auto [first_wake_timer, out_timers] = wakeup_timers(now);
@@ -161,7 +154,7 @@ concurrent_queue<std::coroutine_handle<>>::chain reactor::wait(bool noblock) {
         out.insert(out.end(), out_timers.begin(), out_timers.end());
     }
     if(!out.empty()) {
-        return to_chain(out);
+        return out;
     }
 
     std::optional<milliseconds> timeout_duration = std::nullopt;
@@ -196,7 +189,7 @@ concurrent_queue<std::coroutine_handle<>>::chain reactor::wait(bool noblock) {
     int num_descriptors = ::poll(to_poll.data(), (int) to_poll.size(), timeout_duration? (int) timeout_duration->count() : -1);
     if(num_descriptors == -1) {
         if(errno == EINTR) {
-            return to_chain(out);
+            return out;
         } else {
             assert(false);
         }
@@ -248,7 +241,7 @@ concurrent_queue<std::coroutine_handle<>>::chain reactor::wait(bool noblock) {
         out.insert(out.end(), wakeups_after.begin(), wakeups_after.end());
     }
 
-    return to_chain(out);
+    return out;
 }
 
 wait_for::wait_for(milliseconds duration) : m_duration(duration) {}

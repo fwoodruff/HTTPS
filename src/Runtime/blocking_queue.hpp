@@ -23,13 +23,14 @@ public:
         hint_size.fetch_add(1, std::memory_order_relaxed);
         m_sem.release();
     }
-    // Lock-free bulk insert: splices a pre-built chain and releases the semaphore once.
-    void splice(typename concurrent_queue<T>::chain c) {
-        if (c.count == 0) return;
-        auto count = c.count;
-        m_queue.splice(std::move(c));
-        hint_size.fetch_add(count, std::memory_order_relaxed);
-        m_sem.release(count);
+    void push_bulk(std::vector<T> values) {
+        if(values.empty()) {
+            return;
+        }
+        auto size = values.size();
+        m_queue.push_bulk(std::move(values));
+        hint_size.fetch_add(size, std::memory_order_relaxed);
+        m_sem.release(size);
     }
     std::optional<T> try_pop() {
         bool acqu = m_sem.try_acquire();

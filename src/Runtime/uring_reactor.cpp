@@ -14,8 +14,6 @@
 #include <stdexcept>
 #include <algorithm>
 
-using handle_chain = concurrent_queue<std::coroutine_handle<>>::chain;
-
 // -----------------------------------------------------------------------
 // Construction / destruction
 // -----------------------------------------------------------------------
@@ -164,8 +162,8 @@ size_t uring_reactor::task_count() {
 // CQ drain - resolve tokens into coroutine handles
 // -----------------------------------------------------------------------
 
-handle_chain uring_reactor::drain_cq() {
-    handle_chain out;
+std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
+    std::vector<std::coroutine_handle<>> out;
     struct io_uring_cqe* cqe;
     while (io_uring_peek_cqe(&m_ring, &cqe) == 0) {
         uint64_t ud  = cqe->user_data;
@@ -174,7 +172,7 @@ handle_chain uring_reactor::drain_cq() {
         if (ud == URING_IGNORE) continue;
         auto* token = reinterpret_cast<uring_token*>(static_cast<uintptr_t>(ud));
         token->res = res;
-        if (token->handle) out.push(token->handle);
+        if (token->handle) out.push_back(token->handle);
     }
     return out;
 }
@@ -183,23 +181,24 @@ handle_chain uring_reactor::drain_cq() {
 // wait() - the main reactor loop entry point
 // -----------------------------------------------------------------------
 
-handle_chain uring_reactor::wait(bool noblock) {
+std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
     if (!m_uring_ok) return m_fallback.wait(noblock);
 
     // Check timers first
     const auto now = steady_clock::now();
-    handle_chain out;
+    std::vector<std::coroutine_handle<>> out;
     {
         std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= now) {
-            out.push(m_timers.top().handle);
+            out.push_back(m_timers.top().handle);
             m_timers.pop();
         }
     }
 
-    out.append(drain_cq());
+    auto cq_ready = drain_cq();
+    out.insert(out.end(), cq_ready.begin(), cq_ready.end());
 
-    if (out.count || noblock) return out;
+    if (!out.empty() || noblock) return out;
 
     // Compute how long until the next timer fires.
     std::optional<time_point<steady_clock>> next_wake;
@@ -217,7 +216,7 @@ handle_chain uring_reactor::wait(bool noblock) {
             // Already expired, collect and return without blocking.
             std::scoped_lock lk { m_timer_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
-                out.push(m_timers.top().handle);
+                out.push_back(m_timers.top().handle);
                 m_timers.pop();
             }
             return out;
@@ -240,10 +239,14 @@ handle_chain uring_reactor::wait(bool noblock) {
     // Drain all ready CQEs. If the CQ overflowed while we were blocked,
     // flush the kernel overflow list back into the ring and drain again,
     // repeating until no overflow remains.
-    out.append(drain_cq());
+    {
+        auto more = drain_cq();
+        out.insert(out.end(), more.begin(), more.end());
+    }
     while (io_uring_cq_has_overflow(&m_ring)) {
         io_uring_get_events(&m_ring);
-        out.append(drain_cq());
+        auto more = drain_cq();
+        out.insert(out.end(), more.begin(), more.end());
     }
 
     // Re-check timers (the timeout SQE may have fired).
@@ -251,7 +254,7 @@ handle_chain uring_reactor::wait(bool noblock) {
         const auto after = steady_clock::now();
         std::scoped_lock lk { m_timer_mut };
         while (!m_timers.empty() && m_timers.top().when <= after) {
-            out.push(m_timers.top().handle);
+            out.push_back(m_timers.top().handle);
             m_timers.pop();
         }
     }

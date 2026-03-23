@@ -91,21 +91,21 @@ void executor::thread_function() {
 
 void executor::try_poll() {
     auto this_can_lock = can_poll_wait.try_lock();
-    concurrent_queue<std::coroutine_handle<>>::chain ready_from_reactor;
+    std::vector<std::coroutine_handle<>> ready_from_reactor;
     if(this_can_lock) {
         std::unique_lock lk { can_poll_wait, std::adopt_lock };
         ready_from_reactor = m_reactor.wait(true);
     }
-    m_ready.splice(std::move(ready_from_reactor));
+    m_ready.push_bulk(std::move(ready_from_reactor));
 }
 
 void executor::block_until_ready() {
-    concurrent_queue<std::coroutine_handle<>>::chain wakeables;
+    std::vector<std::coroutine_handle<>> wakeables;
     {
         std::scoped_lock lk{ can_poll_wait };
         wakeables = m_reactor.wait(false);
     }
-    m_ready.splice(std::move(wakeables));
+    m_ready.push_bulk(std::move(wakeables));
 }
 
 void executor::main_thread_function() {

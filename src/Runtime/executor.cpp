@@ -91,12 +91,14 @@ void executor::thread_function() {
 
 void executor::try_poll() {
     auto this_can_lock = can_poll_wait.try_lock();
-    std::vector<std::coroutine_handle<>> ready_from_reactor;
     if(this_can_lock) {
-        std::unique_lock lk { can_poll_wait, std::adopt_lock };
-        ready_from_reactor = m_reactor.wait(true);
+        std::vector<std::coroutine_handle<>> wakeable_coroutines{};
+        {
+            std::unique_lock lk { can_poll_wait, std::adopt_lock };
+            wakeable_coroutines = m_reactor.wait(true);
+        }
+        m_ready.push_bulk(std::move(wakeable_coroutines));
     }
-    m_ready.push_bulk(std::move(ready_from_reactor));
 }
 
 void executor::block_until_ready() {

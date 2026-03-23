@@ -211,7 +211,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
         }
     }
     to_poll.pop_back(); // exclude the pipe
-
+    
     {
         std::scoped_lock lk { m_mut };
         for(auto& fdd : to_poll) {

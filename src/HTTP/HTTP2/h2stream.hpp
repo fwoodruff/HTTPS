@@ -12,7 +12,7 @@
 #include "hpack.hpp"
 #include "../../Runtime/task.hpp"
 #include "../../global.hpp"
-#include "../../TCP/tcp_stream.hpp"
+#include "../../IP/tcp_stream.hpp"
 
 #include <queue>
 

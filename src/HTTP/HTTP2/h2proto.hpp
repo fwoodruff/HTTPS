@@ -9,7 +9,7 @@
 #define http2_hpp
 
 #include "h2_ctx.hpp"
-#include "../../TCP/tcp_stream.hpp"
+#include "../../IP/tcp_stream.hpp"
 #include "../../global.hpp"
 #include "../../Runtime/task.hpp"
 #include "../../Runtime/async_mutex.hpp"

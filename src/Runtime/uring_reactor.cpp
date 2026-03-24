@@ -73,6 +73,48 @@ void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
     io_uring_submit(&m_ring);
 }
 
+void uring_reactor::submit_recvmsg(int fd, struct msghdr* msg,
+                                    uring_token* token,
+                                    std::optional<milliseconds> timeout) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_recvmsg)");
+    io_uring_prep_recvmsg(sqe, fd, msg, 0);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+
+    if (timeout && timeout->count() > 0) {
+        io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
+        token->ts = { timeout->count() / 1000, (timeout->count() % 1000) * 1'000'000LL };
+
+        auto* tsqe = io_uring_get_sqe(&m_ring);
+        if (!tsqe) throw std::runtime_error("io_uring SQ ring full (submit_recvmsg timeout)");
+        io_uring_prep_link_timeout(tsqe, &token->ts, 0);
+        io_uring_sqe_set_data64(tsqe, URING_IGNORE);
+    }
+    io_uring_submit(&m_ring);
+}
+
+void uring_reactor::submit_sendmsg(int fd, const struct msghdr* msg,
+                                    uring_token* token,
+                                    std::optional<milliseconds> timeout) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_sendmsg)");
+    io_uring_prep_sendmsg(sqe, fd, msg, 0);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+
+    if (timeout && timeout->count() > 0) {
+        io_uring_sqe_set_flags(sqe, IOSQE_IO_LINK);
+        token->ts = { timeout->count() / 1000, (timeout->count() % 1000) * 1'000'000LL };
+
+        auto* tsqe = io_uring_get_sqe(&m_ring);
+        if (!tsqe) throw std::runtime_error("io_uring SQ ring full (submit_sendmsg timeout)");
+        io_uring_prep_link_timeout(tsqe, &token->ts, 0);
+        io_uring_sqe_set_data64(tsqe, URING_IGNORE);
+    }
+    io_uring_submit(&m_ring);
+}
+
 void uring_reactor::submit_read(int fd, void* buf, uint32_t len,
                                  uint64_t offset, uring_token* token) {
     std::scoped_lock lk { m_sq_mut };

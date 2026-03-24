@@ -12,8 +12,8 @@
 #include "../global.hpp"
 #include "Cryptography/one_way/sha2.hpp"
 #include "TLS_enums.hpp"
-#include "../TCP/tcp_stream.hpp"
-#include "../TCP/stream_base.hpp"
+#include "../IP/tcp_stream.hpp"
+#include "../IP/stream_base.hpp"
 #include "handshake.hpp"
 
 #include <array>

@@ -11,9 +11,9 @@
 #include "../global.hpp"
 
 #include "TLS_enums.hpp"
-#include "../TCP/tcp_stream.hpp"
+#include "../IP/tcp_stream.hpp"
 #include "../Runtime/task.hpp"
-#include "../TCP/stream_base.hpp"
+#include "../IP/stream_base.hpp"
 #include "../Runtime/async_mutex.hpp"
 #include "tls_engine.hpp"
 

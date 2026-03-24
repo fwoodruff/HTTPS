@@ -52,6 +52,10 @@ public:
                         uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
     void submit_send   (int fd, const void* buf, uint32_t len,
                         uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
+    void submit_recvmsg(int fd, struct msghdr* msg,
+                        uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
+    void submit_sendmsg(int fd, const struct msghdr* msg,
+                        uring_token* token, std::optional<milliseconds> timeout = std::nullopt);
     void submit_read   (int fd, void* buf, uint32_t len, uint64_t offset,
                         uring_token* token);
     // Returns false if the SQ ring is full; caller must handle without throwing.

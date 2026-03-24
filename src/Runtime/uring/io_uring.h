@@ -19,6 +19,7 @@
 #include <cstring>
 #include <atomic>
 #include <sys/socket.h>
+#include <sys/uio.h>
 
 // Kernel-compatible 64-bit timespec (matches struct __kernel_timespec)
 struct uring_timespec {
@@ -154,6 +155,26 @@ static inline void io_uring_prep_read(struct io_uring_sqe* sqe, int fd,
     sqe->off    = offset;
     sqe->addr   = reinterpret_cast<uint64_t>(buf);
     sqe->len    = len;
+}
+
+static inline void io_uring_prep_recvmsg(struct io_uring_sqe* sqe, int fd,
+                                          struct msghdr* msg, unsigned flags) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode    = IORING_OP_RECVMSG;
+    sqe->fd        = fd;
+    sqe->addr      = reinterpret_cast<uint64_t>(msg);
+    sqe->len       = 1;
+    sqe->msg_flags = flags;
+}
+
+static inline void io_uring_prep_sendmsg(struct io_uring_sqe* sqe, int fd,
+                                          const struct msghdr* msg, unsigned flags) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode    = IORING_OP_SENDMSG;
+    sqe->fd        = fd;
+    sqe->addr      = reinterpret_cast<uint64_t>(msg);
+    sqe->len       = 1;
+    sqe->msg_flags = flags;
 }
 
 static inline void io_uring_prep_nop(struct io_uring_sqe* sqe) {

@@ -18,8 +18,8 @@
 #include "../global.hpp"
 #include "stream_base.hpp"
 #include "../Runtime/task.hpp"
-#include "../TCP/Awaitables/await_accept.hpp"
-#include "../TCP/Awaitables/await_stream.hpp"
+#include "../IP/Awaitables/await_accept.hpp"
+#include "../IP/Awaitables/await_stream.hpp"
 
 namespace fbw {
 

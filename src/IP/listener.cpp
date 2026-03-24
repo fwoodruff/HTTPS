@@ -134,11 +134,6 @@ int get_socket(const std::string &service, int sock_kind) {
         throw std::runtime_error("bind: failed to bind socket");
     }
 
-    if (listen(sockfd, 10) == -1) {
-        close(sockfd);
-        throw std::runtime_error("listen: failed");
-    }
-
 #ifdef __linux__
     // io_uring ACCEPT requires a blocking listen socket; poll reactor needs O_NONBLOCK.
     if (!executor_singleton().m_reactor.uring_ok()) {

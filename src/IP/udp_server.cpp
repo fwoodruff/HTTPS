@@ -155,6 +155,7 @@ task<void> serve_udp(std::string port, std::function<task<void>(std::shared_ptr<
     std::unordered_map<std::string, std::shared_ptr<udp_connection>> addr_map;
     for(;;) {
         auto dgram = co_await socket.receive_from(std::nullopt);
+        co_return;
         auto dgram_address_key = addr_to_key(dgram.addr);
         auto it = addr_map.find(dgram_address_key); // TODO, replace this with a lookup against the packet's id
         std::shared_ptr<udp_connection> connection;

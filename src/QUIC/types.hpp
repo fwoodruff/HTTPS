@@ -8,9 +8,13 @@
 #ifndef quic_types_hpp
 #define quic_types_hpp
 
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <optional>
+#include <string>
 #include <variant>
 #include <vector>
-#include <optional>
 
 
 namespace fbw::quic {

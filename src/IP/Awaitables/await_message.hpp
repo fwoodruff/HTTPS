@@ -20,9 +20,14 @@
 #include <netdb.h>
 
 #include <span>
+#include <array>
 #include <coroutine>
 #include <optional>
 #include <chrono>
+
+#ifdef __linux__
+#include "../../Runtime/uring_reactor.hpp"
+#endif
 
 using namespace std::chrono;
 
@@ -45,6 +50,13 @@ public:
 private:
     int m_fd;
     std::optional<milliseconds> m_millis;
+#ifdef __linux__
+    std::array<uint8_t, udp_buffer_size> m_buf {};
+    struct sockaddr_storage m_addr {};
+    struct iovec m_iov {};
+    struct msghdr m_msg {};
+    uring_token m_token {};
+#endif
 };
 
 class udp_sender {
@@ -57,6 +69,11 @@ private:
     int m_fd;
     datagram m_dgram;
     std::optional<milliseconds> m_millis;
+#ifdef __linux__
+    struct iovec m_iov {};
+    struct msghdr m_msg {};
+    uring_token m_token {};
+#endif
 };
 
 class udp_socket {

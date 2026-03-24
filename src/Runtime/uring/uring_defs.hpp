@@ -78,6 +78,8 @@ enum {
     IORING_OP_NOP          = 0,
     IORING_OP_READV        = 1,
     IORING_OP_WRITEV       = 2,
+    IORING_OP_RECVMSG      = 3,
+    IORING_OP_SENDMSG      = 4,
     IORING_OP_POLL_ADD     = 6,
     IORING_OP_TIMEOUT      = 11,
     IORING_OP_LINK_TIMEOUT = 15,

@@ -36,12 +36,39 @@ bool udp_receiver::await_ready() const noexcept { // recvfrom(..., MSG_PEEK) ?
 }
 
 bool udp_receiver::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        m_iov.iov_base       = m_buf.data();
+        m_iov.iov_len        = m_buf.size();
+        m_msg.msg_name       = &m_addr;
+        m_msg.msg_namelen    = sizeof(m_addr);
+        m_msg.msg_iov        = &m_iov;
+        m_msg.msg_iovlen     = 1;
+        m_msg.msg_control    = nullptr;
+        m_msg.msg_controllen = 0;
+        m_msg.msg_flags      = 0;
+        m_token.handle = awaiting_coroutine;
+        executor_singleton().m_reactor.submit_recvmsg(m_fd, &m_msg, &m_token, m_millis);
+        return true;
+    }
+#endif
     auto& exec = executor_singleton();
     exec.m_reactor.add_task(m_fd, awaiting_coroutine, IO_direction::Read, m_millis);
     return true;
 }
 
 datagram udp_receiver::await_resume() {
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        int32_t res = m_token.res;
+        if (res <= 0) return {};
+        datagram gram;
+        gram.data = std::vector<uint8_t>(m_buf.begin(), m_buf.begin() + res);
+        gram.addr = m_addr;
+        gram.address_size = static_cast<ssize_t>(m_msg.msg_namelen);
+        return gram;
+    }
+#endif
     struct sockaddr_storage their_addr;
     socklen_t addr_len;
     addr_len = sizeof(their_addr);
@@ -83,12 +110,33 @@ bool udp_sender::await_ready() const noexcept {
 }
 
 bool udp_sender::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        m_iov.iov_base       = m_dgram.data.data();
+        m_iov.iov_len        = m_dgram.data.size();
+        m_msg.msg_name       = &m_dgram.addr;
+        m_msg.msg_namelen    = static_cast<socklen_t>(m_dgram.address_size);
+        m_msg.msg_iov        = &m_iov;
+        m_msg.msg_iovlen     = 1;
+        m_msg.msg_control    = nullptr;
+        m_msg.msg_controllen = 0;
+        m_msg.msg_flags      = 0;
+        m_token.handle = awaiting_coroutine;
+        executor_singleton().m_reactor.submit_sendmsg(m_fd, &m_msg, &m_token, m_millis);
+        return true;
+    }
+#endif
     auto& exec = executor_singleton();
     exec.m_reactor.add_task(m_fd, awaiting_coroutine, IO_direction::Write, m_millis);
     return true;
 }
 
 bool udp_sender::await_resume() {
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        return m_token.res >= 0;
+    }
+#endif
     auto code = ::sendto(m_fd, &m_dgram.data[0], m_dgram.data.size(), 0, (const sockaddr *) &m_dgram.addr, m_dgram.address_size);
     if(code == -1) {
         return false;

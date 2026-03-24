@@ -156,9 +156,9 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     if(!out.empty()) {
         return out;
     }
-    
+
     std::optional<milliseconds> timeout_duration = std::nullopt;
-    
+
     auto first_wake = min_optional(first_wake_fd, first_wake_timer);
     if(first_wake) {
         timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
@@ -166,7 +166,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     if(noblock) {
         timeout_duration = 0ms;
     }
-    
+
     std::vector<pollfd> to_poll;
     {
         std::scoped_lock lk { m_mut };

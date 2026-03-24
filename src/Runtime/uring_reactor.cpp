@@ -195,23 +195,25 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
         }
     }
 
-    // Non-blocking peek at the CQ
     auto cq_ready = drain_cq();
     out.insert(out.end(), cq_ready.begin(), cq_ready.end());
 
     if (!out.empty() || noblock) return out;
 
-    // Compute how long until the next timer fires
+    // Compute how long until the next timer fires.
     std::optional<time_point<steady_clock>> next_wake;
     {
         std::scoped_lock lk { m_timer_mut };
         if (!m_timers.empty()) next_wake = m_timers.top().when;
     }
 
+    // Declared here so it outlives the io_uring_wait_cqe_nr call below
+    // the kernel may read the timespec asynchronously until the op completes.
+    uring_timespec ts {};
     if (next_wake) {
         auto dur = *next_wake - steady_clock::now();
         if (dur.count() <= 0) {
-            // Already expired - collect and return
+            // Already expired, collect and return without blocking.
             std::scoped_lock lk { m_timer_mut };
             while (!m_timers.empty() && m_timers.top().when <= steady_clock::now()) {
                 out.push_back(m_timers.top().handle);
@@ -220,10 +222,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
             return out;
         }
         auto ms = duration_cast<milliseconds>(dur) + 1ms;
-
-        // Stack-allocated timespec is safe: io_uring_wait_cqe_nr is synchronous so it
-        // remains valid until the call returns.
-        uring_timespec ts { ms.count() / 1000, (ms.count() % 1000) * 1'000'000LL };
+        ts = { ms.count() / 1000, (ms.count() % 1000) * 1'000'000LL };
         {
             std::scoped_lock lk { m_sq_mut };
             auto* sqe = io_uring_get_sqe(&m_ring);
@@ -237,11 +236,20 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
 
     io_uring_wait_cqe_nr(&m_ring, 1);
 
-    // Drain CQEs that arrived while we were blocked
-    auto more = drain_cq();
-    out.insert(out.end(), more.begin(), more.end());
+    // Drain all ready CQEs. If the CQ overflowed while we were blocked,
+    // flush the kernel overflow list back into the ring and drain again,
+    // repeating until no overflow remains.
+    {
+        auto more = drain_cq();
+        out.insert(out.end(), more.begin(), more.end());
+    }
+    while (io_uring_cq_has_overflow(&m_ring)) {
+        io_uring_get_events(&m_ring);
+        auto more = drain_cq();
+        out.insert(out.end(), more.begin(), more.end());
+    }
 
-    // Re-check timers (timer SQE may have fired)
+    // Re-check timers (the timeout SQE may have fired).
     {
         const auto after = steady_clock::now();
         std::scoped_lock lk { m_timer_mut };

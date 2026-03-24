@@ -6,8 +6,8 @@
 //
 
 #include "proxy.hpp"
-#include "../TCP/Awaitables/await_connect.hpp"
-#include "../TCP/tcp_stream.hpp"
+#include "../IP/Awaitables/await_connect.hpp"
+#include "../IP/tcp_stream.hpp"
 #include "../HTTP/common/HTTP.hpp"
 #include "../HTTP/common/string_utils.hpp"
 #include "../global.hpp"

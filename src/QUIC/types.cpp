@@ -75,7 +75,7 @@ static stream_frame parse_stream(std::span<const uint8_t>& payload,  uint64_t fr
     stream_frame out;
     bool offset = !!(frame_type & 0x04);
     bool len = !!(frame_type & 0x02); 
-    bool fin = !!(frame_type & 0x01);
+    //bool fin = !!(frame_type & 0x01);
     out.stream_id = read_varint(payload);
     if(offset) {
         out.offset = read_varint(payload);

@@ -74,7 +74,6 @@ private:
     void client_end_of_early_data(std::vector<uint8_t> handshake_message);
     void client_change_cipher_spec(tls_record);
     
-    void server_key_update_respond(std::queue<packet_timed>& output);
     void server_hello_sync(std::queue<packet_timed>& output);
     void server_certificate(std::queue<packet_timed>& output);
     void server_certificate_verify(std::queue<packet_timed>& output);

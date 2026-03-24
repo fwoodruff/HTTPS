@@ -25,7 +25,8 @@ std::string convert_response_to_http1_headers(const std::vector<entry_t>& header
             }
         }
         auto code = std::stoll(status);
-        auto msg = http_code_map.at(code);
+        auto it = http_code_map.find(code);
+        auto msg = (it != http_code_map.end()) ? it->second : std::string{};
         out << "HTTP/1.1 " << status << " " << msg << "\r\n";
         for (const auto& h : headers) {
             if (h.name.starts_with(":")) {

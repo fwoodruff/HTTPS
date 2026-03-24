@@ -14,7 +14,6 @@
 #include <mutex>
 #include <queue>
 #include <vector>
-#include <queue>
 #include <optional>
 #include <atomic>
 
@@ -68,7 +67,7 @@ public:
                 node* old_next = nullptr;
                 if(old_tail->next.compare_exchange_strong(old_next, new_next)) {
                     old_next = new_next;
-                    new_next = new node; 
+                    new_next = new node;
                 }
                 node* const current_tail_ptr = old_tail;
                 while(!tail.compare_exchange_weak(old_tail, old_next) and old_tail == current_tail_ptr);

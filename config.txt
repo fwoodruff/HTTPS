@@ -1,6 +1,5 @@
 REDIRECT_PORT=8080
 SERVER_PORT=8443
-DOMAIN_NAMES=localhost, www.localhost
 KEY_FOLDER=resources/keypair
 CERTIFICATE_FILE=ecc_cert.pem
 KEY_FILE=ecc_key.pem
@@ -10,3 +9,4 @@ TLD_FILE=resources/tld.txt
 MIME_FOLDER=resources/MIME
 HTTP_STRICT_TRANSPORT_SECURITY=false
 IP_BAN_PATH=resources/ip_ban.txt
+PROXY_ENDPOINTS=localhost/llm,192.168.1.152:50000/llm

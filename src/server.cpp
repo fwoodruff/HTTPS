@@ -1,3 +1,11 @@
+//
+//  server.cpp
+//  HTTPS Server
+//
+//  Created by Frederick Benjamin Woodruff on 09/03/2026.
+//
+
+#include "server.hpp"
 
 #include "TLS/protocol.hpp"
 #include "Runtime/executor.hpp"
@@ -81,6 +89,7 @@
 // the h2_context should stream in bytes not frames, so that it can emit the right errors for malformed frames
 // and send the server settings straight after the client preface (which isn't a frame)
 
+
 // after a connection is accepted, this is the per-client entry point
 task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_token ip_connections, std::string alpn, fbw::callback handler) {
     try {
@@ -143,7 +152,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
             }
             auto tcp_stream = std::make_unique<fbw::tcp_stream>(std::move( * client ));
             auto tls_stream = std::make_unique<fbw::TLS>(std::move(tcp_stream));
-            
+
             async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
         } catch(const std::exception& e) {
             std::println(stderr, "{}\n", e.what());
@@ -179,7 +188,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             }
             auto client_tcp_stream = std::make_unique<fbw::tcp_stream>(std::move(*client));
             async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
-            
+
         } catch(const std::exception& e ) {
             std::println(stderr, "{}\n", e.what());
         }
@@ -212,24 +221,4 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         std::println(stderr, "Certificate file: {}", std::filesystem::absolute(default_certificate_file).lexically_normal().string());
     }
     co_return;
-}
-
-
-
-
-int main(int argc, const char * argv[]) {
-    try {
-        std::string config_path = fbw::get_config_path(argc, argv);
-        fbw::init_options(config_path);
-        auto http_port = fbw::project_options.redirect_port ;
-        auto http_listener = fbw::tcplistener::bind(http_port);
-        auto https_port = fbw::project_options.server_port;
-        auto https_listener = fbw::tcplistener::bind(https_port);
-        fbw::randomgen.randgen(fbw::session_ticket_master_secret);
-        fbw::randomgen.randgen(fbw::session_ticket_master_secret);
-        run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
-    } catch(const std::exception& e) {
-        std::println(stderr, "main: {}\n", e.what());
-    }
-    return 0;
 }

@@ -13,9 +13,14 @@
 #include "../TLS/Cryptography/one_way/keccak.hpp"
 #include "../global.hpp"
 #include "websockets.hpp"
+#include "proxy.hpp"
 
 #include <algorithm>
 #include <string>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "../Runtime/disk_io.hpp"
 
 namespace fbw {
 
@@ -39,6 +44,9 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 
 void write_body(std::string body) {
     std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
+    if(!fout.is_open()) {
+        return;
+    }
     body = replace_all(std::move(body), "username=", "username: ");
     body = replace_all(std::move(body), "&password=", ", password: ");
     body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
@@ -76,19 +84,28 @@ std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool f
     return out;
 }
 
-task<stream_result> send_body_slice(http_ctx& conn, std::ifstream& file, ssize_t begin, ssize_t end, bool end_of_data = true) {
+// RAII wrapper for a POSIX file descriptor
+struct file_fd {
+    int fd = -1;
+    explicit file_fd(const std::filesystem::path& p) : fd(::open(p.c_str(), O_RDONLY)) {}
+    ~file_fd() { if (fd >= 0) ::close(fd); }
+    file_fd(const file_fd&) = delete;
+    file_fd& operator=(const file_fd&) = delete;
+};
+
+task<stream_result> send_body_slice(http_ctx& conn, int fd, ssize_t begin, ssize_t end, bool end_of_data = true) {
     std::vector<uint8_t> buffer;
-    file.seekg(begin);
-    while(file.tellg() != end && !file.eof()) {
-        auto next_buffer_size = std::min(FILE_READ_SIZE, ssize_t(end - file.tellg()));
-        buffer.resize(next_buffer_size);
-        file.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
-        const bool is_last_chunk = (file.tellg() >= end || file.eof()) and end_of_data;
+    ssize_t offset = begin;
+    while (offset < end) {
+        auto chunk = std::min(FILE_READ_SIZE, end - offset);
+        buffer.resize(static_cast<size_t>(chunk));
+        auto nread = co_await disk_read(fd, buffer.data(), static_cast<uint32_t>(chunk), static_cast<uint64_t>(offset));
+        if (nread <= 0) co_return stream_result::ok;
+        buffer.resize(static_cast<size_t>(nread));
+        offset += nread;
+        const bool is_last_chunk = (offset >= end) && end_of_data;
         auto res = co_await conn.write_data(buffer, is_last_chunk);
-        if(res != stream_result::ok) [[unlikely]] {
-            co_return res;
-        }
-        assert(file.tellg() <= end);
+        if (res != stream_result::ok) [[unlikely]] co_return res;
     }
     co_return stream_result::ok;
 }
@@ -97,7 +114,7 @@ std::string http1_1_range_header(std::pair<ssize_t, ssize_t> range, ssize_t file
     return "Content-Range: bytes " + std::to_string(range.first) + "-" + std::to_string(range.second) + "/" + std::to_string(file_size) + "\r\n\r\n";
 }
 
-task<bool> send_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, const std::pair<size_t, size_t> range,  bool send_body) {
+task<bool> send_ranged_response(http_ctx& conn, int fd, ssize_t file_size, std::string mime, const std::pair<size_t, size_t> range,  bool send_body) {
     size_t end = range.second + 1;
     const auto desired_content_size = end - range.first;
     if(desired_content_size > RANGE_SUGGESTED_SIZE) {
@@ -113,12 +130,12 @@ task<bool> send_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t fil
         co_return false;
     }
     if(send_body) {
-        co_await send_body_slice(conn, file, range.first, end);
+        co_await send_body_slice(conn, fd, range.first, end);
     }
     co_return true;
 }
 
-task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, std::vector<std::pair<size_t, size_t>> ranges,  bool send_body) {
+task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size, std::string mime, std::vector<std::pair<size_t, size_t>> ranges,  bool send_body) {
     std::array<uint8_t, 28> entropy;
     randomgen.randgen(entropy);
     std::string boundary_string;
@@ -153,7 +170,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize
                 co_return;
             }
             if(send_body) {
-                result = co_await send_body_slice(conn, file, range.first, range.second + 1, false);
+                result = co_await send_body_slice(conn, fd, range.first, range.second + 1, false);
                 if(result != stream_result::ok) {
                     co_return;
                 }
@@ -170,7 +187,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, std::ifstream& file, ssize
     co_return;
 }
 
-task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_size, std::string mime, bool send_body) {
+task<void> send_full_response(http_ctx& conn, int fd, ssize_t file_size, std::string mime, bool send_body) {
     auto headers = headers_to_send(file_size, mime);
     if(file_size > RANGE_SUGGESTED_SIZE) {
         headers.push_back({"accept-ranges", "bytes"});
@@ -183,7 +200,7 @@ task<void> send_full_response(http_ctx& conn, std::ifstream& file, ssize_t file_
         co_return;
     }
     if(send_body) {
-        co_await send_body_slice(conn, file, 0, file_size);
+        co_await send_body_slice(conn, fd, 0, file_size);
     }
     co_return;
 }
@@ -193,12 +210,26 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
         throw http_error(400, "Bad Request");
     }
     // todo: check if HTTP/2 stream is half-closed local?
-    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
-    if(file.fail()) {
+    std::error_code ec;
+    auto st = std::filesystem::status(file_path, ec);
+    std::filesystem::path to_serve;
+    if (!ec && std::filesystem::is_regular_file(st)) {
+        to_serve = file_path;
+    } else if (!ec && std::filesystem::is_directory(st)) {
+        to_serve = file_path / "index.html";
+        if (!std::filesystem::exists(to_serve, ec) || !std::filesystem::is_regular_file(to_serve, ec)) {
+            throw http_error(404, "Not Found");
+        }
+    } else {
         throw http_error(404, "Not Found");
     }
-    ssize_t file_size = file.tellg();
-    std::string mime = Mime_from_file(file_path);
+
+    file_fd file(to_serve);
+    if (file.fd < 0) throw http_error(404, "Not Found");
+    struct ::stat fst {};
+    if (::fstat(file.fd, &fst) != 0) throw http_error(404, "Not Found");
+    ssize_t file_size = fst.st_size;
+    std::string mime = Mime_from_file(to_serve);
     auto range_hdr = find_header(headers, "range");
     if (range_hdr) {
         auto ranges = parse_range_header(*range_hdr, file_size);
@@ -206,12 +237,12 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
             throw http_error(400, "Bad Request");
         }
         if(ranges.size() == 1) {
-            co_await send_ranged_response(conn, file, file_size, mime, ranges[0], send_body);
+            co_await send_ranged_response(conn, file.fd, file_size, mime, ranges[0], send_body);
         } else {
-            co_await send_multi_ranged_response(conn, file, file_size, mime, ranges, send_body);
+            co_await send_multi_ranged_response(conn, file.fd, file_size, mime, ranges, send_body);
         }
     } else {
-        co_await send_full_response(conn, file, file_size, mime, send_body);
+        co_await send_full_response(conn, file.fd, file_size, mime, send_body);
     }
 }
 
@@ -254,13 +285,13 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
     std::string body(request_body.begin(), request_body.end());
     write_body(body);
 
-    std::ifstream file(file_path, std::ifstream::ate | std::ifstream::binary);
-    if(file.fail()) {
-        throw http_error(404, "Not Found");
-    }
-    ssize_t file_size = file.tellg();
+    file_fd file(file_path);
+    if (file.fd < 0) throw http_error(404, "Not Found");
+    struct ::stat st {};
+    if (::fstat(file.fd, &st) != 0) throw http_error(404, "Not Found");
+    ssize_t file_size = st.st_size;
 
-    co_await send_full_response(connection, file, file_size, mime, true);
+    co_await send_full_response(connection, file.fd, file_size, mime, true);
     co_return;
 }
 
@@ -272,9 +303,6 @@ std::string get_host(const std::vector<entry_t>& request_headers) {
         dir_host = *authority;
     } else if(host) {
         dir_host = *host;
-    }
-    if(dir_host.starts_with("localhost")) {
-        dir_host = project_options.default_subfolder;
     }
     auto p = dir_host.rfind(':');
     if(p != std::string::npos) {
@@ -309,13 +337,35 @@ task<bool> handle_request(http_ctx& connection) {
     if (!method.has_value() or !path.has_value()) {
         throw http_error(400, "Bad Request");
     }
+    std::filesystem::path safe_path = *path;
 
-    std::filesystem::path safe_path = fix_filename(*path);
     auto webroot = project_options.webpage_folder;
 
     auto dir_host = get_host(request_headers);
+
+    // Reverse proxy: match by host + path prefix
+    if (!project_options.proxy_endpoints.empty()) {
+        std::string path_str = *path;
+        auto qmark = path_str.find('?');
+        std::string path_only = (qmark != std::string::npos) ? path_str.substr(0, qmark) : path_str;
+        for (const auto& rule : project_options.proxy_endpoints) {
+            bool path_matches = rule.frontend_path.empty() ||
+                                path_only == rule.frontend_path ||
+                                path_only.starts_with(rule.frontend_path + "/") ||
+                                path_only.starts_with(rule.frontend_path + "?");
+            if (rule.frontend_host == dir_host && path_matches) {
+                co_await handle_proxy_request(connection, *method, path_str, request_headers, rule);
+                co_return true;
+            }
+        }
+    }
     
-    auto file_path = (webroot/dir_host/(safe_path.relative_path()));
+    auto file_path = webroot / dir_host / safe_path.relative_path();
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::weakly_canonical(file_path), ec)) {
+        file_path = webroot / project_options.default_subfolder / safe_path.relative_path();
+    }
+
     auto canonical_webroot = std::filesystem::canonical(webroot);
     auto canonical_file = std::filesystem::weakly_canonical(file_path);
 
@@ -336,21 +386,28 @@ task<bool> handle_request(http_ctx& connection) {
 
 task<bool> handle_redirect(http_ctx& connection) {
     const std::vector<entry_t> request_headers = connection.get_headers();
-    auto method = find_header(request_headers, ":method");
-    auto path = find_header(request_headers, ":path");
-    auto authority = find_header(request_headers, ":authority");
+    const auto method = find_header(request_headers, ":method");
+    const auto path = find_header(request_headers, ":path");
+    const auto authority = find_header(request_headers, ":authority");
+    const auto host = find_header(request_headers, "host");
     [[maybe_unused]] auto scheme = find_header(request_headers, ":scheme");
 
     if (!method.has_value() or !path.has_value()) {
         throw http_error(400, "Bad Request");
     }
 
-    if(!authority) {
-        authority = project_options.default_subfolder;
-    }
-    auto domain = *authority;
-    if(authority->starts_with("localhost")) {
-        authority = project_options.default_subfolder;
+    std::string domain = "";
+    if(authority.has_value()) {
+        if(host.has_value()) {
+            throw http_error(400, "Bad Request");
+        }
+        domain = *authority;
+    } else {
+        if(host.has_value()) {
+            domain = *host;
+        } else {
+            domain = project_options.default_subfolder;
+        }
     }
     size_t colon = domain.rfind(':');
     if (colon != std::string::npos) {
@@ -361,7 +418,14 @@ task<bool> handle_redirect(http_ctx& connection) {
 
     if (*method == "GET" && a_path.string().starts_with("/.well-known/acme-challenge/")) {
         auto webroot = project_options.webpage_folder;
-        auto file_path = (webroot / project_options.default_subfolder / a_path.relative_path());
+        std::string acme_domain = domain;
+        if (acme_domain.starts_with("www.")) {
+            acme_domain = acme_domain.substr(4);
+        }
+        if (acme_domain.empty()) {
+            acme_domain = project_options.default_subfolder;
+        }
+        auto file_path = (webroot / acme_domain / a_path.relative_path());
         auto canonical_webroot = std::filesystem::canonical(webroot);
         auto canonical_file = std::filesystem::weakly_canonical(file_path);
         if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
@@ -373,7 +437,7 @@ task<bool> handle_redirect(http_ctx& connection) {
 
     std::string body = moved_301();
     
-    std::filesystem::path safe_path = fix_filename(*path);
+    std::filesystem::path safe_path = *path;
     std::string MIME = Mime_from_file(safe_path);
     
     std::string https_port = project_options.server_port;

@@ -137,7 +137,8 @@ tls_record AES_CBC_SHA::deprotect(tls_record record) {
     if(siz+1+client_MAC_key.size() > plaintext.size()) {
         pad_oracle_attack = true;
     }
-    for(size_t i = 0; i < siz+1; i++) {
+    const size_t clamped_siz = std::min(siz, plaintext.size() - 1);
+    for(size_t i = 0; i < clamped_siz+1; i++) {
         if(plaintext.size() < 1+i) {
             throw ssl_error("padding attack", AlertLevel::fatal, AlertDescription::decrypt_error);
         }

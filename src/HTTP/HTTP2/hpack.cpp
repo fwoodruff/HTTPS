@@ -178,7 +178,9 @@ size_t table::name_index(const std::string& name) {
 }
 
 std::string table::field_name(size_t key) {
-    assert(key != 0);
+    if(key == 0) {
+        throw h2_error("HPACK index 0 is reserved", h2_code::COMPRESSION_ERROR);
+    }
     if(key <= s_static_table.size()) {
         return s_static_table[ key - 1 ].name;
     }
@@ -189,7 +191,9 @@ std::string table::field_name(size_t key) {
 }
 
 std::string table::field_value(size_t key) {
-    assert(key != 0);
+    if(key == 0) {
+        throw h2_error("HPACK index 0 is reserved", h2_code::COMPRESSION_ERROR);
+    }
     if(key <= s_static_table.size()) {
         return s_static_table[ key - 1 ].value;
     }

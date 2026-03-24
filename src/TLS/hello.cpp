@@ -52,6 +52,9 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
 
 std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_data) {
     std::vector<NamedGroup> out;
+    if(extension_data.size() < 2) {
+        return out;
+    }
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
         auto group = try_bigend_read(supported_groups_data, i, 2);
@@ -62,6 +65,9 @@ std::vector<NamedGroup> get_supported_groups(std::span<const uint8_t> extension_
 
 std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> extension_data) {
     std::vector<SignatureScheme> out;
+    if(extension_data.size() < 2) {
+        return out;
+    }
     auto supported_groups_data = extension_data.subspan(2);
     for(int i = 0; i < ssize_t(supported_groups_data.size())-1; i += 2) {
         auto group = try_bigend_read(supported_groups_data, i, 2);
@@ -71,7 +77,7 @@ std::vector<SignatureScheme> get_signature_schemes(std::span<const uint8_t> exte
 }
 
 std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> extension_data) {
-    const std::vector<uint8_t> peer_may_send {0x00, 0x01, 0x00};
+    const std::vector<uint8_t> peer_may_send {0x00, 0x01, 0x01};
     const std::vector<uint8_t> peer_no_send { 0x00, 0x01, 0x02};
     if(extension_data.size() == 3) [[likely]] {
         if(std::equal(extension_data.begin(), extension_data.end(), peer_may_send.begin())) {
@@ -86,6 +92,9 @@ std::pair<bool, bool> get_server_client_heartbeat(std::span<const uint8_t> exten
 
 std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_data) {
     std::vector<uint16_t> out;
+    if(extension_data.empty()) {
+        return {};
+    }
     size_t versions = extension_data[0];
     if(versions + 1 != extension_data.size() or versions % 2 != 0) {
         return {};
@@ -116,9 +125,15 @@ std::vector<key_share> get_named_group_keys(std::span<const uint8_t> extension_d
     extension_data = extension_data.subspan(2);
     std::vector<key_share> shared_keys;
     while(!extension_data.empty()) {
+        if(extension_data.size() < 4) {
+            throw ssl_error("truncated key share entry", AlertLevel::fatal, AlertDescription::decode_error);
+        }
         auto key_type = extension_data.subspan(0, 2);
         auto group = static_cast<NamedGroup>(try_bigend_read(key_type, 0, 2));
         size_t len = try_bigend_read(extension_data, 2, 2);
+        if(extension_data.size() < 4 + len) {
+            throw ssl_error("key share entry length overflow", AlertLevel::fatal, AlertDescription::decode_error);
+        }
         auto key_value = extension_data.subspan(4, len);
         auto typed_key = key_share({group, std::vector<uint8_t>(key_value.begin(), key_value.end())});
         shared_keys.push_back(std::move(typed_key));
@@ -335,7 +350,7 @@ void write_renegotiation_info(tls_record& record) {
 void write_heartbeat(tls_record& record) {
     record.write2(ExtensionType::heartbeat);
     record.start_size_header(2);
-    record.write1(0);
+    record.write1(1);
     record.end_size_header();
 }
 
@@ -454,7 +469,8 @@ std::vector<uint8_t> make_hello_random(uint16_t version, bool requires_hello_ret
         if(std::equal(tls_12_downgrade_protection_sentinel.begin(), tls_12_downgrade_protection_sentinel.begin() + 4, server_random.begin()+24)) {
             continue;
         }
-    } while(false);
+        break;
+    } while(true);
     assert(server_random != std::vector<uint8_t>(32, 0));
     if(version < TLS12) {
         std::copy(tls_11_downgrade_protection_sentinel.begin(), tls_11_downgrade_protection_sentinel.end(), server_random.begin()+24);

@@ -51,8 +51,12 @@ std::unordered_map<std::string,std::string> MIMES(const std::filesystem::path& d
     DIR *dir;
     struct dirent *ent;
 
-    if ((dir = opendir(directory_name.c_str())) != nullptr) {
-        std::unordered_map<std::string,std::string> mimes;
+    dir = opendir(directory_name.c_str());
+    if (dir == nullptr) {
+        throw std::runtime_error("MIME csv folder not found\n");
+    }
+    std::unordered_map<std::string,std::string> mimes;
+    try {
         while ((ent = ::readdir (dir)) != nullptr) {
             const auto filen = std::filesystem::path(ent->d_name);
             if (filen=="." or filen=="..") {
@@ -62,11 +66,12 @@ std::unordered_map<std::string,std::string> MIMES(const std::filesystem::path& d
             auto map = MIME_csv_to_map(filenn);
             mimes.insert(map.cbegin(),map.cend());
         }
+    } catch(...) {
         closedir(dir);
-        return mimes;
-    } else {
-        throw std::runtime_error("MIME csv folder not found\n");
+        throw;
     }
+    closedir(dir);
+    return mimes;
 }
 
 // The file in the get request header, e.g. /footballscores.html has an extension .html
@@ -110,19 +115,12 @@ std::string get_MIME(std::string extension) {
 // that icon at the top of the browser tab has media type image/webp
 // otherwise we look up the MIME type
 std::string Mime_from_file(const std::filesystem::path &filename) {
-    if(filename.filename() == "favicon.ico") {
-        return "image/webp";
-    } else {
-        auto ext = extension_from_path(filename);
-        if(ext == "jpeg") {
-            return "image/jpeg";
-        }
-        if(ext == "") {
-            return "text/plain";
-        }
-        auto ret = get_MIME(ext);
-        return ret;
+    auto ext = extension_from_path(filename);
+    if(ext == "") {
+        return "text/plain";
     }
+    auto ret = get_MIME(ext);
+    return ret;
 }
 
 } // namespace fbw

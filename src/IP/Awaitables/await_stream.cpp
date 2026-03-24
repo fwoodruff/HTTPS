@@ -11,6 +11,7 @@
 
 #include <sys/socket.h>
 #include <span>
+#include <cerrno>
 
 using namespace std::chrono_literals;
 using namespace std::chrono;
@@ -28,6 +29,21 @@ bool readable::await_ready() const noexcept {
 bool readable::await_suspend(std::coroutine_handle<> continuation) {
     assert(m_fd != -1);
     assert(m_buffer);
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        if (m_millis && m_millis->count() == 0) {
+            // 0ms means "non-blocking check"; io_uring has no non-blocking RECV,
+            // so signal read_timeout without suspending.
+            m_token.res = -EAGAIN;
+            return false;
+        }
+        m_token.handle = continuation;
+        executor_singleton().m_reactor.submit_recv(
+            m_fd, m_buffer->data(), static_cast<uint32_t>(m_buffer->size()),
+            &m_token, m_millis);
+        return true;
+    }
+#endif
     ssize_t succ = ::recv(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
     if(succ == 0) {
         m_bytes_read = m_buffer->subspan(0, succ);
@@ -45,7 +61,7 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
             m_res = stream_result::awaiting;
             return true;
         }
-        m_bytes_read = m_buffer->subspan(0, succ);
+        m_bytes_read = m_buffer->subspan(0, 0);
         m_res = stream_result::closed;
         return false;
     }
@@ -58,6 +74,24 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
 }
 
 std::pair<std::span<uint8_t>, stream_result> readable::await_resume() {
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        int32_t res = m_token.res;
+        if (res == 0) {
+            return { std::span<uint8_t>{}, stream_result::closed };
+        }
+        if (res < 0) {
+            int err = -res;
+            if (err == ECANCELED || err == ETIMEDOUT || err == EAGAIN) {
+                return { std::span<uint8_t>{}, stream_result::read_timeout };
+            }
+            return { std::span<uint8_t>{}, stream_result::closed };
+        }
+        auto bytes = m_buffer->subspan(0, static_cast<size_t>(res));
+        *m_buffer = m_buffer->subspan(static_cast<size_t>(res));
+        return { bytes, stream_result::ok };
+    }
+#endif
     if(m_res != stream_result::awaiting) {
         return {m_bytes_read, m_res};
     }
@@ -90,18 +124,17 @@ bool writeable::await_ready() const noexcept {
 }
 
 bool writeable::await_suspend(std::coroutine_handle<> continuation) {
-    // process a few records before moving onto the next client
-    //static std::atomic<size_t> fail_sometimes = 1;
-    //size_t local_value = fail_sometimes.fetch_add(1, std::memory_order_relaxed);
-    //local_value %= 10;
-    //if(local_value == 0) {
-    //    m_res = stream_result::awaiting;
-    //    auto& exec = executor_singleton();
-    //    exec.m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
-    //    return true;
-    //}
     assert(m_fd != -1);
     assert(m_buffer);
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        m_token.handle = continuation;
+        executor_singleton().m_reactor.submit_send(
+            m_fd, m_buffer->data(), static_cast<uint32_t>(m_buffer->size()),
+            &m_token, m_millis);
+        return true;
+    }
+#endif
     ssize_t succ = ::send(m_fd, m_buffer->data(), m_buffer->size(), MSG_NOSIGNAL);
     if(succ == 0) {
         m_bytes_written = m_buffer->subspan(0, 0);
@@ -115,7 +148,7 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
             exec.m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
             return true;
         }
-        
+
         m_bytes_written = m_buffer->subspan(0, 0);
         m_res = stream_result::closed;
         return false;
@@ -130,7 +163,24 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
 }
 
 std::pair<std::span<const uint8_t>, stream_result> writeable::await_resume() {
-    
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        int32_t res = m_token.res;
+        if (res == 0) {
+            return { std::span<const uint8_t>{}, stream_result::closed };
+        }
+        if (res < 0) {
+            int err = -res;
+            if (err == ECANCELED || err == ETIMEDOUT) {
+                return { std::span<const uint8_t>{}, stream_result::write_timeout };
+            }
+            return { std::span<const uint8_t>{}, stream_result::closed };
+        }
+        auto bytes = m_buffer->subspan(0, static_cast<size_t>(res));
+        *m_buffer = m_buffer->subspan(static_cast<size_t>(res));
+        return { bytes, stream_result::ok };
+    }
+#endif
     if(m_res != stream_result::awaiting) {
         return {m_bytes_written, m_res};
     }

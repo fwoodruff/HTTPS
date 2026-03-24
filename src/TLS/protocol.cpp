@@ -155,6 +155,7 @@ task<stream_result> TLS::net_write_all() {
         }
         stream_result res = co_await m_client->write(packet.data, packet.timeout);
         if(res != stream_result::ok) {
+            m_write_region.store(false);
             co_return res;
         }
     }
@@ -169,7 +170,7 @@ task<void> TLS::close_notify() {
         co_return;
     }
     auto guard = co_await m_async_read_mut.lock();
-    do {
+    while(true) {
         std::deque<uint8_t> input_data;
         if(m_engine.m_expected_read_record == HandshakeStage::application_closed) {
             co_return;
@@ -188,7 +189,7 @@ task<void> TLS::close_notify() {
         }
         co_await m_client->close_notify();
         co_return;
-    } while(false);
+    }
 }
 
 task<stream_result> read_append_maybe_early(stream* p_stream, std::deque<uint8_t>& buffer, std::optional<std::chrono::milliseconds> timeout) {

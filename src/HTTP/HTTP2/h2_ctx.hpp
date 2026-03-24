@@ -79,6 +79,7 @@ public:
 
     void close_connection();
     void send_initial_settings();
+    void handle_connection_error(h2_code code, std::string message);
     
     // returns bytes to send and whether that's the end of data 
     std::pair<std::deque<std::vector<uint8_t>>, bool> extract_outbox(bool flush);

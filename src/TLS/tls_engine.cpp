@@ -244,7 +244,7 @@ std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshak
     if (offset == fragment.size()) {
         fragment.clear();
     }
-    return { handshake_record.m_contents };
+    return messages;
 }
 
 void tls_engine::client_handshake_record_sync(std::queue<packet_timed>& output, tls_record record) {
@@ -510,6 +510,7 @@ void tls_engine::client_handshake_finished12(const std::vector<uint8_t>& handsha
         throw ssl_error("bad handshake message ordering", AlertLevel::fatal, AlertDescription::unexpected_message);
     }
     handshake.client_handshake_finished12_record(handshake_message);
+    can_heartbeat = handshake.client_hello.parsed_extensions.contains(ExtensionType::heartbeat);
     m_expected_read_record = HandshakeStage::application_data;
 }
 

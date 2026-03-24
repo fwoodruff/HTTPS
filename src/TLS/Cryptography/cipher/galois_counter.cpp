@@ -48,10 +48,9 @@ static inline void AES_PUT_BE64(uint8_t *a, uint64_t val)
 
 static void inc32(aes_block& block) {
     assert(block.size() >= 4);
-    auto val = try_bigend_read(block, block.size() - 4, 4);
+    auto val = static_cast<uint32_t>(try_bigend_read(block, block.size() - 4, 4));
     val++;
-    checked_bigend_write(val, block, block.size() - 4, 4);
-    assert(val != uint32_t(-1));
+    checked_bigend_write(static_cast<uint64_t>(val), block, block.size() - 4, 4);
 }
 
 
@@ -422,7 +421,7 @@ tls_record AES_128_GCM_SHA256::deprotect(tls_record record) {
 }
 
 tls_record AES_128_GCM_SHA256_tls13::deprotect(tls_record record) {
-    if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
+    if(record.m_contents.size() < (TAG_SIZE + 2)) [[unlikely]] {
         throw ssl_error("short record IV HMAC", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
     std::vector<uint8_t> iv(12, 0);
@@ -445,7 +444,7 @@ tls_record AES_128_GCM_SHA256_tls13::deprotect(tls_record record) {
 }
 
 tls_record AES_256_GCM_SHA384::deprotect(tls_record record) {
-    if(record.m_contents.size() < (TAG_SIZE + 1)) [[unlikely]] {
+    if(record.m_contents.size() < (TAG_SIZE + 2)) [[unlikely]] {
         throw ssl_error("record too short for tag and wrap", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
     std::vector<uint8_t> iv(12, 0);

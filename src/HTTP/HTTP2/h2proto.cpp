@@ -79,16 +79,21 @@ void HTTP2::client_cleanup() {
 
 
 bool HTTP2::extract_and_handle() {
-    auto [frame, did_extract] = extract_frame(m_read_buffer);
-    if(!did_extract) {
+    try {
+        auto [frame, did_extract] = extract_frame(m_read_buffer);
+        if(!did_extract) {
+            return false;
+        }
+        if(frame == nullptr) {
+            // unrecognised frame type
+            return true;
+        }
+        handle_frame(*frame);
+        return true;
+    } catch(const h2_error& e) {
+        h2_ctx.handle_connection_error(e.m_error_code, e.what());
         return false;
     }
-    if(frame == nullptr) {
-        // unrecognised frame type
-        return true;
-    }
-    handle_frame(*frame);
-    return true;
 }
 
 void HTTP2::handle_frame(h2frame& frame) {

@@ -5,6 +5,7 @@
 //  Created by Frederick Benjamin Woodruff on 24/07/2021.
 //
 
+#include "HTTP.hpp"
 #include "string_utils.hpp"
 #include "../../global.hpp"
 #include "../../TLS/protocol.hpp"
@@ -24,7 +25,11 @@ ssize_t get_file_size(std::filesystem::path filename) {
     if(t.fail()) {
         throw http_error(404, "Not Found");
     }
-    return t.tellg();
+    auto size = t.tellg();
+    if(size < 0) {
+        throw http_error(500, "Internal Server Error");
+    }
+    return size;
 }
 
 std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string domain) {
@@ -67,5 +72,17 @@ R"(<html>
 )";
 }
 
+task<std::optional<std::string>> read_http_line(stream& s, std::deque<uint8_t>& buf) {
+    for (;;) {
+        auto bytes = extract(buf, "\r\n");
+        if (!bytes.empty()) {
+            // bytes includes the trailing \r\n; strip it
+            co_return std::string(bytes.begin(), bytes.end() - 2);
+        }
+        if (co_await s.read_append(buf, std::nullopt) != stream_result::ok) {
+            co_return std::nullopt;
+        }
+    }
+}
 
 };// namespace fbw

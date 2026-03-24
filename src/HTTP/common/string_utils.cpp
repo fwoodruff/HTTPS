@@ -51,7 +51,9 @@ std::string to_upper(std::string s) {
 std::string timestring(time_t t) {
     char buf[48];
     std::tm* tm_ptr = std::gmtime(&t);
-    assert(tm_ptr != nullptr);
+    if(tm_ptr == nullptr) {
+        throw std::runtime_error("gmtime failed");
+    }
     const std::tm tm = *tm_ptr;
     auto err = std::strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S GMT", &tm);
     assert(err != 0);
@@ -92,7 +94,7 @@ std::string trim(std::string str) {
     auto start = str.find_first_not_of(" \t\r\n");
     auto end = str.find_last_not_of(" \t\r\n");
     if(start == std::string::npos or end == std::string::npos) {
-        str = "";
+        return "";
     }
     return str.substr(start, end - start + 1);
 }
@@ -135,30 +137,6 @@ http_header parse_http_headers(const std::string& header_str) {
         }
     }
     return headers;
-}
-
-// add an extension if not present, and set / to /index.html
-// note index.php not supported here
-// edge case for /folder/.file
-std::string fix_filename(std::string filename) {
-    if(filename.empty()) {
-        filename = "/";
-    }
-    std::transform(filename.begin(), filename.end(), filename.begin(),
-        [](unsigned char c){ return std::tolower(c); });
-
-    if (filename.back() == '/') {
-        filename += "index.html";
-        return filename;
-    }
-
-    auto last_slash = filename.find_last_of('/');
-    auto last_dot = filename.find_last_of('.');
-
-    if (last_dot == std::string::npos or (last_slash != std::string::npos and last_dot < last_slash)) {
-        filename.append(".html");
-    }
-    return filename;
 }
 
 void shuffle(std::array<uint8_t, 32>& state) {
@@ -278,7 +256,8 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
     std::vector<std::pair<size_t, size_t>> out;
     while(true) {
         size_t end = range_header.find(',', pos);
-        std::string range = range_header.substr(pos, end - pos);
+        size_t len = (end == std::string::npos) ? std::string::npos : (end - pos);
+        std::string range = range_header.substr(pos, len);
         std::erase_if(range, [](unsigned char c){ return std::isspace(c); });
         size_t mid = range.find("-");
         if(mid == std::string::npos) {

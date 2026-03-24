@@ -23,15 +23,12 @@ namespace fbw::cha {
 
 
 
-constexpr uint32_t ROT32(uint32_t x, int shift) {
-    return (x << shift) | (x >> (32 - shift));
-}
 
 void chacha_quarter_round(uint32_t& a, uint32_t& b, uint32_t& c, uint32_t& d) {
-    a += b; d ^= a; d = ROT32(d, 16);
-    c += d; b ^= c; b = ROT32(b, 12);
-    a += b; d ^= a; d = ROT32(d, 8);
-    c += d; b ^= c; b = ROT32(b, 7);
+    a += b; d ^= a; d = std::rotl(d, 16);
+    c += d; b ^= c; b = std::rotl(b, 12);
+    a += b; d ^= a; d = std::rotl(d, 8);
+    c += d; b ^= c; b = std::rotl(b, 7);
 }
 
 
@@ -102,6 +99,9 @@ void chacha20_xorcrypt(   const std::array<uint8_t, KEY_SIZE>& key,
                             const std::array<uint8_t, IV_SIZE>& number_once,
                             const std::span<uint8_t> message) {
 
+    if(message.empty()) [[unlikely]]{
+        return;
+    }
     auto state = chacha20_state(key, number_once);
     constexpr size_t max_chunk_size = 64;
     size_t k = 0;
@@ -136,8 +136,24 @@ constexpr u192 prime130_5 ("0x3fffffffffffffffffffffffffffffffb");
 constexpr u192 magic_poly("0xa3d70a3d70a3d70cccccccccccccccccccccccccccccccd");
 constexpr u192 poly_RRP ("0x190000000000000000000000000000000");
 
+[[gnu::always_inline]] inline u192 add_mod(u192 x, u192 y, u192 mod) noexcept {
+    auto sum = x + y;
+    ct_u256 wide = ct_u256(sum) - ct_u256(mod);
+    u192 borrow = u192(wide >> 192);
+    u192 mask = borrow | (borrow << 64) | (borrow << 128);
+    return (u192(wide) & ~mask) | (sum & mask);
+}
+
+ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
+    ct_u512 wide = ct_u512(x) - ct_u512(y);
+    ct_u256 diff = ct_u256(wide);
+    ct_u256 wrapped = diff + mod;
+    ct_u256 mask = ct_u256(wide >> 256);
+    return (diff & ~mask) | (wrapped & mask);
+}
+
 // program bottlenecks here so using the intrusive REDC form
-constexpr u192 REDCpoly(u384 aR) noexcept {
+[[gnu::always_inline]] inline constexpr u192 REDCpoly(u384 aR) noexcept {
     using radix = u192::radix;
     using radix2 = u192::radix2;
     u192 a;
@@ -160,67 +176,26 @@ constexpr u192 REDCpoly(u384 aR) noexcept {
     for(size_t i = 0; i < prime130_5.v.size(); i++) {
         a.v[i] = aR.v[i + prime130_5.v.size()];
     }
-    if(a > prime130_5) [[unlikely]] {
-        return a - prime130_5;
-    }
-    return a;
+    return add_mod(a, u192{}, prime130_5);
 }
 
-
-u192 add_mod(u192 x, u192 y , u192 mod) noexcept {
-    auto sum = x + y;
-    assert(sum >= x);
-    if (sum > mod) { // todo constant time
-        sum -= mod;
-    }
-    return sum;
+[[gnu::always_inline]] inline void poly1305_absorb(u192& accumulator, const u192& rMonty, std::span<const uint8_t> block) noexcept {
+    std::array<uint8_t, 24> inp {};
+    std::copy_n(block.data(), block.size(), inp.rbegin());
+    inp[23 - block.size()] = 1;
+    accumulator = add_mod(accumulator, REDCpoly(u192(inp) * poly_RRP), prime130_5);
+    accumulator = REDCpoly(accumulator * rMonty);
 }
 
-ct_u256 sub_mod(ct_u256 x, ct_u256 y, ct_u256 mod) noexcept {
-    if(x > y) { // todo: constant time
-        return x - y;
-    } else {
-        return (mod - y) + x;
+void poly1305_update_padded(u192& accumulator, const u192& rMonty, std::span<const uint8_t> data) noexcept {
+    size_t i = 0;
+    for (; i + 16 <= data.size(); i += 16)
+        poly1305_absorb(accumulator, rMonty, data.subspan(i, 16));
+    if (i < data.size()) {
+        std::array<uint8_t, 16> block {};
+        std::copy_n(data.data() + i, data.size() - i, block.begin());
+        poly1305_absorb(accumulator, rMonty, block);
     }
-}
-
-std::array<uint8_t, TAG_SIZE> poly1305_mac(const std::span<const uint8_t> message, const std::array<uint8_t, KEY_SIZE>& key) {
-    
-    std::array<uint8_t, 24> r_bytes {0};
-    std::copy_n(&key[0], 16, r_bytes.begin());
-    poly1305_clamp(&r_bytes[0]);
-    std::reverse(r_bytes.begin(), r_bytes.end());
-    
-    std::array<uint8_t, 24> s_bytes {0};
-    std::copy_n(&key[16], 16, s_bytes.rbegin());
-
-    u192 accumulator{"0x0"};
-    u192 r(r_bytes);
-    u192 s(s_bytes);
-    
-    auto rMonty = REDCpoly(r * poly_RRP);
-
-    for(size_t i = 0; i < ((message.size()+15)/16)*16; i+=16) {
-        std::array<uint8_t,24> inp {0};
-        assert(message.size() > i);
-        
-        auto siz = std::min(static_cast<size_t>(16), message.size() - i);
-        
-        std::copy_n(&message[i], siz, inp.rbegin());
-        inp[23-siz] = 1;
-
-        accumulator = add_mod(accumulator, REDCpoly(u192(inp) * poly_RRP), prime130_5);
-        accumulator = REDCpoly(accumulator * rMonty);
-        
-         
-    }
-    accumulator = REDCpoly(u384(accumulator));
-    
-    accumulator += s;
-    auto out = accumulator.serialise();
-    std::array<uint8_t, TAG_SIZE> out_str;
-    std::copy_n(out.rbegin(), TAG_SIZE, out_str.begin());
-    return out_str;
 }
 
 std::array<uint8_t, KEY_SIZE> poly1305_key_gen(const std::array<uint8_t, KEY_SIZE>& key, const std::array<uint8_t, IV_SIZE>& number_once) {
@@ -236,34 +211,38 @@ chacha20_aead_crypt(const std::span<const uint8_t> aad, const std::array<uint8_t
     
     auto otk = poly1305_key_gen(key, number_once);
 
-    size_t padaad = ((aad.size()+15)/16)*16 - aad.size();
-    std::array<uint8_t, 8> aad_size {};
-    std::array<uint8_t, 8> cip_size {};
+    std::array<uint8_t, 24> r_bytes {};
+    std::copy_n(otk.data(), 16, r_bytes.begin());
+    poly1305_clamp(r_bytes.data());
+    std::reverse(r_bytes.begin(), r_bytes.end());
+    u192 rMonty = REDCpoly(u192(r_bytes) * poly_RRP);
+
+    std::array<uint8_t, 24> s_bytes {};
+    std::copy_n(&otk[16], 16, s_bytes.rbegin());
+    u192 s(s_bytes);
+    u192 accumulator {"0x0"};
+
+    std::array<uint8_t, 16> footer {};
     for(int i = 0; i < 4; i++) {
-        aad_size[i] = (aad.size() >> (8*i)) & 0xff;
-        cip_size[i] = (text.size() >> (8*i)) & 0xff;
+        footer[i]   = (aad.size()  >> (8*i)) & 0xff;
+        footer[8+i] = (text.size() >> (8*i)) & 0xff;
     }
 
-    size_t padcipher = ((text.size()+15)/16)*16 - text.size();
-    std::vector<uint8_t> mac_data;
-    mac_data.insert(mac_data.end(), aad.begin(), aad.end());
-    mac_data.insert(mac_data.end(), padaad, 0);
-
+    poly1305_update_padded(accumulator, rMonty, aad);
     if(do_encrypt) {
         chacha20_xorcrypt(key, 1, number_once, text);
-        auto ciphertext = std::span<uint8_t>(text);
-        mac_data.insert(mac_data.end(), ciphertext.begin(), ciphertext.end());
+        poly1305_update_padded(accumulator, rMonty, text);
     } else {
-        mac_data.insert(mac_data.end(), text.begin(), text.end());
+        poly1305_update_padded(accumulator, rMonty, text);
         chacha20_xorcrypt(key, 1, number_once, text);
     }
-    
-    mac_data.insert(mac_data.end(), padcipher, 0);
-    mac_data.insert(mac_data.end(), aad_size.begin(), aad_size.end());
-    mac_data.insert(mac_data.end(), cip_size.begin(), cip_size.end());
-
-    auto tag = poly1305_mac(mac_data, otk);
-    return tag;
+    poly1305_absorb(accumulator, rMonty, footer);
+    accumulator = REDCpoly(u384(accumulator));
+    accumulator += s;
+    auto out = accumulator.serialise();
+    std::array<uint8_t, TAG_SIZE> out_str;
+    std::copy_n(out.rbegin(), TAG_SIZE, out_str.begin());
+    return out_str;
 }
 
 void ChaCha20_Poly1305_tls13::set_server_traffic_key(const std::vector<uint8_t>& traffic_key) {
@@ -333,7 +312,11 @@ std::vector<uint8_t> ChaCha20_Poly1305_ctx::decrypt(std::vector<uint8_t> ciphert
     auto number_once = make_number_once(client_implicit_write_IV, seqno_client);
     seqno_client++;
     auto tag_recalc = chacha20_aead_crypt(additional_data, client_write_key, number_once, ciphertext, false);
-    if(tag != tag_recalc) [[unlikely]] {
+    uint8_t diff = 0;
+    for (size_t i = 0; i < TAG_SIZE; i++) {
+        diff |= tag[i] ^ tag_recalc[i];
+    }
+    if(diff != 0) [[unlikely]] {
         throw ssl_error("bad MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     if(ciphertext.size() > TLS_RECORD_SIZE + DECRYPTED_TLS_RECORD_GIVE) [[unlikely]] {
@@ -356,7 +339,7 @@ tls_record ChaCha20_Poly1305_tls12::protect(tls_record record) noexcept {
 }
 
 tls_record ChaCha20_Poly1305_tls13::deprotect(tls_record record) {
-    if(record.m_contents.size() < TAG_SIZE) {
+    if(record.m_contents.size() < TAG_SIZE + 2) {
         throw ssl_error("short record Poly1305", AlertLevel::fatal, AlertDescription::decrypt_error);
     }
     std::vector<uint8_t> additional_data = make_additional_13(record.m_contents, 0);

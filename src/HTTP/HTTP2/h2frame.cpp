@@ -91,6 +91,8 @@ std::unique_ptr<h2frame> h2frame::deserialise(const std::vector<uint8_t>& frame_
             default:
                 return nullptr;
         }
+    } catch(const h2_error&) {
+        throw;
     } catch(const std::out_of_range& e) {
         throw h2_error("malformed frame", h2_code::FRAME_SIZE_ERROR);
     } catch(const std::exception& e) {
@@ -105,6 +107,9 @@ std::unique_ptr<h2_data> deserialise_DATA(const std::vector<uint8_t>& frame_byte
     set_base_frame_values(*frame, frame_bytes);
     if(frame->flags & h2_flags::PADDED) {
         frame->pad_length = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE, 1);
+        if(frame->pad_length >= size) {
+            throw h2_error("DATA pad_length exceeds payload", h2_code::PROTOCOL_ERROR);
+        }
         auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE+1;
         frame->contents.assign(begin, begin + size-1 - frame->pad_length);
     } else {
@@ -132,6 +137,9 @@ std::unique_ptr<h2_headers> deserialise_HEADERS(const std::vector<uint8_t>& fram
         frame->exclusive = (dep_ex & (1u << 31)) != 0;
         frame->weight = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx + 4, 1);
         idx += 5;
+    }
+    if(idx + frame->pad_length > size) {
+        throw h2_error("HEADERS pad_length exceeds payload", h2_code::PROTOCOL_ERROR);
     }
     auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE + idx;
     frame->field_block_fragment.assign(begin, begin + size - idx - frame->pad_length);
@@ -196,8 +204,11 @@ std::unique_ptr<h2_push_promise> deserialise_PUSH_PROMISE(const std::vector<uint
         idx += 1;
     }
     frame->promised_stream_id = try_bigend_read(frame_bytes, H2_FRAME_HEADER_SIZE + idx, 4);
+    if(idx + 4 + frame->pad_length > size) {
+        throw h2_error("PUSH_PROMISE pad_length exceeds payload", h2_code::PROTOCOL_ERROR);
+    }
     auto begin = frame_bytes.begin() + H2_FRAME_HEADER_SIZE + idx + 4;
-    frame->field_block_fragment.assign(begin, begin + size - idx - frame->pad_length);
+    frame->field_block_fragment.assign(begin, begin + size - idx - 4 - frame->pad_length);
     return frame;
 }
 
@@ -274,13 +285,15 @@ std::vector<uint8_t> h2frame::serialise_common(size_t reserved) const {
     return out;
 }
 
-std::vector<uint8_t> h2_data::serialise() const { 
+std::vector<uint8_t> h2_data::serialise() const {
     std::vector<uint8_t> out = serialise_common();
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
     }
     out.insert(out.end(), contents.begin(), contents.end());
-    out.resize(out.size() + pad_length);
+    if(flags & h2_flags::PADDED) {
+        out.resize(out.size() + pad_length);
+    }
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }
@@ -308,7 +321,7 @@ std::string h2_data::pretty() const {
     return out.str();
 }
 
-std::vector<uint8_t> h2_headers::serialise() const { 
+std::vector<uint8_t> h2_headers::serialise() const {
     std::vector<uint8_t> out = serialise_common();
     if(flags & h2_flags::PADDED) {
         out.push_back(pad_length);
@@ -320,7 +333,9 @@ std::vector<uint8_t> h2_headers::serialise() const {
         out.push_back(weight);
     }
     out.insert(out.end(), field_block_fragment.begin(), field_block_fragment.end());
-    out.resize(out.size() + pad_length);
+    if(flags & h2_flags::PADDED) {
+        out.resize(out.size() + pad_length);
+    }
     checked_bigend_write(out.size() - H2_FRAME_HEADER_SIZE, out, 0, 3);
     return out;
 }

@@ -7,6 +7,11 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install test dependencies
+          command: |
+            apt-get update && apt-get install -y python3-pip
+            make test-deps
+      - run:
           name: Build server
           command: |
             make -j$(nproc)
@@ -18,13 +23,22 @@ jobs:
       - run:
           name: Test server
           command: |
-            sleep 0.01 # wait for server
+            timeout 30 bash -c 'until curl -sk https://localhost:8443 -o /dev/null; do sleep 0.1; done'
             curl -kv https://localhost:8443
             curl http://localhost:8080
             curl -kv --tlsv1.3 --http2 https://localhost:8443
             curl -kv --http2-prior-knowledge https://localhost:8443/final.html
             curl -kv --http1.1 https://localhost:8443/
             curl -kv --tlsv1.2 --tls-max 1.2 -H "Range: bytes=0-50, 60-299" https://localhost:8443
+      - run:
+          name: Run pytest integration tests
+          command: |
+            make test
+      - run:
+          name: Build and run benchmark
+          command: |
+            make bench
+            ./target/bench_chacha
       - run:
           name: Test session tickets
           command: |
@@ -35,23 +49,72 @@ jobs:
             # cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
             # openssl s_client -connect localhost:8443 -tls1_3 -early_data request.txt -sess_in session.pem 2>&1 
 
-  docker-test:
+  docker-build:
     docker:
       - image: cimg/base:stable
     steps:
       - checkout
       - setup_remote_docker
       - run:
-          name: Build server
+          name: Build server binary
           command: |
-            sudo docker build --progress=plain -t server .
+            docker build --progress=plain -t containerymccontainerface -f Dockerfile.armv6 .
+            c_id=$(docker create containerymccontainerface)
+            mkdir -p target
+            docker cp $c_id:/target/codeymccodeface target/codeymccodeface.armv6
+            docker cp $c_id:/target/bench_chacha target/bench_chacha.armv6
+            sudo docker rm -f "$c_id" >/dev/null
+            test -x target/codeymccodeface.armv6
+            test -x target/bench_chacha.armv6
+      - persist_to_workspace:
+          root: .
+          paths:
+            - target/codeymccodeface.armv6
+            - target/bench_chacha.armv6
+
+  deploy:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - add_ssh_keys
       - run:
-          name: Build armv6
+          name: Install rsync
           command: |
-            sudo docker build -f Dockerfile.armv6 --progress=plain -t server-armv6 .
+            sudo apt-get update
+            sudo apt-get install -y rsync
+      - run:
+          name: Copy binary to Raspberry Pi
+          command: |
+            scp -o StrictHostKeyChecking=no -o BatchMode=yes target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
+            scp -o StrictHostKeyChecking=no -o BatchMode=yes target/bench_chacha.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/
+            rsync -avz --delete resources/MIME/ freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/MIME/
+            rsync -avz --delete resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
+            scp -o StrictHostKeyChecking=no live_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/config.txt
+      - run:
+          name: Restart server
+          command: |
+            ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
+              cd ~/doc/deploy;
+              [ -f codey.pid ] && sudo kill $(cat codey.pid) || true;
+              rm -f codey.pid;
+              mv codeymccodeface.armv6 codeymccodeface
+              mv bench_chacha.armv6 bench_chacha
+              sudo sh -c "nohup ./codeymccodeface --config config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
+            '
 
 workflows:
-  run_tests:
+  build_and_deploy:
     jobs:
       - test
-      - docker-test
+      - docker-build
+      - deploy:
+          requires:
+            - test
+            - docker-build
+          filters:
+            branches:
+              only:
+                - main

@@ -19,7 +19,9 @@ reactor::reactor() {
     assert(err == 0);
     m_pipe_read = rw[0];
     m_pipe_write = rw[1];
-    ::fcntl(m_pipe_read, F_SETFL, O_NONBLOCK);
+    if(::fcntl(m_pipe_read, F_SETFL, O_NONBLOCK) == -1) {
+        throw std::system_error(errno, std::generic_category(), "fcntl O_NONBLOCK on pipe");
+    }
 }
 
 void reactor::add_task(int fd, std::coroutine_handle<> handle, IO_direction read_write,
@@ -71,7 +73,7 @@ void reactor::sleep_until(std::coroutine_handle<> handle, time_point<steady_cloc
 
 void reactor::notify() {
     char buff = '\0';
-    do {
+    while(true) {
         ssize_t succ = ::write(m_pipe_write, &buff, 1); // notify ::poll
         if(succ < 0) {
             if(errno == EINTR) {
@@ -82,7 +84,8 @@ void reactor::notify() {
                 assert(false);
             }
         }
-    } while(false);
+        break;
+    }
 }
 
 size_t reactor::task_count() {
@@ -153,9 +156,9 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     if(!out.empty()) {
         return out;
     }
-    
+
     std::optional<milliseconds> timeout_duration = std::nullopt;
-    
+
     auto first_wake = min_optional(first_wake_fd, first_wake_timer);
     if(first_wake) {
         timeout_duration = duration_cast<milliseconds>(*first_wake - now + 1ms);
@@ -163,7 +166,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     if(noblock) {
         timeout_duration = 0ms;
     }
-    
+
     std::vector<pollfd> to_poll;
     {
         std::scoped_lock lk { m_mut };
@@ -193,7 +196,7 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
     }
     if(to_poll.back().revents & POLLIN) {
         char buff;
-        do {
+        while(true) {
             ssize_t succ = ::read(m_pipe_read, &buff, 1); // unclog pipe
             if(succ < 0) {
                 if(errno == EINTR) {
@@ -204,7 +207,8 @@ std::vector<std::coroutine_handle<>> reactor::wait(bool noblock) {
                     assert(false);
                 }
             }
-        } while(false);
+            break;
+        }
     }
     to_poll.pop_back(); // exclude the pipe
     

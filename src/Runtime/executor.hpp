@@ -8,8 +8,12 @@
 #ifndef executor_hpp
 #define executor_hpp
 
-#include "reactor.hpp"
 #include "task.hpp"
+#ifdef __linux__
+#include "uring_reactor.hpp"
+#else
+#include "reactor.hpp"
+#endif
 
 #include <stdio.h>
 #include <mutex>
@@ -35,7 +39,11 @@ public:
     friend root_task make_root_task(task<void> task);
     friend executor& executor_singleton();
     
+#ifdef __linux__
+    uring_reactor m_reactor;
+#else
     reactor m_reactor;
+#endif
 private:
     std::atomic<long> num_active_threads{1};
     executor() = default;

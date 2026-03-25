@@ -24,6 +24,7 @@
 
 #include "TLS/Cryptography/assymetric/mlkem.hpp"
 #include "IP/udp_server.hpp"
+#include "QUIC/event_loop.hpp"
 
 #include <memory>
 #include <fstream>
@@ -209,7 +210,7 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         auto ip_connections = std::make_shared<limiter>();
         async_spawn(https_server(ip_connections, std::move(https_listener)));
         async_spawn(redirect_server(ip_connections, std::move(http_listener)));
-        async_spawn(fbw::serve_udp(fbw::project_options.server_port, fbw::echo_handler));
+        async_spawn(fbw::serve_udp(fbw::project_options.server_port, fbw::quic::quic_event_loop));
 
     } catch(const std::exception& e) {
         auto default_key_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.key_file;

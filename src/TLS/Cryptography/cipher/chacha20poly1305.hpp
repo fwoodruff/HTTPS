@@ -56,7 +56,45 @@ public:
     tls_record deprotect(tls_record record) override;
 };
 
-} // namespace fbw
+// QUIC packet-number-space AEAD context using ChaCha20-Poly1305 + ChaCha20 HP
+// (RFC 9001 §5.3 and §5.4.4).  Used when the negotiated cipher suite is
+// TLS_CHACHA20_POLY1305_SHA256.
+struct quic_chacha20_poly1305_ctx {
+    static constexpr size_t KEY_SIZE = 32;
+    static constexpr size_t IV_SIZE  = 12;
+    static constexpr size_t TAG_SIZE = 16;
+
+    void set_key(const std::vector<uint8_t>& key,
+                 const std::vector<uint8_t>& iv,
+                 const std::vector<uint8_t>& hp_key);
+
+    // Result of removing header protection and AEAD-decrypting a long-header packet.
+    struct deprotected {
+        std::vector<uint8_t> plaintext;
+        uint32_t packet_number {};
+        uint8_t  pn_length {};
+    };
+
+    // Remove ChaCha20 long-header protection then AEAD-decrypt.
+    // Throws std::runtime_error on truncated input or Poly1305 tag mismatch.
+    deprotected deprotect(const std::vector<uint8_t>& header_bytes,
+                          uint8_t protected_first_byte,
+                          const std::vector<uint8_t>& raw_payload) const;
+
+    // AEAD-encrypt plaintext then apply ChaCha20 long-header protection.
+    // Returns the full on-wire packet bytes (header + encrypted payload).
+    std::vector<uint8_t> protect(const std::vector<uint8_t>& header_bytes,
+                                 uint32_t packet_number,
+                                 uint8_t  pn_length,
+                                 const std::vector<uint8_t>& plaintext) const;
+
+private:
+    std::array<uint8_t, KEY_SIZE> m_key {};
+    std::array<uint8_t, IV_SIZE>  m_iv {};
+    std::array<uint8_t, KEY_SIZE> m_hp_key {};
+};
+
+} // namespace fbw::cha
 
 
 #endif // chacha20poly1305_hpp

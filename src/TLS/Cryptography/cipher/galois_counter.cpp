@@ -466,4 +466,105 @@ tls_record AES_256_GCM_SHA384::deprotect(tls_record record) {
     return record;
 }
 
-} // namespace fbw
+// ── quic_aes_128_gcm_ctx ──────────────────────────────────────────────────────
+
+void quic_aes_128_gcm_ctx::set_key(const std::vector<uint8_t>& key,
+                                    const std::vector<uint8_t>& iv,
+                                    const std::vector<uint8_t>& hp_key) {
+    m_aead_rk = aes_key_schedule(key);
+    m_iv      = iv;
+    m_hp_rk   = aes_key_schedule(hp_key);
+}
+
+quic_aes_128_gcm_ctx::deprotected
+quic_aes_128_gcm_ctx::deprotect(const std::vector<uint8_t>& header_bytes,
+                                 uint8_t protected_first_byte,
+                                 const std::vector<uint8_t>& raw_payload) const {
+    // RFC 9001 §5.4.3: sample = raw_payload[4..20]
+    if (raw_payload.size() < 20) {
+        throw std::runtime_error("QUIC AES-GCM: payload too short for HP sample");
+    }
+    aes_block sample {};
+    std::copy_n(raw_payload.data() + 4, 16, sample.begin());
+    const auto mask = aes_encrypt(sample, m_hp_rk);
+
+    // Long-header: unmask low 4 bits of first byte (RFC 9001 §5.4.1).
+    const uint8_t unprotected_first = protected_first_byte ^ (mask[0] & 0x0f);
+    const uint8_t pn_length = (unprotected_first & 0x03) + 1;
+
+    if (raw_payload.size() < static_cast<size_t>(pn_length) + TAG_SIZE) {
+        throw std::runtime_error("QUIC AES-GCM: payload too short for pn + AEAD tag");
+    }
+
+    // Build AAD and decode unprotected packet number.
+    std::vector<uint8_t> aad = header_bytes;
+    aad[0] = unprotected_first;
+    uint32_t pn = 0;
+    for (size_t i = 0; i < pn_length; i++) {
+        const uint8_t b = raw_payload[i] ^ mask[i + 1];
+        aad.push_back(b);
+        pn = (pn << 8) | b;
+    }
+
+    // Nonce = IV ⊕ zero-padded packet number (RFC 9001 §5.3).
+    std::vector<uint8_t> nonce = m_iv;
+    for (size_t i = 0; i < pn_length; i++) {
+        nonce[IV_SIZE - pn_length + i] ^= aad[aad.size() - pn_length + i];
+    }
+
+    const size_t ct_end = raw_payload.size() - TAG_SIZE;
+    std::vector<uint8_t> ciphertext(raw_payload.begin() + pn_length,
+                                    raw_payload.begin() + ct_end);
+    std::vector<uint8_t> tag(raw_payload.end() - TAG_SIZE, raw_payload.end());
+
+    auto plaintext = aes_gcm_ad(m_aead_rk, nonce, ciphertext, aad, tag);
+    return { std::move(plaintext), pn, pn_length };
+}
+
+std::vector<uint8_t>
+quic_aes_128_gcm_ctx::protect(const std::vector<uint8_t>& header_bytes,
+                               uint32_t packet_number,
+                               uint8_t  pn_length,
+                               const std::vector<uint8_t>& plaintext) const {
+    // Encode packet number big-endian in pn_length bytes.
+    std::vector<uint8_t> pn_bytes(pn_length);
+    uint32_t pn = packet_number;
+    for (int i = pn_length - 1; i >= 0; i--) {
+        pn_bytes[i] = pn & 0xFF;
+        pn >>= 8;
+    }
+
+    // AAD = header_bytes (unprotected first byte) || pn_bytes.
+    std::vector<uint8_t> aad = header_bytes;
+    aad.insert(aad.end(), pn_bytes.begin(), pn_bytes.end());
+
+    // Nonce = IV ⊕ zero-padded packet number.
+    std::vector<uint8_t> nonce = m_iv;
+    for (size_t i = 0; i < pn_length; i++) {
+        nonce[IV_SIZE - pn_length + i] ^= pn_bytes[i];
+    }
+
+    auto [ciphertext, tag] = aes_gcm_ae(m_aead_rk, nonce, plaintext, aad);
+
+    // raw_payload (unprotected) = pn_bytes || ciphertext || tag.
+    std::vector<uint8_t> raw;
+    raw.insert(raw.end(), pn_bytes.begin(), pn_bytes.end());
+    raw.insert(raw.end(), ciphertext.begin(), ciphertext.end());
+    raw.insert(raw.end(), tag.begin(), tag.end());
+
+    // Apply header protection: sample = raw[4..20].
+    aes_block sample {};
+    std::copy_n(raw.data() + 4, 16, sample.begin());
+    const auto mask = aes_encrypt(sample, m_hp_rk);
+
+    // Assemble wire packet: protected first_byte || header_bytes[1..] || protected raw.
+    std::vector<uint8_t> packet = header_bytes;
+    packet[0] ^= (mask[0] & 0x0f);
+    for (size_t i = 0; i < pn_length; i++) {
+        raw[i] ^= mask[i + 1];
+    }
+    packet.insert(packet.end(), raw.begin(), raw.end());
+    return packet;
+}
+
+} // namespace fbw::aes

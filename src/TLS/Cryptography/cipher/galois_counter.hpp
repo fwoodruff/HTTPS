@@ -70,7 +70,45 @@ public:
     tls_record deprotect(tls_record record) override;
 };
 
+// QUIC packet-number-space AEAD context using AES-128-GCM + AES-128-ECB HP
+// (RFC 9001 §5.3 and §5.4.3).  Used for Initial and Handshake spaces when
+// the negotiated cipher suite is TLS_AES_128_GCM_SHA256.
+struct quic_aes_128_gcm_ctx {
+    static constexpr size_t KEY_SIZE = 16;
+    static constexpr size_t IV_SIZE  = 12;
+    static constexpr size_t TAG_SIZE = 16;
 
-} // namespace fbw
+    void set_key(const std::vector<uint8_t>& key,
+                 const std::vector<uint8_t>& iv,
+                 const std::vector<uint8_t>& hp_key);
+
+    // Result of removing header protection and AEAD-decrypting a long-header packet.
+    struct deprotected {
+        std::vector<uint8_t> plaintext;
+        uint32_t packet_number {};
+        uint8_t  pn_length {};
+    };
+
+    // Remove AES-128-ECB long-header protection then AEAD-decrypt.
+    // header_bytes: raw on-wire bytes before raw_payload (for AAD construction).
+    // Throws std::runtime_error on truncated input or AEAD tag mismatch.
+    deprotected deprotect(const std::vector<uint8_t>& header_bytes,
+                          uint8_t protected_first_byte,
+                          const std::vector<uint8_t>& raw_payload) const;
+
+    // AEAD-encrypt plaintext then apply AES-128-ECB long-header protection.
+    // Returns the full on-wire packet bytes (header + encrypted payload).
+    std::vector<uint8_t> protect(const std::vector<uint8_t>& header_bytes,
+                                 uint32_t packet_number,
+                                 uint8_t  pn_length,
+                                 const std::vector<uint8_t>& plaintext) const;
+
+private:
+    roundkey             m_aead_rk; // precomputed AES key schedule for AEAD
+    std::vector<uint8_t> m_iv;      // 12-byte nonce base
+    roundkey             m_hp_rk;   // precomputed AES key schedule for HP
+};
+
+} // namespace fbw::aes
 
 #endif // galois_counter_hpp

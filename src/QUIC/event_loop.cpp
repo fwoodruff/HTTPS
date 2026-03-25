@@ -10,6 +10,7 @@
 #include "retransmission.hpp"
 #include "../IP/Awaitables/await_message.hpp"
 #include "types.hpp"
+#include "initial_crypto.hpp"
 #include "visitor.hpp"
 #include <variant>
 
@@ -18,7 +19,12 @@ namespace fbw::quic {
 
 task<void> visit_datagram(const std::vector<uint8_t>& data) {
     auto parsed = parse_datagram(data);
-    for(auto packet : parsed) {
+    for (auto& packet : parsed) {
+        if (auto* ip = std::get_if<initial_packet>(&packet)) {
+            decrypt_initial_packet(*ip);
+            // Decryption failure is silent: the packet is still visited but
+            // packet_payload will be empty (frames are absent).
+        }
         visit_packet(packet);
     }
     co_return;
@@ -53,8 +59,6 @@ task<void> quic_event_loop(std::shared_ptr<udp_connection> conn) {
         datagram d = *maybe_datagram;
         
         co_await visit_datagram(d.data);
-
-        co_await conn->send(d);
     }
     co_return;
 }

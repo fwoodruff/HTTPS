@@ -23,7 +23,7 @@ struct udp_connection_receiver;
 
 struct udp_connection : std::enable_shared_from_this<udp_connection> {
 public:
-    udp_connection(udp_socket sock);
+    udp_connection(std::shared_ptr<udp_socket> sock);
     task<std::optional<datagram>> receive_for(milliseconds millis);
     task<std::optional<datagram>> receive_until(time_point<steady_clock> time_point);
     udp_sender send(datagram packet);
@@ -31,8 +31,7 @@ public:
     std::deque<datagram> inbox;
     std::mutex m_mut;
     std::coroutine_handle<> waiter;
-    std::span<uint8_t> received_packet;
-    udp_socket m_sock;
+    std::shared_ptr<udp_socket> m_sock;
     uint64_t wait_generation = 1;
 private:
     udp_connection_receiver receive_untimed();

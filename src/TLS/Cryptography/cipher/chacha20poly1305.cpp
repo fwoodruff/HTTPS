@@ -362,5 +362,133 @@ bool ChaCha20_Poly1305_tls13::do_key_reset() {
 }
 
 
+// ── quic_chacha20_poly1305_ctx ────────────────────────────────────────────────
+
+void quic_chacha20_poly1305_ctx::set_key(const std::vector<uint8_t>& key,
+                                          const std::vector<uint8_t>& iv,
+                                          const std::vector<uint8_t>& hp_key) {
+    std::copy_n(key.data(),    KEY_SIZE, m_key.begin());
+    std::copy_n(iv.data(),     IV_SIZE,  m_iv.begin());
+    std::copy_n(hp_key.data(), KEY_SIZE, m_hp_key.begin());
+}
+
+// RFC 9001 §5.4.4: ChaCha20-based header protection.
+// mask[0..5] = ChaCha20(hp_key, counter=LE32(sample[0..4]), nonce=sample[4..16])[0..5]
+static std::array<uint8_t, 5> chacha20_hp_mask(const std::array<uint8_t, quic_chacha20_poly1305_ctx::KEY_SIZE>& hp_key,
+                                                const std::array<uint8_t, 16>& sample) {
+    const uint32_t counter = static_cast<uint32_t>(sample[0])
+                           | (static_cast<uint32_t>(sample[1]) << 8)
+                           | (static_cast<uint32_t>(sample[2]) << 16)
+                           | (static_cast<uint32_t>(sample[3]) << 24);
+    std::array<uint8_t, IV_SIZE> nonce {};
+    std::copy_n(sample.data() + 4, IV_SIZE, nonce.begin());
+    const auto keystream = chacha20(hp_key, nonce, counter);
+    std::array<uint8_t, 5> mask {};
+    std::copy_n(keystream.begin(), 5, mask.begin());
+    return mask;
+}
+
+quic_chacha20_poly1305_ctx::deprotected
+quic_chacha20_poly1305_ctx::deprotect(const std::vector<uint8_t>& header_bytes,
+                                       uint8_t protected_first_byte,
+                                       const std::vector<uint8_t>& raw_payload) const {
+    if (raw_payload.size() < 20) {
+        throw std::runtime_error("QUIC ChaCha20: payload too short for HP sample");
+    }
+    std::array<uint8_t, 16> sample {};
+    std::copy_n(raw_payload.data() + 4, 16, sample.begin());
+    const auto mask = chacha20_hp_mask(m_hp_key, sample);
+
+    // Long-header: unmask low 4 bits of first byte (RFC 9001 §5.4.1).
+    const uint8_t unprotected_first = protected_first_byte ^ (mask[0] & 0x0f);
+    const uint8_t pn_length = (unprotected_first & 0x03) + 1;
+
+    if (raw_payload.size() < static_cast<size_t>(pn_length) + TAG_SIZE) {
+        throw std::runtime_error("QUIC ChaCha20: payload too short for pn + AEAD tag");
+    }
+
+    // Build AAD and decode unprotected packet number.
+    std::vector<uint8_t> aad = header_bytes;
+    aad[0] = unprotected_first;
+    uint32_t pn = 0;
+    for (size_t i = 0; i < pn_length; i++) {
+        const uint8_t b = raw_payload[i] ^ mask[i + 1];
+        aad.push_back(b);
+        pn = (pn << 8) | b;
+    }
+
+    // Nonce = IV ⊕ zero-padded packet number (RFC 9001 §5.3).
+    std::array<uint8_t, IV_SIZE> nonce = m_iv;
+    for (size_t i = 0; i < pn_length; i++) {
+        nonce[IV_SIZE - pn_length + i] ^= aad[aad.size() - pn_length + i];
+    }
+
+    const size_t ct_end = raw_payload.size() - TAG_SIZE;
+    std::vector<uint8_t> ciphertext(raw_payload.begin() + pn_length,
+                                    raw_payload.begin() + ct_end);
+    std::array<uint8_t, TAG_SIZE> expected_tag {};
+    std::copy_n(raw_payload.end() - TAG_SIZE, TAG_SIZE, expected_tag.begin());
+
+    // Decrypt in place; chacha20_aead_crypt returns the computed tag.
+    const auto computed_tag = chacha20_aead_crypt(aad, m_key, nonce,
+                                                  ciphertext, false);
+    uint8_t diff = 0;
+    for (size_t i = 0; i < TAG_SIZE; i++) {
+        diff |= computed_tag[i] ^ expected_tag[i];
+    }
+    if (diff != 0) {
+        throw std::runtime_error("QUIC ChaCha20: AEAD tag mismatch");
+    }
+    return { std::move(ciphertext), pn, pn_length };
+}
+
+std::vector<uint8_t>
+quic_chacha20_poly1305_ctx::protect(const std::vector<uint8_t>& header_bytes,
+                                     uint32_t packet_number,
+                                     uint8_t  pn_length,
+                                     const std::vector<uint8_t>& plaintext) const {
+    // Encode packet number big-endian in pn_length bytes.
+    std::vector<uint8_t> pn_bytes(pn_length);
+    uint32_t pn = packet_number;
+    for (int i = pn_length - 1; i >= 0; i--) {
+        pn_bytes[i] = pn & 0xFF;
+        pn >>= 8;
+    }
+
+    // AAD = header_bytes (unprotected first byte) || pn_bytes.
+    std::vector<uint8_t> aad = header_bytes;
+    aad.insert(aad.end(), pn_bytes.begin(), pn_bytes.end());
+
+    // Nonce = IV ⊕ zero-padded packet number.
+    std::array<uint8_t, IV_SIZE> nonce = m_iv;
+    for (size_t i = 0; i < pn_length; i++) {
+        nonce[IV_SIZE - pn_length + i] ^= pn_bytes[i];
+    }
+
+    // Encrypt in place.
+    std::vector<uint8_t> ciphertext = plaintext;
+    const auto tag = chacha20_aead_crypt(aad, m_key, nonce, ciphertext, true);
+
+    // raw_payload (unprotected) = pn_bytes || ciphertext || tag.
+    std::vector<uint8_t> raw;
+    raw.insert(raw.end(), pn_bytes.begin(), pn_bytes.end());
+    raw.insert(raw.end(), ciphertext.begin(), ciphertext.end());
+    raw.insert(raw.end(), tag.begin(), tag.end());
+
+    // Apply header protection: sample = raw[4..20].
+    std::array<uint8_t, 16> sample {};
+    std::copy_n(raw.data() + 4, 16, sample.begin());
+    const auto mask = chacha20_hp_mask(m_hp_key, sample);
+
+    // Assemble wire packet: protected first_byte || header_bytes[1..] || protected raw.
+    std::vector<uint8_t> packet = header_bytes;
+    packet[0] ^= (mask[0] & 0x0f);
+    for (size_t i = 0; i < pn_length; i++) {
+        raw[i] ^= mask[i + 1];
+    }
+    packet.insert(packet.end(), raw.begin(), raw.end());
+    return packet;
+}
+
 } // namespace fbw::cha
 

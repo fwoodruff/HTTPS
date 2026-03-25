@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <variant>
 #include <vector>
@@ -175,12 +176,16 @@ struct version_negotiation_packet {
 };
 
 struct initial_packet {
-    uint8_t packet_number_length;
-    uint32_t version;
+    uint8_t first_byte {};
+    uint32_t version {};
     std::vector<uint8_t> destination_connection_id;
     std::vector<uint8_t> source_connection_id;
     std::vector<uint8_t> token;
-    uint32_t packet_number;
+    std::vector<uint8_t> raw_payload;  // header-protected pn + AEAD ciphertext + tag
+    std::vector<uint8_t> header_bytes; // raw bytes before raw_payload (for AAD construction)
+    // populated only after header-protection removal and AEAD decryption:
+    uint8_t packet_number_length {};
+    uint32_t packet_number {};
     std::vector<var_frame> packet_payload;
 };
 
@@ -239,6 +244,9 @@ using var_packet = std::variant<
 >;
 
 std::vector<var_packet> parse_datagram(const std::vector<uint8_t>& bytes);
+
+// Parse QUIC frames from decrypted plaintext bytes.
+std::vector<var_frame> parse_frames(std::span<const uint8_t> payload);
 
 
 }

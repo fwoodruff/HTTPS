@@ -45,7 +45,7 @@ std::optional<datagram> udp_connection_receiver::await_resume() {
     return {result};
 }
 
-udp_connection::udp_connection(udp_socket sock) : m_sock(std::move(sock)) {}
+udp_connection::udp_connection(std::shared_ptr<udp_socket> sock) : m_sock(std::move(sock)) {}
 
 task<void> wait_and_fire_for(std::shared_ptr<udp_connection> conn, milliseconds millis, uint64_t this_gen) {
     co_await wait_for(millis);
@@ -102,7 +102,7 @@ udp_connection_receiver udp_connection::receive_untimed() {
 }
 
 udp_sender udp_connection::send(datagram packet) {
-    return m_sock.send_to(packet, std::nullopt);
+    return m_sock->send_to(std::move(packet), std::nullopt);
 }
 
 void udp_connection::resume_if_waiting() {
@@ -151,16 +151,15 @@ static std::string addr_to_key(const struct sockaddr_storage &ss) { // placehold
 }
 
 task<void> serve_udp(std::string port, std::function<task<void>(std::shared_ptr<fbw::udp_connection>)> connection_handler) {
-    udp_socket socket = udp_socket::bind(port);
+    auto socket = std::make_shared<udp_socket>(udp_socket::bind(port));
     std::unordered_map<std::string, std::shared_ptr<udp_connection>> addr_map;
     for(;;) {
-        auto dgram = co_await socket.receive_from(std::nullopt);
-        co_return;
+        auto dgram = co_await socket->receive_from(std::nullopt);
         auto dgram_address_key = addr_to_key(dgram.addr);
-        auto it = addr_map.find(dgram_address_key); // TODO, replace this with a lookup against the packet's id
+        auto it = addr_map.find(dgram_address_key); // TODO: replace with lookup against packet's connection id
         std::shared_ptr<udp_connection> connection;
         if(it == addr_map.end()) {
-            connection = std::make_shared<udp_connection>(std::move(socket));
+            connection = std::make_shared<udp_connection>(socket);
             addr_map.insert({dgram_address_key, connection});
             async_spawn(connection_handler(connection));
         } else {

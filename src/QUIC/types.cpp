@@ -149,7 +149,7 @@ static handshake_done parse_handshake_done(std::span<const uint8_t>& payload) {
     return out;
 }
 
-static std::vector<var_frame> parse_frames(std::span<const uint8_t> payload) {
+std::vector<var_frame> parse_frames(std::span<const uint8_t> payload) {
     std::vector<var_frame> out;
     while (!payload.empty()) {
         auto frame_type = read_varint(payload);
@@ -226,17 +226,27 @@ static version_negotiation_packet consume_version_negotiation(std::span<const ui
 
 static initial_packet consume_initial(std::span<const uint8_t>& s) {
     initial_packet p;
+    const auto* packet_start = s.data();
+    p.first_byte = s[0];
     s = s.subspan(1);
     p.version = consume_u32(s);
     p.destination_connection_id = consume_cid(s);
     p.source_connection_id = consume_cid(s);
     auto token_len = read_varint(s);
     if(s.size() < token_len) {
-        return {};
+        return p;
     }
     p.token = std::vector<uint8_t>(s.begin(), s.begin() + token_len);
+    s = s.subspan(token_len);
     auto length = read_varint(s);
-    p.packet_payload = parse_frames(s);
+    if (s.size() < length) {
+        return p;
+    }
+    // header_bytes = everything up to (not including) raw_payload, used as AAD.
+    p.header_bytes.assign(packet_start, s.data());
+    // Store raw encrypted bytes (header-protected pn + AEAD ciphertext + tag).
+    // Frames are populated later once header protection and decryption are implemented.
+    p.raw_payload.assign(s.begin(), s.begin() + length);
     s = s.subspan(length);
     return p;
 }

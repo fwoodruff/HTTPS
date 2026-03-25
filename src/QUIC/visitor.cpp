@@ -94,7 +94,7 @@ task<void> visit_packet(const var_packet& packet) {
             
         },
         [](const initial_packet& p) {
-            visit_payload(p.packet_payload);
+            //visit_payload(p.packet_payload);
         },
         [](const zero_rtt_packet& p) {
             

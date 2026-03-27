@@ -12,9 +12,8 @@
 
 #include <unordered_map>
 #include <string>
-#include <fstream>
-#include <sstream>
-#include <vector>
+#include <cstdio>
+#include <string_view>
 #include <mutex>
 
 namespace fbw {
@@ -26,21 +25,18 @@ bool init = false;
 // this depends on the extension of the file that was requested.
 // we therefore need to map from extension to Content-Type.
 std::unordered_map<std::string,std::string> MIME_csv_to_map(const std::filesystem::path& filename) {
-    std::ifstream file(filename);
-    std::string line;
+    FILE* fp = fopen(filename.c_str(), "r");
+    if (!fp) throw std::logic_error("failed to read MIMEs");
     std::unordered_map<std::string,std::string> MIME_types;
-    while(std::getline(file, line)) {
-        std::istringstream s(line);
-        std::string field;
-        std::vector<std::string> fields;
-        while (std::getline(s, field,',')) {
-            fields.push_back(field);
-        }
-        if(fields.size() < 2) {
-            throw std::logic_error("failed to read MIMEs");
-        }
-        MIME_types.insert({fields[0],fields[1]});
+    char line[512];
+    while (fgets(line, sizeof(line), fp)) {
+        std::string_view sv(line);
+        while (!sv.empty() && (sv.back() == '\n' || sv.back() == '\r')) sv.remove_suffix(1);
+        auto comma = sv.find(',');
+        if (comma == std::string_view::npos) { fclose(fp); throw std::logic_error("failed to read MIMEs"); }
+        MIME_types.emplace(std::string(sv.substr(0, comma)), std::string(sv.substr(comma + 1)));
     }
+    fclose(fp);
     return MIME_types;
 }
 

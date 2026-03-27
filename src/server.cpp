@@ -26,7 +26,7 @@
 #include "IP/udp_server.hpp"
 
 #include <memory>
-#include <fstream>
+#include <cstdio>
 #include <string>
 #include <filesystem>
 #include <unordered_map>
@@ -137,15 +137,16 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
                 }
                 continue;
             }
-            std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
-            if (!ip_ban.is_open()) {
+            FILE* ip_ban = fopen(fbw::project_options.ip_ban_file.c_str(), "a");
+            if (!ip_ban) {
                 throw std::runtime_error("failed to open ip ban file");
             }
 
             auto timestamp = fbw::build_iso_8601_current_timestamp();
             auto ip = client->get_ip();
             std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
-            ip_ban.flush();
+            fflush(ip_ban);
+            fclose(ip_ban);
             auto conn = co_await ip_connections->add_connection(client->m_ip);
             if(conn == std::nullopt) [[unlikely]] {
                 continue;
@@ -173,14 +174,15 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
                 continue;
             }
 
-            std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
-            if (!ip_ban.is_open()) {
+            FILE* ip_ban = fopen(fbw::project_options.ip_ban_file.c_str(), "a");
+            if (!ip_ban) {
                 throw std::runtime_error("failed to open ip ban file");
             }
             auto timestamp = fbw::build_iso_8601_current_timestamp();
             auto ip = client->get_ip();
             std::println(ip_ban, "[{}] CONNECT ip={}", timestamp, ip);
-            ip_ban.flush();
+            fflush(ip_ban);
+            fclose(ip_ban);
 
             auto conn = co_await ip_connections->add_connection(client->m_ip);
             if(conn == std::nullopt) [[unlikely]] {

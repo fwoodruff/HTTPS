@@ -12,10 +12,9 @@
 #include "../../global.hpp"
 
 #include <string>
+#include <cstdio>
 #include <ctime>
-#include <iomanip>
 #include <unordered_set>
-#include <sstream>
 #include <cassert>
 #include <algorithm>
 #include <deque>
@@ -186,19 +185,17 @@ std::unordered_set<std::string> known_tlds;
 
 
 void parse_tlds(const std::string& tld_filename) {
-    std::ifstream tld_file(tld_filename);
-    if (!tld_file.is_open()) {
-        throw std::runtime_error("TLD file not found\n");
-    }
-    std::string tld;
-    while (std::getline(tld_file, tld)) {
+    FILE* fp = fopen(tld_filename.c_str(), "r");
+    if (!fp) throw std::runtime_error("TLD file not found\n");
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        std::string tld(line);
         remove_whitespace(tld);
-        if (tld.empty() || tld[0] == '#') {
-            continue; // skip comments
-        }
+        if (tld.empty() || tld[0] == '#') continue;
         std::transform(tld.begin(), tld.end(), tld.begin(), asciitolower);
         known_tlds.insert(tld);
     }
+    fclose(fp);
 }
 
 bool is_tld(std::string domain) {
@@ -322,16 +319,14 @@ std::vector<std::pair<size_t, size_t>> parse_range_header(const std::string& ran
 
 
 std::vector<uint8_t> make_header(std::string status, std::unordered_map<std::string, std::string> header) {
-    std::ostringstream oss;
-    oss << "HTTP/1.1 " << status << "\r\n";
+    std::string head = "HTTP/1.1 " + status + "\r\n";
     size_t content_size = 0;
     for(auto [k, v] : header) {
         if(k == "Content-Length") {
             content_size = std::stol(v);
         }
-        oss << k << ": " << v << "\r\n";
+        head += k + ": " + v + "\r\n";
     }
-    std::string head = oss.str();
     const std::string pad = "paddingpadding";
     size_t padding_length = ((content_size + head.size()) % (pad.size() - 1)) + 1;
     head += "X-Padding: " + std::string(pad.c_str(), padding_length);
@@ -370,14 +365,9 @@ std::string error_to_html(int status, std::string message) {
     if(it != http_code_map.end()) {
         standard_msg = it->second;
     }
-    std::ostringstream oss;
-    oss << "<!DOCTYPE html>\n"
-        << "<html>\n"
-        << "<head><title>\n" << status << " " << standard_msg << "\n"
-        << "</title></head>\n"
-        << "\t<body><h1>\n" << status << " " << message << "</h1></body>\n" 
-        << "</html>";
-    return oss.str();
+    auto s = std::to_string(status);
+    return "<!DOCTYPE html>\n<html>\n<head><title>\n" + s + " " + standard_msg +
+           "\n</title></head>\n\t<body><h1>\n" + s + " " + message + "</h1></body>\n</html>";
 }
 
 

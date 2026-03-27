@@ -8,16 +8,13 @@
 #include "global.hpp"
 
 #include <string>
-#include <fstream>
-#include <sstream>
+#include <cstdio>
 #include <unordered_map>
-#include <mutex>
 #include <algorithm>
 #include <unistd.h>
 #include <vector>
 #include <limits.h>
 
-#include <iomanip>
 #include <ctime>
 
 #include <filesystem>
@@ -57,18 +54,26 @@ std::filesystem::path relative_to(std::filesystem::path query_path, std::filesys
 }
 
 void init_options(std::filesystem::path config_file) {
-    auto file = std::ifstream(config_file);
-    if(!file.is_open()) {
+    FILE* fp = fopen(config_file.c_str(), "r");
+    if (!fp) {
         throw std::runtime_error("no config.txt file at " + config_file.string());
     }
-    std::string key;
-    std::string value;
     std::unordered_map<std::string, std::string> option_map;
-    while(  std::getline(file, key, '=') && std::getline(file, value)) {
+    char line[1024];
+    while (fgets(line, sizeof(line), fp)) {
+        std::string s(line);
+        // strip trailing newline
+        if (!s.empty() && s.back() == '\n') s.pop_back();
+        if (!s.empty() && s.back() == '\r') s.pop_back();
+        auto eq = s.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key   = s.substr(0, eq);
+        std::string value = s.substr(eq + 1);
         remove_whitespace(key);
         remove_whitespace(value);
         option_map.insert({key, value});
     }
+    fclose(fp);
 
     project_options.redirect_port = option_map.at("REDIRECT_PORT");
     project_options.server_port = option_map.at("SERVER_PORT");
@@ -175,12 +180,11 @@ std::string base64_encode(const std::vector<uint8_t>& data) {
 
 std::string build_iso_8601_current_timestamp() {
     auto now = std::chrono::system_clock::now();
-    auto tt = std::chrono::system_clock::to_time_t(now);
+    auto tt  = std::chrono::system_clock::to_time_t(now);
     std::tm tm = *std::gmtime(&tt);
-    auto t = std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    std::ostringstream ts;
-    ts << t;
-    return ts.str();
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return buf;
 }
 
 std::filesystem::path get_config_path(int argc, const char* argv[]) {

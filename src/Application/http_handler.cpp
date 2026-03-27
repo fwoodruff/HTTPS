@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <string>
+#include <cstdio>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -43,18 +44,18 @@ std::string replace_all(std::string str, const std::string& from, const std::str
 };
 
 void write_body(std::string body) {
-    std::ofstream fout(project_options.webpage_folder/project_options.default_subfolder/"final.html", std::ios_base::app);
-    if(!fout.is_open()) {
-        return;
-    }
+    auto path = (project_options.webpage_folder/project_options.default_subfolder/"final.html").string();
+    FILE* fout = fopen(path.c_str(), "a");
+    if (!fout) return;
     body = replace_all(std::move(body), "username=", "username: ");
     body = replace_all(std::move(body), "&password=", ", password: ");
     body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
     body = replace_all(std::move(body), "<", "&lt;");
     body = replace_all(std::move(body), ">", "&gt;");
-    body.append("</p>");
-    body.insert(0,"<p>");
-    fout << body << std::endl;
+    body.insert(0, "<p>");
+    body.append("</p>\n");
+    fwrite(body.data(), 1, body.size(), fout);
+    fclose(fout);
 }
 
 std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool full = true) {
@@ -320,14 +321,15 @@ task<bool> handle_request(http_ctx& connection) {
     const auto path = find_header(request_headers, ":path");
     [[maybe_unused]] const auto scheme = find_header(request_headers, ":scheme");
 
-    std::ofstream ip_ban = std::ofstream(fbw::project_options.ip_ban_file, std::ios_base::app);
-    if (!ip_ban.is_open()) {
+    FILE* ip_ban = fopen(fbw::project_options.ip_ban_file.c_str(), "a");
+    if (!ip_ban) {
         throw std::runtime_error("failed to open ip ban file");
     }
     auto timestamp = build_iso_8601_current_timestamp();
     auto ip = connection.get_ip();
     std::println(ip_ban, "[{}] HTTP    ip={} detail={} {}", timestamp, ip, method.value_or("BAD"), path.value_or("/malformed"));
-    ip_ban.flush();
+    fflush(ip_ban);
+    fclose(ip_ban);
     
     if(is_websocket_upgrade(request_headers)) {
         co_await handle_websocket(connection, request_headers);

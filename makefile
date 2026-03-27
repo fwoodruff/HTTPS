@@ -1,15 +1,17 @@
 PLATFORM ?= native
 
-CXXFLAGS_NO_OPT := -std=c++23 -Wall -Wno-psabi -MMD -MP
+CXXFLAGS_NO_OPT := -std=c++23 -Wall -Wno-psabi -MMD -MP \
+	-ffunction-sections -fdata-sections -fvisibility=hidden
 
 LDFLAGS :=
 
 ifeq ($(PLATFORM),armv6)
 	CXX := armv6-rpi-linux-gnueabihf-g++
 	CXXFLAGS_NO_OPT += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm
-	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic
+	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic -Wl,--gc-sections
 else
 	CXX := g++
+	LDFLAGS += -Wl,-dead_strip
 endif
 
 ifeq ($(STATIC),1)

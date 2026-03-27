@@ -8,8 +8,6 @@
 #include "h2frame.hpp"
 #include "../../global.hpp"
 
-#include <sstream>
-
 namespace fbw {
 
 using enum h2_code;
@@ -252,26 +250,6 @@ std::unique_ptr<h2_continuation> deserialise_CONTINUATION(const std::vector<uint
     return frame;
 }
 
-std::string pretty_flags(uint8_t flags, bool can_ack) {
-    std::stringstream out;
-    if(flags & h2_flags::END_HEADERS) {
-        out << " END_HEADERS";
-    }
-    if(flags & (h2_flags::END_STREAM | h2_flags::ACK)) {
-        if(can_ack) {
-            out << " ACK";
-        } else {
-            out << " END_STREAM";
-        }
-    }
-    if(flags & h2_flags::PADDED) {
-        out << " PADDED";
-    }
-    if(flags & h2_flags::PRIORITY) {
-        out << " PRIORITY";
-    }
-    return out.str();
-}
 
 std::vector<uint8_t> h2frame::serialise_common(size_t reserved) const {
     // std::cout << "sent:     " << pretty() << std::endl;
@@ -298,28 +276,6 @@ std::vector<uint8_t> h2_data::serialise() const {
     return out;
 }
 
-std::string h2_data::pretty() const {
-    std::stringstream out;
-    out << "type: DATA,          stream id: " << stream_id << " data size: " << contents.size();
-    /*
-    out << " data: ";
-    uint32_t non_ascii_char_count = 0;
-    for(uint8_t c : contents) {
-        if((c >= 32 and c <= 126) or c == 10) {
-            out << char(c);
-        } else {
-            non_ascii_char_count++;
-            out << '.';
-            if(non_ascii_char_count > 10) {
-                out << " ... etc. binary data";
-                break;
-            }
-        }
-    }
-    */
-    out << pretty_flags(flags, false);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_headers::serialise() const {
     std::vector<uint8_t> out = serialise_common();
@@ -340,16 +296,6 @@ std::vector<uint8_t> h2_headers::serialise() const {
     return out;
 }
 
-std::string h2_headers::pretty() const {
-    std::stringstream out;
-    out << "type: HEADERS,       stream id: " << stream_id;
-    out << " field block fragment size: " << field_block_fragment.size();
-    if(exclusive) {
-        out << " exclusive";
-    }
-    out << pretty_flags(flags, false);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_priority::serialise() const {
     std::vector<uint8_t> out = serialise_common(12);
@@ -361,14 +307,6 @@ std::vector<uint8_t> h2_priority::serialise() const {
     return out;
 }
 
-std::string h2_priority::pretty() const {
-    std::stringstream out;
-    out << "type: PRIORITY" << pretty_flags(flags, false);
-    if(exclusive) {
-        out << " exclusive";
-    }
-    return out.str();
-}
 
 std::vector<uint8_t> h2_rst_stream::serialise() const {
     std::vector<uint8_t> out = serialise_common();
@@ -378,11 +316,6 @@ std::vector<uint8_t> h2_rst_stream::serialise() const {
     return out;
 }
 
-std::string h2_rst_stream::pretty() const {
-    std::stringstream out;
-    out << "type: RST_STREAM,           id: " << stream_id << " " << "error code: " << std::hex << unsigned(error_code) << pretty_flags(flags, false);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_settings::serialise() const {
     std::vector<uint8_t> out = serialise_common(9 + settings.size() * 6);
@@ -395,18 +328,6 @@ std::vector<uint8_t> h2_settings::serialise() const {
     return out;
 }
 
-std::string h2_settings::pretty() const {
-    std::stringstream out;
-    out << "type: SETTINGS,      stream id: " << stream_id;
-    if(!settings.empty()) {
-        out << " settings:";
-    }
-    for(auto setting : settings) {
-        out << " id: " << unsigned(setting.identifier) << " v: " << unsigned(setting.value) << ",";
-    }
-    out << pretty_flags(flags, true);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_push_promise::serialise() const { 
     std::vector<uint8_t> out = serialise_common();
@@ -422,11 +343,6 @@ std::vector<uint8_t> h2_push_promise::serialise() const {
 }
 
 
-std::string h2_push_promise::pretty() const {
-    std::stringstream out;
-    out << "type: PUSH PROMISE,  stream id: " << stream_id << " " << pretty_flags(flags, false);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_ping::serialise() const { 
     std::vector<uint8_t> out = serialise_common(17);
@@ -436,11 +352,6 @@ std::vector<uint8_t> h2_ping::serialise() const {
     return out;
 }
 
-std::string h2_ping::pretty() const {
-    std::stringstream out;
-    out << "type: PING,          stream id: " << stream_id << " opaque: " << opaque << pretty_flags(flags, true);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_goaway::serialise() const { 
     std::vector<uint8_t> out = serialise_common();
@@ -453,16 +364,6 @@ std::vector<uint8_t> h2_goaway::serialise() const {
     return out;
 }
 
-std::string h2_goaway::pretty() const {
-    std::stringstream out;
-    out << "type: GOAWAY,        stream id: " << stream_id << " error code: " << unsigned(error_code);
-    out << " last stream id: " << last_stream_id;
-    if(!additional_debug_data.empty()) {
-        out << " error: " << additional_debug_data;
-    }
-    out << pretty_flags(flags, false);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_window_update::serialise() const { 
     std::vector<uint8_t> out = serialise_common();
@@ -472,11 +373,6 @@ std::vector<uint8_t> h2_window_update::serialise() const {
     return out;
 }
 
-std::string h2_window_update::pretty() const {
-    std::stringstream out;
-    out << "type: WINDOW UPDATE, stream id: " << stream_id << " increment: " << window_size_increment << pretty_flags(flags, false);
-    return out.str();
-}
 
 std::vector<uint8_t> h2_continuation::serialise() const {
     std::vector<uint8_t> out = serialise_common(13);
@@ -485,15 +381,6 @@ std::vector<uint8_t> h2_continuation::serialise() const {
     return out;
 }
 
-std::string h2_continuation::pretty() const {
-    std::stringstream out;
-    out << "type: CONTINUATION, stream id: " << stream_id << " field block fragment:";
-    for(unsigned c : field_block_fragment) {
-        out << ' ' << std::hex << std::setfill(' ') << std::setw(2) << c;
-    }
-    out << pretty_flags(flags, false);
-    return out.str();
-}
 
 void set_base_frame_values(h2frame& frame, const std::vector<uint8_t>& frame_bytes) {
     frame.type = (h2_type)try_bigend_read(frame_bytes, 3, 1);

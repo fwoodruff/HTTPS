@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <string>
 #include <cstdio>
+#include <print>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -327,7 +328,7 @@ task<bool> handle_request(http_ctx& connection) {
     }
     auto timestamp = build_iso_8601_current_timestamp();
     auto ip = connection.get_ip();
-    std::println(ip_ban, "[{}] HTTP    ip={} detail={} {}", timestamp, ip, method.value_or("BAD"), path.value_or("/malformed"));
+    std::fputs((std::format("[{}] HTTP    ip={} detail={} {}", timestamp, ip, method.value_or("BAD"), path.value_or("/malformed")) + '\n').c_str(), ip_ban);
     fflush(ip_ban);
     fclose(ip_ban);
     

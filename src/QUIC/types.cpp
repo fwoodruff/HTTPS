@@ -205,7 +205,7 @@ static std::vector<uint8_t> consume_cid(std::span<const uint8_t>& s) {
         return {};
     }
     uint8_t len = s[0];
-    if (s.size() < len + 1) {
+    if (s.size() < size_t(len) + 1) {
         return {};
     }
     out.assign(s.begin() + 1, s.begin() + 1 + len);

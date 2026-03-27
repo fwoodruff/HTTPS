@@ -1,7 +1,7 @@
 PLATFORM ?= native
 
 CXXFLAGS_NO_OPT := -std=c++23 -Wall -Wno-psabi -MMD -MP \
-	-ffunction-sections -fdata-sections -fvisibility=hidden
+	-ffunction-sections -fdata-sections -fvisibility=hidden -flto
 
 LDFLAGS :=
 
@@ -46,7 +46,7 @@ MAIN_OBJ := $(OBJ_DIR)/main.o
 
 $(TARGET): $(OBJ) $(MAIN_OBJ)
 	@mkdir -p $(TARGET_DIR)
-	$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
+	$(CXX) $(CXXFLAGS_CRYPTO) $^ $(LDFLAGS) -o $@
 
 # Cryptography files: -O3 (tight arithmetic loops benefit from full optimisation)
 $(OBJ_DIR)/TLS/Cryptography/%.o: $(SRC_DIR)/TLS/Cryptography/%.cpp
@@ -94,5 +94,11 @@ test:
 test-deps:
 	pip3 install -r llm-tests/requirements.txt --break-system-packages
 
+armv6: | $(TARGET_DIR)
+	docker build --progress=plain -t containerymccontainerface -f Dockerfile.armv6 .
+	c_id=$$(docker create containerymccontainerface) && \
+	  docker cp $$c_id:/target/codeymccodeface $(TARGET_DIR)/codeymccodeface.armv6 ; \
+	  docker rm $$c_id
+
 # Phony target to prevent conflicts with files named "clean"
-.PHONY: clean test test-deps bench
+.PHONY: clean test test-deps bench armv6

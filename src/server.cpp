@@ -30,8 +30,6 @@
 #include <string>
 #include <filesystem>
 #include <unordered_map>
-#include <print>
-#include <iostream>
 
 // Wishlist:
 
@@ -102,7 +100,7 @@ task<void> http_client(std::unique_ptr<fbw::stream> client_stream, connection_to
             co_await http_handler->client();
         }
     } catch(const std::exception& e) {
-        std::println(std::cerr,"client exception: {}\n", e.what());
+        fprintf(stderr,"client exception: %s\n\n", e.what());
     }
 }
 
@@ -119,7 +117,7 @@ task<void> tls_client(std::unique_ptr<fbw::TLS> client_stream, connection_token 
         }
         co_await http_client(std::move(client_stream), std::move(ip_connections), alpn, fbw::application_handler);
     } catch(const std::exception& e) {
-        std::println(std::cerr,"TLS client exception: {}\n", e.what());
+        fprintf(stderr,"TLS client exception: %s\n\n", e.what());
     }
 }
 
@@ -145,7 +143,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
 
             auto timestamp = fbw::build_iso_8601_current_timestamp();
             auto ip = client->get_ip();
-            std::fputs((std::format("[{}] CONNECT ip={}", timestamp, ip) + '\n').c_str(), ip_ban);
+            fprintf(ip_ban, "[%s] CONNECT ip=%s\n", timestamp.c_str(), ip.c_str());
             fflush(ip_ban);
             fclose(ip_ban);
             auto conn = co_await ip_connections->add_connection(client->m_ip);
@@ -157,7 +155,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
 
             async_spawn(tls_client(std::move(tls_stream), std::move(*conn)));
         } catch(const std::exception& e) {
-            std::println(std::cerr,"{}\n", e.what());
+            fprintf(stderr,"%s\n\n", e.what());
         }
     }
 }
@@ -181,7 +179,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             }
             auto timestamp = fbw::build_iso_8601_current_timestamp();
             auto ip = client->get_ip();
-            std::fputs((std::format("[{}] CONNECT ip={}", timestamp, ip) + '\n').c_str(), ip_ban);
+            fprintf(ip_ban, "[%s] CONNECT ip=%s\n", timestamp.c_str(), ip.c_str());
             fflush(ip_ban);
             fclose(ip_ban);
 
@@ -193,7 +191,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
             async_spawn(http_client(std::move(client_tcp_stream), std::move(*conn), "http/1.1", fbw::redirect_handler));
 
         } catch(const std::exception& e ) {
-            std::println(std::cerr,"{}\n", e.what());
+            fprintf(stderr,"%s\n\n", e.what());
         }
     }
 }
@@ -205,8 +203,8 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
         static_cast<void>(fbw::privkey_for_domain(fbw::project_options.default_subfolder));
         fbw::parse_tlds(fbw::project_options.tld_file);
 
-        std::println(std::cout, "Redirect running on port {}", http_port);
-        std::println(std::cout, "HTTPS running on port {}", https_port);
+        fprintf(stdout, "Redirect running on port %s\n", http_port.c_str());
+        fprintf(stdout, "HTTPS running on port %s\n", https_port.c_str());
         std::fflush(stdout);
 
         auto ip_connections = std::make_shared<limiter>();
@@ -217,11 +215,11 @@ task<void> async_main(fbw::tcplistener https_listener, std::string https_port, f
     } catch(const std::exception& e) {
         auto default_key_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.key_file;
         auto default_certificate_file = fbw::project_options.key_folder / fbw::project_options.default_subfolder / fbw::project_options.certificate_file;
-        std::println(std::cerr,"{}", e.what());
-        std::println(std::cerr,"{}", e.what());
-        std::println(std::cerr,"Mime folder: {}", std::filesystem::absolute(fbw::project_options.mime_folder).lexically_normal().string());
-        std::println(std::cerr,"Key file: {}", std::filesystem::absolute(default_key_file).lexically_normal().string());
-        std::println(std::cerr,"Certificate file: {}", std::filesystem::absolute(default_certificate_file).lexically_normal().string());
+        fprintf(stderr,"%s\n", e.what());
+        fprintf(stderr,"%s\n", e.what());
+        fprintf(stderr,"Mime folder: %s\n", std::filesystem::absolute(fbw::project_options.mime_folder).lexically_normal().string().c_str());
+        fprintf(stderr,"Key file: %s\n", std::filesystem::absolute(default_key_file).lexically_normal().string().c_str());
+        fprintf(stderr,"Certificate file: %s\n", std::filesystem::absolute(default_certificate_file).lexically_normal().string().c_str());
     }
     co_return;
 }

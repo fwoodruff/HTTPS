@@ -10,7 +10,6 @@
 #include <array>
 #include <cassert>
 #include <algorithm>
-#include <print>
 
 namespace fbw::mlkem {
 

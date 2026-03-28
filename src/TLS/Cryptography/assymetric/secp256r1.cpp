@@ -14,7 +14,6 @@
 #include <cassert>
 #include <array>
 #include <string>
-#include <print>
 
 
 namespace fbw::secp256r1  {

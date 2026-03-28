@@ -11,7 +11,7 @@ ifeq ($(PLATFORM),armv6)
 	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic -Wl,--gc-sections
 else
 	CXX := g++
-	LDFLAGS += -Wl,-dead_strip
+	LDFLAGS += -Wl,-dead_strip -Wl,-S
 endif
 
 ifeq ($(STATIC),1)
@@ -27,7 +27,7 @@ CXXFLAGS_NO_OPT += -I $(SRC_DIR)
 
 CXXFLAGS := $(CXXFLAGS_NO_OPT)  -O2
 CXXFLAGS_CRYPTO := $(CXXFLAGS_NO_OPT) -O3
-CXXFLAGS_SIZE   := $(CXXFLAGS_NO_OPT) -Os
+CXXFLAGS_SIZE   := $(CXXFLAGS_NO_OPT) -Oz
 
 # Source files
 SRC := $(wildcard $(SRC_DIR)/*.cpp) \
@@ -52,6 +52,11 @@ $(TARGET): $(OBJ) $(MAIN_OBJ)
 $(OBJ_DIR)/TLS/Cryptography/%.o: $(SRC_DIR)/TLS/Cryptography/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS_CRYPTO) -c $< -o $@
+
+# TLS non-crypto code: -Os (no tight arithmetic, code size matters more than speed)
+$(OBJ_DIR)/TLS/%.o: $(SRC_DIR)/TLS/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS_SIZE) -c $< -o $@
 
 # HTTP protocol handlers and application code: -Os (favour smaller code)
 $(OBJ_DIR)/HTTP/%.o: $(SRC_DIR)/HTTP/%.cpp

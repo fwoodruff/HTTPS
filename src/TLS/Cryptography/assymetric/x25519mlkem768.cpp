@@ -6,7 +6,6 @@
 //
 
 #include <algorithm>
-#include <print>
 #include "x25519mlkem768.hpp"
 
 #include "../one_way/keccak.hpp"

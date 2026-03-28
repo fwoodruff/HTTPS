@@ -15,8 +15,7 @@
 #include "../../global.hpp"
 #include "h2stream.hpp"
 #include "../../TLS/protocol.hpp"
-#include <print>
-#include <iostream>
+#include <cstdio>
 
 namespace fbw {
 
@@ -214,7 +213,7 @@ task<void> handle_stream(std::weak_ptr<HTTP2> connection, uint32_t stream_id) {
     try {
         co_await conn->m_handler(*hcx);
     } catch(std::exception& e) {
-        std::println(std::cerr,"stream error: {}\n", e.what());
+        fprintf(stderr,"stream error: %s\n\n", e.what());
     }
     if(!hcx->is_done()) {
         co_await hcx->write_data(std::span<uint8_t> {}, true);

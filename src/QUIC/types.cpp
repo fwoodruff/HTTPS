@@ -90,32 +90,32 @@ static stream_frame parse_stream(std::span<const uint8_t>& payload,  uint64_t fr
 }
 
 static max_data parse_max_data(std::span<const uint8_t>& payload) {
-    max_data out;
+    max_data out{};
     return out;
 }
 
 static max_stream_data parse_max_stream_data(std::span<const uint8_t>& payload) {
-    max_stream_data out;
+    max_stream_data out{};
     return out;
 }
 
 static max_streams parse_max_streams(std::span<const uint8_t>& payload, uint64_t frame_type) {
-    max_streams out;
+    max_streams out{};
     return out;
 }
 
 static data_blocked parse_data_blocked(std::span<const uint8_t>& payload) {
-    data_blocked out;
+    data_blocked out{};
     return out;
 }
 
 static stream_data_blocked parse_stream_data_blocked(std::span<const uint8_t>& payload) {
-    stream_data_blocked out;
+    stream_data_blocked out{};
     return out;
 }
 
 static streams_blocked parse_streams_blocked(std::span<const uint8_t>& payload) {
-    streams_blocked out;
+    streams_blocked out{};
     return out;
 }
 
@@ -125,27 +125,27 @@ static new_connection_id parse_new_connection_id(std::span<const uint8_t>& paylo
 }
 
 static retire_connection_id parse_retire_connection_id(std::span<const uint8_t>& payload) {
-    retire_connection_id out;
+    retire_connection_id out{};
     return out;
 }
 
 static path_challenge parse_path_challenge(std::span<const uint8_t>& payload) {
-    path_challenge out;
+    path_challenge out{};
     return out;
 }
 
 static path_response parse_path_response(std::span<const uint8_t>& payload) {
-    path_response out;
+    path_response out{};
     return out;
 }
 
 static connection_close parse_connection_close(std::span<const uint8_t>& payload) {
-    connection_close out;
+    connection_close out{};
     return out;
 }
 
 static handshake_done parse_handshake_done(std::span<const uint8_t>& payload) {
-    handshake_done out;
+    handshake_done out{};
     return out;
 }
 
@@ -205,7 +205,7 @@ static std::vector<uint8_t> consume_cid(std::span<const uint8_t>& s) {
         return {};
     }
     uint8_t len = s[0];
-    if (s.size() < len + 1) {
+    if (s.size() < size_t(len) + 1) {
         return {};
     }
     out.assign(s.begin() + 1, s.begin() + 1 + len);

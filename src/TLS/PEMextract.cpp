@@ -9,8 +9,7 @@
 #include "Cryptography/assymetric/secp256r1.hpp"
 #include "TLS_enums.hpp"
 
-#include <fstream>
-#include <sstream>
+#include <cstdio>
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -87,13 +86,16 @@ std::array<uint8_t,32> privkey_for_domain(std::string domain) {
 }
 
 std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
-    std::ifstream t(filename);
-    if (t.fail()) {
+    FILE* fp = fopen(filename.c_str(), "r");
+    if (!fp) {
         throw ssl_error("no private key found", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    std::string file = buffer.str();
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    std::string file(sz, '\0');
+    fread(file.data(), 1, sz, fp);
+    fclose(fp);
     std::string begin = "-----BEGIN PRIVATE KEY-----\n";
     std::string end = "-----END PRIVATE KEY-----\n";
     size_t start_idx = file.find(begin);
@@ -126,10 +128,16 @@ std::vector<std::vector<uint8_t>> der_cert_for_domain(std::string domain) {
 }
 
 std::vector<std::vector<uint8_t>> der_cert_from_file(std::filesystem::path filename) {
-    std::ifstream t(filename);
-    std::stringstream buffer;
-    buffer << t.rdbuf();
-    std::string file = buffer.str();
+    FILE* fp = fopen(filename.c_str(), "r");
+    if (!fp) {
+        throw ssl_error("bad certificate", AlertLevel::fatal, AlertDescription::bad_certificate);
+    }
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    std::string file(sz, '\0');
+    fread(file.data(), 1, sz, fp);
+    fclose(fp);
     
     size_t end_idx = 0;
     std::vector<std::vector<uint8_t>> output;

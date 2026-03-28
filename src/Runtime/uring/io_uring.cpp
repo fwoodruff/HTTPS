@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <atomic>
-#include <print>
+#include <cstdio>
 #include <cerrno>
 
 // Syscall numbers are stable Linux ABI; provide fallbacks for cross-compilers
@@ -42,11 +42,11 @@ int io_uring_queue_init(unsigned entries, struct io_uring* ring, unsigned /*flag
     struct io_uring_params p {};
     ring->ring_fd = sys_io_uring_setup(entries, &p);
     if (ring->ring_fd < 0) {
-        std::println(stderr, "io_uring unavailable (errno {}), falling back to poll reactor", errno);
+        fprintf(stderr,"io_uring unavailable (errno %d), falling back to poll reactor\n", errno);
         return -1;
     }
     if (!(p.features & IORING_FEAT_SINGLE_MMAP)) {
-        std::println(stderr, "io_uring lacks IORING_FEAT_SINGLE_MMAP, falling back to poll reactor");
+        fputs("io_uring lacks IORING_FEAT_SINGLE_MMAP, falling back to poll reactor\n", stderr);
         ::close(ring->ring_fd);
         ring->ring_fd = -1;
         return -1;

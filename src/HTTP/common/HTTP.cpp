@@ -13,23 +13,21 @@
 
 #include <memory>
 #include <optional>
-#include <fstream>
 #include <string>
-#include <print>
+#include <sys/stat.h>
 
 
 namespace fbw {
 
 ssize_t get_file_size(std::filesystem::path filename) {
-    std::ifstream t(filename, std::ifstream::ate | std::ifstream::binary);
-    if(t.fail()) {
+    struct stat st;
+    if (stat(filename.c_str(), &st) != 0) {
         throw http_error(404, "Not Found");
     }
-    auto size = t.tellg();
-    if(size < 0) {
+    if (st.st_size < 0) {
         throw http_error(500, "Internal Server Error");
     }
-    return size;
+    return (ssize_t)st.st_size;
 }
 
 std::unordered_map<std::string, std::string> prepare_headers(const ssize_t file_size, std::string MIME, std::string domain) {

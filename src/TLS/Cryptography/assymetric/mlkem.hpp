@@ -12,8 +12,6 @@
 #include <span>
 #include <utility>
 #include "../one_way/keccak.hpp"
-#include <print>
-
 namespace fbw::mlkem {
 
 constexpr int32_t q_modulo = 3329;

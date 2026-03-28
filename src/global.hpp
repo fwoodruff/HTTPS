@@ -11,7 +11,6 @@
 #include <cassert>
 #include <string>
 #include <array>
-#include <fstream>
 #include <cstdint>
 #include <optional>
 #include <vector>

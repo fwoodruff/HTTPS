@@ -12,7 +12,7 @@
 #include "TLS/session_ticket.hpp"
 #include "TLS/Cryptography/one_way/keccak.hpp"
 
-#include <print>
+#include <cstdio>
 
 int main(int argc, const char* argv[]) {
     try {
@@ -26,7 +26,7 @@ int main(int argc, const char* argv[]) {
         fbw::randomgen.randgen(fbw::session_ticket_master_secret);
         run(async_main(std::move(https_listener), https_port, std::move(http_listener), http_port));
     } catch(const std::exception& e) {
-        std::println(stderr, "main: {}\n", e.what());
+        fprintf(stderr, "main: %s\n\n", e.what());
     }
     return 0;
 }

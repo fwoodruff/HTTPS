@@ -11,7 +11,6 @@
 #include <cassert>
 #include <array>
 #include <string>
-#include <sstream>
 #include <algorithm>
 #include <climits>
 #include <cstdint>
@@ -70,19 +69,6 @@ public:
             out.v[i] = v[i];
         }
         return out;
-    }
-    friend std::ostream& operator<<(std::ostream& os, const uVar& dt) {
-        std::stringstream oss;
-        oss << "0x";
-        assert(dt.v.size() >= 1);
-        for(long i = dt.v.size()-1; i >=0 ; i--) {
-            for(long j = 2 * sizeof(radix)-1; j >= 0; j--) {
-                unsigned long x = (dt.v[i] & (0xfULL << (4*j))) >> (4*j);
-                oss << std::hex << x;
-            }
-        }
-        os << oss.str();
-        return os;
     }
     constexpr std::array<unsigned char, INTBYTES> serialise() const noexcept { // bigendian
         std::array<unsigned char,INTBYTES> out {0};

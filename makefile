@@ -1,4 +1,5 @@
 PLATFORM ?= native
+UNAME_S  := $(shell uname -s)
 
 CXXFLAGS_NO_OPT := -std=c++23 -Wall -Wno-psabi -MMD -MP \
 	-ffunction-sections -fdata-sections -fvisibility=hidden -flto
@@ -8,10 +9,14 @@ LDFLAGS :=
 ifeq ($(PLATFORM),armv6)
 	CXX := armv6-rpi-linux-gnueabihf-g++
 	CXXFLAGS_NO_OPT += -march=armv6 -mfpu=vfp -mfloat-abi=hard -marm
-	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic -Wl,--gc-sections
+	LDFLAGS  += -static-libstdc++ -static-libgcc -pthread -latomic -Wl,--gc-sections -Wl,-S
 else
 	CXX := g++
-	LDFLAGS += -Wl,-dead_strip -Wl,-S
+	ifeq ($(UNAME_S),Darwin)
+		LDFLAGS += -Wl,-dead_strip -Wl,-S
+	else
+		LDFLAGS += -Wl,--gc-sections -Wl,-S
+	endif
 endif
 
 ifeq ($(STATIC),1)
@@ -27,7 +32,11 @@ CXXFLAGS_NO_OPT += -I $(SRC_DIR)
 
 CXXFLAGS := $(CXXFLAGS_NO_OPT)  -O2
 CXXFLAGS_CRYPTO := $(CXXFLAGS_NO_OPT) -O3
+ifeq ($(UNAME_S),Darwin)
 CXXFLAGS_SIZE   := $(CXXFLAGS_NO_OPT) -Oz
+else
+CXXFLAGS_SIZE   := $(CXXFLAGS_NO_OPT) -Os
+endif
 
 # Source files
 SRC := $(wildcard $(SRC_DIR)/*.cpp) \

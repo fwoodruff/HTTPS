@@ -10,6 +10,7 @@
 
 #include <cassert>
 #include <string>
+#include <string_view>
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -102,10 +103,14 @@ inline void checked_bigend_write(uint64_t x, T& container, ssize_t idx, short nb
     }
 }
 
-[[nodiscard("returns unsigned string")]] inline std::vector<uint8_t> to_unsigned(std::string s) {
-    std::vector<uint8_t> out;
-    out.assign(s.cbegin(), s.cend());
-    return out;
+// Zero-copy view of string data as bytes. The span is only valid for the lifetime of the source.
+[[nodiscard]] inline std::span<const uint8_t> as_bytes(std::string_view s) noexcept {
+    return { reinterpret_cast<const uint8_t*>(s.data()), s.size() };
+}
+
+[[nodiscard("returns unsigned string")]] inline std::vector<uint8_t> to_unsigned(std::string_view s) {
+    return { reinterpret_cast<const uint8_t*>(s.data()),
+             reinterpret_cast<const uint8_t*>(s.data()) + s.size() };
 }
 
 [[nodiscard("returns signed string")]] inline std::string to_signed(std::vector<uint8_t> s) {

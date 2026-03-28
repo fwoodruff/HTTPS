@@ -479,7 +479,7 @@ tls_record handshake_ctx::server_certificate_record() {
 
     sha256 ctx;
     ctx.update(std::vector<uint8_t>(64, 0x20));
-    ctx.update(to_unsigned("TLS 1.3, server CertificateVerify"));
+    ctx.update(as_bytes("TLS 1.3, server CertificateVerify"));
     ctx.update(std::vector<uint8_t>{0});
     ctx.update(hash_verify_context);
     auto hash_out = ctx.hash();

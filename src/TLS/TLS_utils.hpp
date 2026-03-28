@@ -74,6 +74,9 @@ public:
     inline void write(const std::vector<uint8_t>& value) {
         m_contents.insert(m_contents.cend(), value.cbegin(), value.cend());
     }
+    inline void write(std::span<const uint8_t> value) {
+        m_contents.insert(m_contents.cend(), value.begin(), value.end());
+    }
 
     // record items with variable length include a header and are sometimes nested
     // append data and then figure out the header size

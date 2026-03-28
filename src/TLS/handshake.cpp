@@ -681,14 +681,18 @@ std::vector<uint8_t> handshake_ctx::client_key_exchange_receipt(const std::vecto
     std::array<uint8_t, 32> client_pub{};
     std::copy_n(client_public_key.key.begin(), 32, client_pub.begin());
     auto premaster_secret = fbw::curve25519::multiply(tls12_server_private_key_ephem, client_pub);
-    std::vector<uint8_t> combined_random(client_hello.m_client_random.begin(), client_hello.m_client_random.end());
+    std::vector<uint8_t> combined_random;
+    combined_random.reserve(client_hello.m_client_random.size() + m_server_random.size());
+    combined_random.insert(combined_random.end(), client_hello.m_client_random.begin(), client_hello.m_client_random.end());
     combined_random.insert(combined_random.end(), m_server_random.begin(), m_server_random.end());
     tls12_master_secret = prf(*hash_ctor, premaster_secret, "master secret", combined_random, 48);
 
     assert(handshake_hasher);
     handshake_hasher->update(key_exchange);
 
-    std::vector<uint8_t> combined_random_flipped(m_server_random.begin(), m_server_random.end());
+    std::vector<uint8_t> combined_random_flipped;
+    combined_random_flipped.reserve(m_server_random.size() + client_hello.m_client_random.size());
+    combined_random_flipped.insert(combined_random_flipped.end(), m_server_random.begin(), m_server_random.end());
     combined_random_flipped.insert(combined_random_flipped.end(), client_hello.m_client_random.begin(), client_hello.m_client_random.end());
 
     // AES_256_CBC_SHA256 has the largest amount of key material at 128 bytes

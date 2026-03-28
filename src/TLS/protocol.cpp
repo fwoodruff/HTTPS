@@ -137,29 +137,49 @@ task<stream_result> TLS::write(std::vector<uint8_t> data, std::optional<millisec
     co_return co_await net_write_all();
 }
 
+// Encrypts all buffers into the output queue first, then flushes once — one sendmsg
+// covering all TLS records instead of one per buffer.
+task<stream_result> TLS::write_many(std::vector<std::vector<uint8_t>> bufs, std::optional<milliseconds> timeout) {
+    for (const auto& buf : bufs) {
+        m_engine.process_net_write(output, buf, timeout);
+    }
+    co_return co_await net_write_all();
+}
+
 task<stream_result> TLS::net_write_all() {
     bool already_acquired = m_write_region.exchange(true);
     if(already_acquired) {
         co_return stream_result::ok;
     }
     for(;;) {
-        packet_timed packet;
+        // Drain all currently-queued TLS records into a batch and send them in
+        // one scatter-gather sendmsg (one suspension) instead of one per record.
+        std::vector<std::vector<uint8_t>> batch;
+        std::optional<milliseconds> batch_timeout;
         {
             std::scoped_lock lk { m_engine.m_write_queue_mut };
             if(output.empty()) {
                 m_write_region.store(false);
                 co_return stream_result::ok;
             }
-            packet = std::move(output.front());
-            output.pop();
+            while (!output.empty()) {
+                auto& p = output.front();
+                if (!batch_timeout) batch_timeout = p.timeout;
+                batch.push_back(std::move(p.data));
+                output.pop();
+            }
         }
-        stream_result res = co_await m_client->write(packet.data, packet.timeout);
+        stream_result res;
+        if(batch.size() == 1) {
+            res = co_await m_client->write(std::move(batch.front()), batch_timeout);
+        } else {
+            res = co_await m_client->write_many(std::move(batch), batch_timeout);
+        }
         if(res != stream_result::ok) {
             m_write_region.store(false);
             co_return res;
         }
     }
-    co_return stream_result::ok;
 }
 
 // applications call this when graceful not abrupt closing of a connection is desired

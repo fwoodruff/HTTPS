@@ -125,7 +125,7 @@ void tls_engine::update_sync(std::queue<packet_timed>& output) {
     }
 }
 
-stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
+stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, const std::vector<uint8_t>& data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     std::scoped_lock lk { m_write_queue_mut };
     assert(server_cipher_spec);

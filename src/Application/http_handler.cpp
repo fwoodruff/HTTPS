@@ -136,7 +136,7 @@ task<bool> send_ranged_response(http_ctx& conn, int fd, ssize_t file_size, std::
     co_return true;
 }
 
-task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size, std::string mime, std::vector<std::pair<size_t, size_t>> ranges,  bool send_body) {
+task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size, std::string mime, const std::vector<std::pair<size_t, size_t>>& ranges, bool send_body) {
     std::array<uint8_t, 28> entropy;
     randomgen.randgen(entropy);
     std::string boundary_string;
@@ -152,7 +152,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size,
         content_size += mid_bound.size();
         content_size += http1_1_range_header(range, file_size).size();
         content_size += (1 + range.second - range.first);
-        content_size += std::string("\r\n").size();
+        content_size += 2; // "\r\n"
     }
     content_size += end_bound.size();
 
@@ -164,20 +164,18 @@ task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size,
         co_return;
     }
     if(send_body) {
+        const auto crlf = to_unsigned("\r\n");
         for(auto& range : ranges) {
             auto delimi = to_unsigned(mid_bound + http1_1_range_header(range, file_size));
             auto result = co_await conn.write_data(delimi);
             if(result != stream_result::ok) {
                 co_return;
             }
-            if(send_body) {
-                result = co_await send_body_slice(conn, fd, range.first, range.second + 1, false);
-                if(result != stream_result::ok) {
-                    co_return;
-                }
+            result = co_await send_body_slice(conn, fd, range.first, range.second + 1, false);
+            if(result != stream_result::ok) {
+                co_return;
             }
-            auto endda = to_unsigned("\r\n");
-            result = co_await conn.write_data(endda);
+            result = co_await conn.write_data(crlf);
             if(result != stream_result::ok) {
                 co_return;
             }

@@ -100,6 +100,7 @@ void HTTP2::handle_frame(h2frame& frame) {
     // std::cout << "received: " << frame.pretty() << std::endl;
     auto streams_to_wake = h2_ctx.receive_peer_frame(frame);
     std::vector<std::coroutine_handle<>> waking;
+    waking.reserve(streams_to_wake.size());
     for(auto strm : streams_to_wake) {
         if(strm.m_action == wake_action::new_stream) {
             sync_spawn(handle_stream(weak_from_this(), strm.stream_id));
@@ -139,14 +140,14 @@ task<stream_result> HTTP2::send_outbox(bool flush, bool blocking_reader) {
         }
     }
     auto [data_contiguous, closing] = h2_ctx.extract_outbox(flush);
-    while(!data_contiguous.empty()) {
-        auto packet = std::move(data_contiguous.front());
-        data_contiguous.pop_front();
-        auto res = co_await m_stream->write(std::move(packet), project_options.session_timeout);
-        if(res != stream_result::ok) {
+    if (!data_contiguous.empty()) {
+        std::vector<std::vector<uint8_t>> batch(
+            std::make_move_iterator(data_contiguous.begin()),
+            std::make_move_iterator(data_contiguous.end()));
+        auto res = co_await m_stream->write_many(std::move(batch), project_options.session_timeout);
+        if (res != stream_result::ok) {
             co_return res;
         }
-        co_await yield_coroutine{};
     }
     if(closing) {
         co_await m_stream->close_notify();

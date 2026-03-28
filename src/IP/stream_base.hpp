@@ -45,6 +45,15 @@ public:
     // returns true if stream is still open on read
     [[nodiscard]] virtual task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) = 0;
     [[nodiscard]] virtual task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) = 0;
+    // Send multiple buffers. Default: sequential writes. Subclasses may override with
+    // a single scatter-gather sendmsg to avoid one suspension per buffer.
+    [[nodiscard]] virtual task<stream_result> write_many(std::vector<std::vector<uint8_t>> bufs, std::optional<milliseconds> timeout) {
+        for (auto& buf : bufs) {
+            auto res = co_await write(std::move(buf), timeout);
+            if (res != stream_result::ok) co_return res;
+        }
+        co_return stream_result::ok;
+    }
     [[nodiscard]] virtual std::string get_ip() = 0;
 
     [[nodiscard]] virtual task<void> close_notify() = 0;

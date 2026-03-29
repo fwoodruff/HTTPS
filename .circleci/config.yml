@@ -126,14 +126,14 @@ jobs:
             rsync -avz --delete resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
             scp -o StrictHostKeyChecking=no dev_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/dev_config.txt
       - run:
-          name: Restart dev server (non-root, ports 13080/13443)
+          name: Restart dev server (ports 13080/13443)
           command: |
             ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
               cd ~/doc/deploy;
-              [ -f dev_codey.pid ] && kill $(cat dev_codey.pid) 2>/dev/null || true;
+              [ -f dev_codey.pid ] && sudo kill $(cat dev_codey.pid) 2>/dev/null || true;
               rm -f dev_codey.pid;
               chmod +x codeymccodeface.dev;
-              nohup ./codeymccodeface.dev --config dev_config.txt > dev_codey.log 2>&1 < /dev/null & echo $! > dev_codey.pid
+              sudo sh -c "nohup ./codeymccodeface.dev --config dev_config.txt > dev_codey.log 2>&1 < /dev/null & echo \$! > dev_codey.pid"
             '
       - run:
           name: Smoke-test dev deployment

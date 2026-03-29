@@ -49,7 +49,7 @@ void uring_reactor::submit_recv(int fd, void* buf, uint32_t len,
         io_uring_prep_link_timeout(tsqe, &token->ts, 0);
         io_uring_sqe_set_data64(tsqe, URING_IGNORE);
     }
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
 }
 
 void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
@@ -70,7 +70,7 @@ void uring_reactor::submit_send(int fd, const void* buf, uint32_t len,
         io_uring_prep_link_timeout(tsqe, &token->ts, 0);
         io_uring_sqe_set_data64(tsqe, URING_IGNORE);
     }
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
 }
 
 void uring_reactor::submit_recvmsg(int fd, struct msghdr* msg,
@@ -91,7 +91,7 @@ void uring_reactor::submit_recvmsg(int fd, struct msghdr* msg,
         io_uring_prep_link_timeout(tsqe, &token->ts, 0);
         io_uring_sqe_set_data64(tsqe, URING_IGNORE);
     }
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
 }
 
 void uring_reactor::submit_sendmsg(int fd, const struct msghdr* msg,
@@ -112,7 +112,7 @@ void uring_reactor::submit_sendmsg(int fd, const struct msghdr* msg,
         io_uring_prep_link_timeout(tsqe, &token->ts, 0);
         io_uring_sqe_set_data64(tsqe, URING_IGNORE);
     }
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
 }
 
 void uring_reactor::submit_read(int fd, void* buf, uint32_t len,
@@ -122,7 +122,7 @@ void uring_reactor::submit_read(int fd, void* buf, uint32_t len,
     if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_read)");
     io_uring_prep_read(sqe, fd, buf, len, offset);
     io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
 }
 
 bool uring_reactor::submit_accept(int fd, struct sockaddr_storage* addr,
@@ -132,7 +132,7 @@ bool uring_reactor::submit_accept(int fd, struct sockaddr_storage* addr,
     if (!sqe) return false;
     io_uring_prep_accept(sqe, fd, reinterpret_cast<struct sockaddr*>(addr), addrlen, SOCK_NONBLOCK);
     io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
     return true;
 }
 
@@ -143,7 +143,7 @@ void uring_reactor::submit_connect(int fd, struct sockaddr* addr,
     if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_connect)");
     io_uring_prep_connect(sqe, fd, addr, addrlen);
     io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
-    // SQEs are batched; submitted by wait() before blocking
+    io_uring_submit(&m_ring);
 }
 
 // -----------------------------------------------------------------------

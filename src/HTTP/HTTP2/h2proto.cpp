@@ -140,11 +140,8 @@ task<stream_result> HTTP2::send_outbox(bool flush, bool blocking_reader) {
         }
     }
     auto [data_contiguous, closing] = h2_ctx.extract_outbox(flush);
-    if (!data_contiguous.empty()) {
-        std::vector<std::vector<uint8_t>> batch(
-            std::make_move_iterator(data_contiguous.begin()),
-            std::make_move_iterator(data_contiguous.end()));
-        auto res = co_await m_stream->write_many(std::move(batch), project_options.session_timeout);
+    for (auto& buf : data_contiguous) {
+        auto res = co_await m_stream->write(std::move(buf), project_options.session_timeout);
         if (res != stream_result::ok) {
             co_return res;
         }

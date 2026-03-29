@@ -95,51 +95,17 @@ struct file_fd {
 };
 
 task<stream_result> send_body_slice(http_ctx& conn, int fd, ssize_t begin, ssize_t end, bool end_of_data = true) {
-    // Pipeline: read[n] overlaps with send[n-1].
-    //
-    //   loop {
-    //     await read        — disk latency covers the previous send
-    //     await prev send   — almost always already done by now
-    //     eager send        — encrypt + submit SQE, then go read the next chunk
-    //   }
-    //
-    // write_data copies its span into internal buffers before its first suspension,
-    // so buf can be reused for the next disk read immediately after start().
-    std::vector<uint8_t> buf;
+    std::vector<uint8_t> buffer;
     ssize_t offset = begin;
-    task<stream_result> prev_send;
-
     while (offset < end) {
-        // 1. Read next chunk from disk (suspends; previous send runs in parallel).
         auto chunk = std::min(FILE_READ_SIZE, end - offset);
-        buf.resize(static_cast<size_t>(chunk));
-        auto nread = co_await disk_read(fd, buf.data(),
-                                        static_cast<uint32_t>(chunk),
-                                        static_cast<uint64_t>(offset));
-        if (nread <= 0) {
-            if (prev_send) co_await prev_send;
-            co_return stream_result::ok;
-        }
-        buf.resize(static_cast<size_t>(nread));
+        buffer.resize(static_cast<size_t>(chunk));
+        auto nread = co_await disk_read(fd, buffer.data(), static_cast<uint32_t>(chunk), static_cast<uint64_t>(offset));
+        if (nread <= 0) co_return stream_result::ok;
+        buffer.resize(static_cast<size_t>(nread));
         offset += nread;
-
-        // 2. Await the previous send — should be done since disk read took time.
-        if (prev_send) {
-            auto res = co_await prev_send;
-            prev_send = {};
-            if (res != stream_result::ok) [[unlikely]] co_return res;
-        }
-
-        // 3. Eager send: encrypt + submit sendmsg SQE without suspending.
-        //    The result is collected at step 2 of the next iteration.
-        const bool is_last = (offset >= end) && end_of_data;
-        prev_send = conn.write_data(buf, is_last);
-        prev_send.start();
-    }
-
-    // Collect the final send.
-    if (prev_send) {
-        auto res = co_await prev_send;
+        const bool is_last_chunk = (offset >= end) && end_of_data;
+        auto res = co_await conn.write_data(buffer, is_last_chunk);
         if (res != stream_result::ok) [[unlikely]] co_return res;
     }
     co_return stream_result::ok;

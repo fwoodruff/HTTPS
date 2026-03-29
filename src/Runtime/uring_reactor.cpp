@@ -192,7 +192,10 @@ void uring_reactor::notify() {
     if (!sqe) return;  // ring full - wait() will wake on the next real CQE anyway
     io_uring_prep_nop(sqe);
     io_uring_sqe_set_data64(sqe, URING_IGNORE);
-    io_uring_submit(&m_ring);
+    io_uring_submit(&m_ring);  // publish sq_tail
+    // Must enter immediately (min_complete=0) to wake up any thread blocked in
+    // io_uring_wait_cqe_nr, since io_uring_submit no longer calls io_uring_enter.
+    io_uring_wait_cqe_nr(&m_ring, 0);
 }
 
 size_t uring_reactor::task_count() {
@@ -271,11 +274,13 @@ std::vector<std::coroutine_handle<>> uring_reactor::wait(bool noblock) {
             if (sqe) {
                 io_uring_prep_timeout(sqe, &ts, 1, 0);
                 io_uring_sqe_set_data64(sqe, URING_IGNORE);
-                io_uring_submit(&m_ring);
+                io_uring_submit(&m_ring);  // publish sq_tail so wait_cqe_nr sees this SQE
             }
         }
     }
 
+    // Batch submit: wait_cqe_nr will submit all pending SQEs (both regular and timeout)
+    // in a single io_uring_enter syscall before blocking
     io_uring_wait_cqe_nr(&m_ring, 1);
 
     // Drain all ready CQEs. If the CQ overflowed while we were blocked,

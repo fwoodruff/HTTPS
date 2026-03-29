@@ -35,14 +35,6 @@ task<stream_result> tcp_stream::write(std::vector<uint8_t> abuffer, std::optiona
     co_return stream_result::ok;
 }
 
-task<stream_result> tcp_stream::write_many(std::vector<std::vector<uint8_t>> bufs,
-                                            std::optional<milliseconds> timeout) {
-    for (auto& buf : bufs) {
-        auto res = co_await write(std::move(buf), timeout);
-        if (res != stream_result::ok) [[unlikely]] co_return res;
-    }
-    co_return stream_result::ok;
-}
 
 tcp_stream::tcp_stream(int fd, std::string ip, uint16_t port) : stream(), m_ip(ip), m_port(port), m_fd(fd) { }
 

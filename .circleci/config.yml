@@ -105,6 +105,51 @@ jobs:
               sudo sh -c "nohup ./codeymccodeface --config config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
             '
 
+  deploy-dev:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - add_ssh_keys
+      - run:
+          name: Install rsync
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y rsync
+      - run:
+          name: Copy binary and config to Raspberry Pi
+          command: |
+            scp -o StrictHostKeyChecking=no -o BatchMode=yes target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/codeymccodeface.dev.new
+            rsync -avz --delete resources/MIME/ freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/MIME/
+            rsync -avz --delete resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
+            scp -o StrictHostKeyChecking=no dev_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/dev_config.txt
+      - run:
+          name: Restart dev server (ports 13080/13443)
+          command: |
+            ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
+              cd ~/doc/deploy;
+              [ -f dev_codey.pid ] && sudo kill $(cat dev_codey.pid) 2>/dev/null || true;
+              rm -f dev_codey.pid;
+              mv codeymccodeface.dev.new codeymccodeface.dev;
+              chmod +x codeymccodeface.dev;
+              sudo sh -c "nohup ./codeymccodeface.dev --config dev_config.txt > dev_codey.log 2>&1 < /dev/null & echo \$! > dev_codey.pid"
+            '
+      - run:
+          name: Smoke-test dev deployment
+          command: |
+            ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
+              timeout 30 sh -c "until curl -sk --max-time 2 https://localhost:13443/ -o /dev/null; do sleep 0.5; done"
+              status=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://localhost:13443/index.html)
+              echo "HTTPS status: $status"
+              [ "$status" = "200" ]
+              curl -sk --max-time 5 https://localhost:13443/index.html | grep -qi "html"
+              redir=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:13080/)
+              echo "HTTP redirect status: $redir"
+              [ "$redir" = "301" ]
+            '
+
 workflows:
   build_and_deploy:
     jobs:
@@ -117,4 +162,12 @@ workflows:
           filters:
             branches:
               only:
+                - main
+      - deploy-dev:
+          requires:
+            - test
+            - docker-build
+          filters:
+            branches:
+              ignore:
                 - main

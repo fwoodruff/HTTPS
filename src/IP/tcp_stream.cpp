@@ -39,7 +39,6 @@ task<stream_result> tcp_stream::write(std::vector<uint8_t> abuffer, std::optiona
 // Send multiple buffers in one sendmsg scatter-gather call, suspending only once per batch.
 // On partial send the iov is rebuilt and sendmsg is retried; in the common case
 // (all data fits in the socket buffer) there is exactly one suspension.
-// KEY FIX: Create fresh iov arrays each iteration to avoid data race with io_uring.
 task<stream_result> tcp_stream::write_many(std::vector<std::vector<uint8_t>> bufs,
                                             std::optional<milliseconds> timeout) {
     // Build iov from non-empty buffers. These original buffers are read-only.

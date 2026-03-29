@@ -119,12 +119,13 @@ struct io_uring_sqe* io_uring_get_sqe(struct io_uring* ring) {
 // -----------------------------------------------------------------------
 
 int io_uring_submit(struct io_uring* ring) {
-    // Compute how many SQEs have been gotten but not yet published
+    // Publish any SQEs prepared since the last submit — advance sq_tail so the kernel
+    // can see them.  Does NOT call io_uring_enter; the next io_uring_wait_cqe_nr will
+    // batch-submit everything via a single enter syscall.
     uint32_t published = std::atomic_ref<uint32_t>(*ring->sq_tail).load(std::memory_order_relaxed);
     uint32_t n = ring->sq_tail_local - published;
     if (n == 0) return 0;
     std::atomic_ref<uint32_t>(*ring->sq_tail).store(ring->sq_tail_local, std::memory_order_release);
-    sys_io_uring_enter(ring->ring_fd, n, 0, 0);
     ring->in_flight.fetch_add(n, std::memory_order_relaxed);
     return static_cast<int>(n);
 }
@@ -151,7 +152,12 @@ void io_uring_cq_advance(struct io_uring* ring, unsigned nr) {
 // -----------------------------------------------------------------------
 
 int io_uring_wait_cqe_nr(struct io_uring* ring, unsigned wait_nr) {
-    return sys_io_uring_enter(ring->ring_fd, 0, wait_nr, IORING_ENTER_GETEVENTS);
+    // Submit all SQEs that have been published (sq_tail advanced) but not yet entered,
+    // and wait for at least wait_nr CQEs — all in a single syscall.
+    uint32_t tail = std::atomic_ref<uint32_t>(*ring->sq_tail).load(std::memory_order_acquire);
+    uint32_t head = std::atomic_ref<uint32_t>(*ring->sq_head).load(std::memory_order_relaxed);
+    uint32_t pending = tail - head;
+    return sys_io_uring_enter(ring->ring_fd, pending, wait_nr, IORING_ENTER_GETEVENTS);
 }
 
 int io_uring_get_events(struct io_uring* ring) {

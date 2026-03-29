@@ -134,7 +134,7 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, st
     }
     try {
         if (data.size() <= WRITE_RECORD_SIZE) {
-            // Common case: caller already chunked to record size — move, no copy
+            // Common case
             tls_record record(Application);
             record.m_contents = std::move(data);
             write_record_sync(output, std::move(record), timeout);

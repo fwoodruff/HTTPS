@@ -48,7 +48,7 @@ bool udp_receiver::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
         m_msg.msg_control    = nullptr;
         m_msg.msg_controllen = 0;
         m_msg.msg_flags      = 0;
-        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(awaiting_coroutine, std::memory_order_release);
+        m_token.handle = awaiting_coroutine;
         executor_singleton().m_reactor.submit_recvmsg(m_fd, &m_msg, &m_token, m_millis);
         return true;
     }
@@ -122,7 +122,7 @@ bool udp_sender::await_suspend(std::coroutine_handle<> awaiting_coroutine) {
         m_msg.msg_control    = nullptr;
         m_msg.msg_controllen = 0;
         m_msg.msg_flags      = 0;
-        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(awaiting_coroutine, std::memory_order_release);
+        m_token.handle = awaiting_coroutine;
         executor_singleton().m_reactor.submit_sendmsg(m_fd, &m_msg, &m_token, m_millis);
         return true;
     }

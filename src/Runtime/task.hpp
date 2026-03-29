@@ -58,7 +58,6 @@ public:
     void unhandled_exception() {
         m_exception = std::current_exception();
     }
-
 protected:
     std::exception_ptr m_exception = nullptr;
 private:
@@ -163,7 +162,6 @@ public:
         return *this;
     }
     explicit task(std::coroutine_handle<promise_type> coroutine) : m_coroutine(coroutine) {}
-
 private:
     std::coroutine_handle<promise_type> m_coroutine;
 };

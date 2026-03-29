@@ -13,7 +13,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <atomic>
 #include <unistd.h>
 #include <utility>
 #include <cerrno>
@@ -64,7 +63,7 @@ bool connectable::await_suspend(std::coroutine_handle<> cont) {
         m_addrlen = sizeof(m_addr.v4);
     }
     if (executor_singleton().m_reactor.uring_ok()) {
-        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(cont, std::memory_order_release);
+        m_token.handle = cont;
         executor_singleton().m_reactor.submit_connect(
             m_fd, reinterpret_cast<struct sockaddr*>(&m_addr), m_addrlen, &m_token);
         return true;

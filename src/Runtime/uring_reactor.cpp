@@ -215,8 +215,7 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
         if (ud == URING_IGNORE) continue;
         auto* token = reinterpret_cast<uring_token*>(static_cast<uintptr_t>(ud));
         token->res = res;
-        auto h = std::atomic_ref<std::coroutine_handle<>>{token->handle}.load(std::memory_order_acquire);
-        if (h) out.push_back(h);
+        if (token->handle) out.push_back(token->handle);
     }
     return out;
 }

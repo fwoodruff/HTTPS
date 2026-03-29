@@ -20,10 +20,10 @@
 #include "executor.hpp"
 
 struct disk_read_awaitable {
-    int      fd   = -1;
-    void*    buf  = nullptr;
-    uint32_t len  = 0;
-    uint64_t offset = 0;
+    int      fd;
+    void*    buf;
+    uint32_t len;
+    uint64_t offset;
     uring_token token {};
     ssize_t     sync_result = 0;
     bool        m_sync      = false;
@@ -36,7 +36,7 @@ struct disk_read_awaitable {
         return m_sync;
     }
     void await_suspend(std::coroutine_handle<> h) {
-        std::atomic_ref<std::coroutine_handle<>>{token.handle}.store(h, std::memory_order_release);
+        token.handle = h;
         executor_singleton().m_reactor.submit_read(fd, buf, len, offset, &token);
     }
     ssize_t await_resume() const noexcept {
@@ -47,11 +47,11 @@ struct disk_read_awaitable {
 #else // non-Linux: synchronous pread wrapped as an always-ready awaitable
 
 struct disk_read_awaitable {
-    int      fd     = -1;
-    void*    buf    = nullptr;
-    uint32_t len    = 0;
-    uint64_t offset = 0;
-    ssize_t  result = 0;
+    int      fd;
+    void*    buf;
+    uint32_t len;
+    uint64_t offset;
+    ssize_t  result;
 
     disk_read_awaitable(int fd_, void* buf_, uint32_t len_, uint64_t offset_)
         : fd(fd_), buf(buf_), len(len_), offset(offset_)
@@ -65,13 +65,7 @@ struct disk_read_awaitable {
 #endif // __linux__
 
 inline disk_read_awaitable disk_read(int fd, void* buf, uint32_t len, uint64_t offset) {
-#ifdef __linux__
-    disk_read_awaitable a;
-    a.fd = fd; a.buf = buf; a.len = len; a.offset = offset;
-    return a;
-#else
     return { fd, buf, len, offset };
-#endif
 }
 
 #endif // disk_io_hpp

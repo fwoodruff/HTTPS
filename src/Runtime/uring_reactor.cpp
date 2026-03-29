@@ -146,6 +146,35 @@ void uring_reactor::submit_connect(int fd, struct sockaddr* addr,
     io_uring_submit(&m_ring);
 }
 
+void uring_reactor::submit_openat(int dfd, const char* path, int flags,
+                                   mode_t mode, uring_token* token) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_openat)");
+    io_uring_prep_openat(sqe, dfd, path, flags, mode);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+    io_uring_submit(&m_ring);
+}
+
+void uring_reactor::submit_close(int fd, uring_token* token) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_close)");
+    io_uring_prep_close(sqe, fd);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+    io_uring_submit(&m_ring);
+}
+
+void uring_reactor::submit_statx(int fd, const char* path, int flags,
+                                  unsigned mask, uring_statx_buf* buf, uring_token* token) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_statx)");
+    io_uring_prep_statx(sqe, fd, path, flags, mask, buf);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+    io_uring_submit(&m_ring);
+}
+
 // -----------------------------------------------------------------------
 // Poll reactor fallback delegation
 // -----------------------------------------------------------------------

@@ -19,8 +19,6 @@
 #include <string>
 #include <cstdio>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include "../Runtime/disk_io.hpp"
 
 namespace fbw {
@@ -85,14 +83,6 @@ std::vector<entry_t> headers_to_send(ssize_t file_size, std::string mime, bool f
     return out;
 }
 
-// RAII wrapper for a POSIX file descriptor
-struct file_fd {
-    int fd = -1;
-    explicit file_fd(const std::filesystem::path& p) : fd(::open(p.c_str(), O_RDONLY)) {}
-    ~file_fd() { if (fd >= 0) ::close(fd); }
-    file_fd(const file_fd&) = delete;
-    file_fd& operator=(const file_fd&) = delete;
-};
 
 task<stream_result> send_body_slice(http_ctx& conn, int fd, ssize_t begin, ssize_t end, bool end_of_data = true) {
     std::vector<uint8_t> buffer;
@@ -223,26 +213,32 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
         throw http_error(404, "Not Found");
     }
 
-    file_fd file(to_serve);
-    if (file.fd < 0) throw http_error(404, "Not Found");
-    struct ::stat fst {};
-    if (::fstat(file.fd, &fst) != 0) throw http_error(404, "Not Found");
-    ssize_t file_size = fst.st_size;
+    int fd = co_await file_open(to_serve.c_str(), O_RDONLY);
+    if (fd < 0) throw http_error(404, "Not Found");
+
+    ssize_t file_size = co_await file_stat_size(fd);
+    if (file_size < 0) {
+        co_await file_close(fd);
+        throw http_error(404, "Not Found");
+    }
+
     std::string mime = Mime_from_file(to_serve);
     auto range_hdr = find_header(headers, "range");
     if (range_hdr) {
         auto ranges = parse_range_header(*range_hdr, file_size);
         if(ranges.empty()) {
+            co_await file_close(fd);
             throw http_error(400, "Bad Request");
         }
         if(ranges.size() == 1) {
-            co_await send_ranged_response(conn, file.fd, file_size, mime, ranges[0], send_body);
+            co_await send_ranged_response(conn, fd, file_size, mime, ranges[0], send_body);
         } else {
-            co_await send_multi_ranged_response(conn, file.fd, file_size, mime, ranges, send_body);
+            co_await send_multi_ranged_response(conn, fd, file_size, mime, ranges, send_body);
         }
     } else {
-        co_await send_full_response(conn, file.fd, file_size, mime, send_body);
+        co_await send_full_response(conn, fd, file_size, mime, send_body);
     }
+    co_await file_close(fd);
 }
 
 task<stream_result> read_all(http_ctx& connection, std::deque<uint8_t>& request_body) {
@@ -284,13 +280,17 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
     std::string body(request_body.begin(), request_body.end());
     write_body(body);
 
-    file_fd file(file_path);
-    if (file.fd < 0) throw http_error(404, "Not Found");
-    struct ::stat st {};
-    if (::fstat(file.fd, &st) != 0) throw http_error(404, "Not Found");
-    ssize_t file_size = st.st_size;
+    int fd = co_await file_open(file_path.c_str(), O_RDONLY);
+    if (fd < 0) throw http_error(404, "Not Found");
 
-    co_await send_full_response(connection, file.fd, file_size, mime, true);
+    ssize_t file_size = co_await file_stat_size(fd);
+    if (file_size < 0) {
+        co_await file_close(fd);
+        throw http_error(404, "Not Found");
+    }
+
+    co_await send_full_response(connection, fd, file_size, mime, true);
+    co_await file_close(fd);
     co_return;
 }
 

@@ -37,6 +37,7 @@ public:
     
     [[nodiscard]] task<stream_result> read_append(std::deque<uint8_t>&, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<stream_result> write(std::vector<uint8_t>, std::optional<milliseconds> timeout) override;
+    [[nodiscard]] task<stream_result> write_many(std::vector<std::vector<uint8_t>>, std::optional<milliseconds> timeout) override;
     [[nodiscard]] task<void> close_notify() override;
     [[nodiscard]] std::string get_ip() override;
 

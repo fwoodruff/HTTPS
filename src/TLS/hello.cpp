@@ -327,7 +327,7 @@ void write_alpn_extension(tls_record& record, std::string alpn) {
     record.start_size_header(2);
     record.start_size_header(2);
     record.start_size_header(1);
-    record.write(to_unsigned(alpn));
+    record.write(as_bytes(alpn));
     record.end_size_header();
     record.end_size_header();
     record.end_size_header();
@@ -382,7 +382,7 @@ void write_cookie(tls_record& record) {
     record.write2(ExtensionType::cookie);
     record.start_size_header(2);
     record.start_size_header(2);
-    record.write(to_unsigned("cookie"));
+    record.write(as_bytes("cookie"));
     record.end_size_header();
     record.end_size_header();
 }

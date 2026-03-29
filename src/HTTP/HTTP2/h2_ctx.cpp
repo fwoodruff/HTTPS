@@ -89,7 +89,7 @@ std::pair<std::deque<std::vector<uint8_t>>, bool> h2_context::extract_outbox(boo
     std::scoped_lock lk { m_mut };
     bool closing = go_away_sent and stream_ctx_map.empty();
     std::deque<std::vector<uint8_t>> data_contiguous = outbox.get(flush or closing);
-    return { data_contiguous, closing };
+    return { std::move(data_contiguous), closing };
 }
 
 void update_client_settings(setting_values& client_settings, const h2_settings& settings_frame) {

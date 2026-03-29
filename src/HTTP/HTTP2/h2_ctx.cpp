@@ -240,7 +240,7 @@ bool is_higher_odd(uint32_t curr, uint32_t next) {
     if((next % 2) != 1) {
         return false;
     }
-    if(next > INT32_MAX - 1) {
+    if(next > static_cast<uint32_t>(INT32_MAX)) {
         return false;
     }
     if(next <= curr) {

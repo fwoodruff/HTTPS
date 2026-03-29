@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <utility>
 #include <deque>
+#include <sys/uio.h>
 
 namespace fbw {
 
@@ -35,12 +36,66 @@ task<stream_result> tcp_stream::write(std::vector<uint8_t> abuffer, std::optiona
     co_return stream_result::ok;
 }
 
+// Send multiple buffers in one sendmsg scatter-gather call, suspending only once per batch.
+// On partial send the iov is rebuilt and sendmsg is retried; in the common case
+// (all data fits in the socket buffer) there is exactly one suspension.
 task<stream_result> tcp_stream::write_many(std::vector<std::vector<uint8_t>> bufs,
                                             std::optional<milliseconds> timeout) {
-    for (auto& buf : bufs) {
-        auto res = co_await write(std::move(buf), timeout);
-        if (res != stream_result::ok) [[unlikely]] co_return res;
+    // Build iov from non-empty buffers. These original buffers are read-only.
+    std::vector<struct iovec> iov;
+    iov.reserve(bufs.size());
+    for (auto& b : bufs) {
+        if (!b.empty()) {
+            iov.push_back({ .iov_base = b.data(), .iov_len = b.size() });
+        }
     }
+    if (iov.empty()) co_return stream_result::ok;
+
+    size_t iov_index = 0;      // Current iov entry being sent
+    size_t entry_offset = 0;   // Offset within current iov entry
+
+    while (iov_index < iov.size()) {
+        std::vector<struct iovec> send_iov;
+        for (size_t i = iov_index; i < iov.size(); i++) {
+            auto entry = iov[i];
+            if (i == iov_index) {
+                // First entry might be partially sent; adjust base and len
+                entry.iov_base = static_cast<char*>(entry.iov_base) + entry_offset;
+                entry.iov_len -= entry_offset;
+            }
+            if (entry.iov_len > 0) {
+                send_iov.push_back(entry);
+            }
+        }
+
+        if (send_iov.empty()) break;
+
+        auto [sent, status] = co_await writeable_many {
+            m_fd,
+            send_iov.data(),
+            static_cast<int>(send_iov.size()),
+            timeout
+        };
+
+        if (status != stream_result::ok) [[unlikely]] co_return status;
+
+        // Advance through iov entries based on bytes sent.
+        ssize_t remaining = sent;
+        while (remaining > 0 && iov_index < iov.size()) {
+            auto& cur = iov[iov_index];
+            size_t available = cur.iov_len - entry_offset;
+
+            if (static_cast<size_t>(remaining) >= available) {
+                remaining -= available;
+                entry_offset = 0;
+                ++iov_index;
+            } else {
+                entry_offset += remaining;
+                remaining = 0;
+            }
+        }
+    }
+
     co_return stream_result::ok;
 }
 

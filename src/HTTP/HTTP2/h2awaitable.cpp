@@ -76,7 +76,7 @@ stream_result unless_blocking_read::await_resume() {
 
 // Read data
 // todo: alias the pointer to the context
-h2readable::h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data) :
+h2readable::h2readable(std::weak_ptr<HTTP2> connection, uint32_t stream_id, const std::span<uint8_t> data) :
     m_h2_contx(connection), m_stream_id(stream_id), m_data(data) {
         assert(!data.empty());
 }
@@ -90,7 +90,7 @@ bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
     m_bytes_read = cx.read_data(m_data, m_stream_id);
     if(m_bytes_read == std::nullopt) {
         std::scoped_lock lk { h2_contx->m_coro_mut };
-        h2_contx->m_coros.insert({static_cast<uint32_t>(m_stream_id), {continuation, true}});
+        h2_contx->m_coros.insert({m_stream_id, {continuation, true}});
         return true;
     }
     return false;

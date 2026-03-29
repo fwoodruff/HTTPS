@@ -55,14 +55,14 @@ private:
 
 class h2readable {
 public:
-    h2readable(std::weak_ptr<HTTP2> connection, int32_t stream_id, const std::span<uint8_t> data);
+    h2readable(std::weak_ptr<HTTP2> connection, uint32_t stream_id, const std::span<uint8_t> data);
     bool await_ready() const noexcept;
     bool await_suspend(std::coroutine_handle<> awaiting_coroutine);
     std::pair<size_t, bool> await_resume();
 private:
     std::optional<std::pair<uint32_t, bool>> m_bytes_read;
     std::weak_ptr<HTTP2> m_h2_contx;
-    int32_t m_stream_id;
+    uint32_t m_stream_id;
     std::span<uint8_t> m_data;
 };
 

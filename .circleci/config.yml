@@ -138,16 +138,16 @@ jobs:
       - run:
           name: Smoke-test dev deployment
           command: |
-            timeout 30 bash -c '
-              until curl -sk https://freddiewoodruff.co.uk:13443/ -o /dev/null; do
-                sleep 0.5
-              done
+            ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
+              timeout 30 sh -c "until curl -sk --max-time 2 https://localhost:13443/ -o /dev/null; do sleep 0.5; done"
+              status=$(curl -sk --max-time 5 -o /dev/null -w "%{http_code}" https://localhost:13443/index.html)
+              echo "HTTPS status: $status"
+              [ "$status" = "200" ]
+              curl -sk --max-time 5 https://localhost:13443/index.html | grep -qi "html"
+              redir=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:13080/)
+              echo "HTTP redirect status: $redir"
+              [ "$redir" = "301" ]
             '
-            status=$(curl -sk -o /dev/null -w "%{http_code}" https://freddiewoodruff.co.uk:13443/index.html)
-            echo "HTTP status: $status"
-            [ "$status" = "200" ]
-            curl -sk https://freddiewoodruff.co.uk:13443/index.html | grep -qi "html"
-            curl -sk http://freddiewoodruff.co.uk:13080/ -o /dev/null -w "%{http_code}" | grep -q "301"
 
 workflows:
   build_and_deploy:

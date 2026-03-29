@@ -11,7 +11,6 @@
 #include <unistd.h>
 #include <utility>
 #include <deque>
-#include <sys/uio.h>
 
 namespace fbw {
 
@@ -36,43 +35,11 @@ task<stream_result> tcp_stream::write(std::vector<uint8_t> abuffer, std::optiona
     co_return stream_result::ok;
 }
 
-// Send multiple buffers in one sendmsg scatter-gather call, suspending only once.
-// On partial send the iov is advanced and sendmsg is retried; in the common case
-// (all data fits in the socket buffer) there is exactly one suspension.
 task<stream_result> tcp_stream::write_many(std::vector<std::vector<uint8_t>> bufs,
                                             std::optional<milliseconds> timeout) {
-    // Build iov from non-empty buffers. Lives in the coroutine frame so the
-    // pointers into bufs[] are stable across every co_await below.
-    std::vector<struct iovec> iov;
-    iov.reserve(bufs.size());
-    for (auto& b : bufs) {
-        if (!b.empty()) {
-            iov.push_back({ .iov_base = b.data(), .iov_len = b.size() });
-        }
-    }
-    if (iov.empty()) co_return stream_result::ok;
-
-    int iov_start = 0;
-    while (iov_start < static_cast<int>(iov.size())) {
-        auto [sent, status] = co_await writeable_many {
-            m_fd,
-            iov.data() + iov_start,
-            static_cast<int>(iov.size()) - iov_start,
-            timeout
-        };
-        if (status != stream_result::ok) [[unlikely]] co_return status;
-        // Advance through iov entries consumed by this sendmsg result.
-        while (sent > 0 && iov_start < static_cast<int>(iov.size())) {
-            auto& cur = iov[iov_start];
-            if (static_cast<size_t>(sent) >= cur.iov_len) {
-                sent -= static_cast<ssize_t>(cur.iov_len);
-                ++iov_start;
-            } else {
-                cur.iov_base  = static_cast<char*>(cur.iov_base) + sent;
-                cur.iov_len  -= static_cast<size_t>(sent);
-                sent = 0;
-            }
-        }
+    for (auto& buf : bufs) {
+        auto res = co_await write(std::move(buf), timeout);
+        if (res != stream_result::ok) [[unlikely]] co_return res;
     }
     co_return stream_result::ok;
 }

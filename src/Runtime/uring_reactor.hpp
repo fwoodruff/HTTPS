@@ -27,8 +27,6 @@ using namespace std::chrono;
 
 // Completion token stored in the awaitable (coroutine frame).
 // user_data in the SQE points here; the reactor writes res on CQE arrival.
-// handle is stored via atomic_ref release in await_suspend and loaded via
-// atomic_ref acquire in drain_cq for correct visibility.
 struct uring_token {
     std::coroutine_handle<> handle {};
     int32_t res = 0;

@@ -5,6 +5,7 @@
 //  Awaitable for async disk reads.
 //  On Linux with io_uring available: IORING_OP_READ via the reactor (non-blocking).
 //  Fallback (non-Linux or io_uring unavailable): synchronous pread, always-ready.
+//
 
 #ifndef disk_io_hpp
 #define disk_io_hpp
@@ -12,7 +13,6 @@
 #include <cstdint>
 #include <sys/types.h>
 #include <unistd.h>
-#include <atomic>
 
 #ifdef __linux__
 

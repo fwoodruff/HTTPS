@@ -13,7 +13,6 @@
 #include <sys/socket.h>
 #include <stdexcept>
 #include <algorithm>
-#include <atomic>
 
 // -----------------------------------------------------------------------
 // Construction / destruction

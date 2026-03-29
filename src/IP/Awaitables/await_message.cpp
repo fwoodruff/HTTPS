@@ -7,7 +7,6 @@
 
 #include "await_message.hpp"
 #include <string>
-#include <atomic>
 #include "../listener.hpp"
 #include "../../Runtime/reactor.hpp"
 #include "../../Runtime/executor.hpp"

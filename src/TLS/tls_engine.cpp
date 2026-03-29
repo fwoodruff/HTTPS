@@ -133,13 +133,20 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, st
         return stream_result::closed;
     }
     try {
-        size_t idx = 0;
-        while(idx < data.size()) {
+        if (data.size() <= WRITE_RECORD_SIZE) {
+            // Common case
             tls_record record(Application);
-            size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
-            record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
-            idx += write_size;
+            record.m_contents = std::move(data);
             write_record_sync(output, std::move(record), timeout);
+        } else {
+            size_t idx = 0;
+            while (idx < data.size()) {
+                tls_record record(Application);
+                size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
+                record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
+                idx += write_size;
+                write_record_sync(output, std::move(record), timeout);
+            }
         }
     } catch(const ssl_error& e) {
         error_ssl = e;

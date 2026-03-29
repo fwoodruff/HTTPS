@@ -204,4 +204,58 @@ std::pair<std::span<const uint8_t>, stream_result> writeable::await_resume() {
     assert(false);
 }
 
+writeable_many::writeable_many(int fd, struct iovec* iov, int iovlen,
+                               std::optional<milliseconds> millis)
+    : m_fd(fd), m_millis(millis) {
+    m_msg.msg_iov    = iov;
+    m_msg.msg_iovlen = static_cast<decltype(m_msg.msg_iovlen)>(iovlen);
+}
+
+bool writeable_many::await_ready() const noexcept { return false; }
+
+bool writeable_many::await_suspend(std::coroutine_handle<> continuation) {
+    assert(m_fd != -1);
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        m_token.handle = continuation;
+        executor_singleton().m_reactor.submit_sendmsg(m_fd, &m_msg, &m_token, m_millis);
+        return true;
+    }
+#endif
+    ssize_t succ = ::sendmsg(m_fd, &m_msg, MSG_NOSIGNAL);
+    if (succ >= 0) {
+        m_bytes = succ;
+        m_res   = stream_result::ok;
+        return false;
+    }
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        m_res = stream_result::awaiting;
+        executor_singleton().m_reactor.add_task(m_fd, continuation, IO_direction::Write, m_millis);
+        return true;
+    }
+    m_res = stream_result::closed;
+    return false;
+}
+
+std::pair<ssize_t, stream_result> writeable_many::await_resume() {
+#ifdef __linux__
+    if (executor_singleton().m_reactor.uring_ok()) {
+        int32_t res = m_token.res;
+        if (res == 0) return { 0, stream_result::closed };
+        if (res < 0) {
+            int err = -res;
+            if (err == ECANCELED || err == ETIMEDOUT) return { 0, stream_result::write_timeout };
+            return { 0, stream_result::closed };
+        }
+        return { static_cast<ssize_t>(res), stream_result::ok };
+    }
+#endif
+    if (m_res == stream_result::awaiting) {
+        ssize_t succ = ::sendmsg(m_fd, &m_msg, MSG_NOSIGNAL);
+        if (succ <= 0) return { 0, stream_result::closed };
+        return { succ, stream_result::ok };
+    }
+    return { m_bytes, m_res };
+}
+
 } // namespace

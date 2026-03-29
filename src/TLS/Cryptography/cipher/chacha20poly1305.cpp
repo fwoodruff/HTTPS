@@ -136,7 +136,7 @@ constexpr u192 prime130_5 ("0x3fffffffffffffffffffffffffffffffb");
 constexpr u192 magic_poly("0xa3d70a3d70a3d70cccccccccccccccccccccccccccccccd");
 constexpr u192 poly_RRP ("0x190000000000000000000000000000000");
 
-[[gnu::always_inline]] inline u192 add_mod(u192 x, u192 y, u192 mod) noexcept {
+[[gnu::always_inline]] inline constexpr u192 add_mod(u192 x, u192 y, u192 mod) noexcept {
     auto sum = x + y;
     ct_u256 wide = ct_u256(sum) - ct_u256(mod);
     u192 borrow = u192(wide >> 192);

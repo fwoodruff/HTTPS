@@ -28,7 +28,7 @@ using namespace std::chrono;
 // Completion token stored in the awaitable (coroutine frame).
 // user_data in the SQE points here; the reactor writes res on CQE arrival.
 struct uring_token {
-    std::coroutine_handle<> handle;
+    std::coroutine_handle<> handle {};
     int32_t res = 0;
     uring_timespec ts {};   // stable buffer for an optional linked timeout SQE
 };

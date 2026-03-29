@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <span>
 #include <cerrno>
+#include <atomic>
 
 using namespace std::chrono_literals;
 using namespace std::chrono;
@@ -37,7 +38,7 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
             m_token.res = -EAGAIN;
             return false;
         }
-        m_token.handle = continuation;
+        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(continuation, std::memory_order_release);
         executor_singleton().m_reactor.submit_recv(
             m_fd, m_buffer->data(), static_cast<uint32_t>(m_buffer->size()),
             &m_token, m_millis);
@@ -128,7 +129,7 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
     assert(m_buffer);
 #ifdef __linux__
     if (executor_singleton().m_reactor.uring_ok()) {
-        m_token.handle = continuation;
+        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(continuation, std::memory_order_release);
         executor_singleton().m_reactor.submit_send(
             m_fd, m_buffer->data(), static_cast<uint32_t>(m_buffer->size()),
             &m_token, m_millis);
@@ -217,7 +218,7 @@ bool writeable_many::await_suspend(std::coroutine_handle<> continuation) {
     assert(m_fd != -1);
 #ifdef __linux__
     if (executor_singleton().m_reactor.uring_ok()) {
-        m_token.handle = continuation;
+        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(continuation, std::memory_order_release);
         executor_singleton().m_reactor.submit_sendmsg(m_fd, &m_msg, &m_token, m_millis);
         return true;
     }

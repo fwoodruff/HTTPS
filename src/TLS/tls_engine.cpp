@@ -125,7 +125,7 @@ void tls_engine::update_sync(std::queue<packet_timed>& output) {
     }
 }
 
-stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, const std::vector<uint8_t>& data, std::optional<milliseconds> timeout) {
+stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
     std::optional<ssl_error> error_ssl{};
     std::scoped_lock lk { m_write_queue_mut };
     assert(server_cipher_spec);
@@ -133,13 +133,20 @@ stream_result tls_engine::process_net_write(std::queue<packet_timed>& output, co
         return stream_result::closed;
     }
     try {
-        size_t idx = 0;
-        while(idx < data.size()) {
+        if (data.size() <= WRITE_RECORD_SIZE) {
+            // Common case: caller already chunked to record size — move, no copy
             tls_record record(Application);
-            size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
-            record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
-            idx += write_size;
+            record.m_contents = std::move(data);
             write_record_sync(output, std::move(record), timeout);
+        } else {
+            size_t idx = 0;
+            while (idx < data.size()) {
+                tls_record record(Application);
+                size_t write_size = std::min(WRITE_RECORD_SIZE, data.size() - idx);
+                record.m_contents.assign(data.begin() + idx, data.begin() + idx + write_size);
+                idx += write_size;
+                write_record_sync(output, std::move(record), timeout);
+            }
         }
     } catch(const ssl_error& e) {
         error_ssl = e;

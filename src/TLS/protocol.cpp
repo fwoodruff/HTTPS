@@ -133,15 +133,15 @@ std::string TLS::alpn() {
 
 // application code calls this to send data to the client
 task<stream_result> TLS::write(std::vector<uint8_t> data, std::optional<milliseconds> timeout) {
-    m_engine.process_net_write(output, data, timeout);
+    m_engine.process_net_write(output, std::move(data), timeout);
     co_return co_await net_write_all();
 }
 
 // Encrypts all buffers into the output queue first, then flushes once — one sendmsg
 // covering all TLS records instead of one per buffer.
 task<stream_result> TLS::write_many(std::vector<std::vector<uint8_t>> bufs, std::optional<milliseconds> timeout) {
-    for (const auto& buf : bufs) {
-        m_engine.process_net_write(output, buf, timeout);
+    for (auto& buf : bufs) {
+        m_engine.process_net_write(output, std::move(buf), timeout);
     }
     co_return co_await net_write_all();
 }

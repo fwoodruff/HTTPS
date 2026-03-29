@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <stdexcept>
 #include <algorithm>
+#include <atomic>
 
 // -----------------------------------------------------------------------
 // Construction / destruction
@@ -214,7 +215,12 @@ std::vector<std::coroutine_handle<>> uring_reactor::drain_cq() {
         if (ud == URING_IGNORE) continue;
         auto* token = reinterpret_cast<uring_token*>(static_cast<uintptr_t>(ud));
         token->res = res;
-        if (token->handle) out.push_back(token->handle);
+        // Release-store: all writes above (res) are visible to any thread that
+        // acquire-loads completed.  Then acquire-load handle to see any
+        // release-store made by await_suspend (eager-start race).
+        std::atomic_ref<bool>{token->completed}.store(true, std::memory_order_release);
+        auto h = std::atomic_ref<std::coroutine_handle<>>{token->handle}.load(std::memory_order_acquire);
+        if (h) out.push_back(h);
     }
     return out;
 }

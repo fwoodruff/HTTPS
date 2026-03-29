@@ -37,7 +37,7 @@ public:
 
     HandshakeStage process_net_read(std::queue<packet_timed>& network_output, std::deque<uint8_t>& application_data, const std::deque<uint8_t>& bio_input, std::optional<milliseconds> app_timeout);
     
-    stream_result process_net_write(std::queue<packet_timed>& output, const std::vector<uint8_t>& data, std::optional<milliseconds> timeout);
+    stream_result process_net_write(std::queue<packet_timed>& output, std::vector<uint8_t> data, std::optional<milliseconds> timeout);
 
     void process_close_notify(std::queue<packet_timed>& output);
     stream_result close_notify_finish(const std::deque<uint8_t>& bio_input);

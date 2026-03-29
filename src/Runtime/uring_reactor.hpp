@@ -27,10 +27,17 @@ using namespace std::chrono;
 
 // Completion token stored in the awaitable (coroutine frame).
 // user_data in the SQE points here; the reactor writes res on CQE arrival.
+//
+// `completed` supports eager-start awaitables: start() submits the SQE before
+// the coroutine registers a handle. drain_cq does a release-store to completed;
+// await_suspend does a release-store to handle then an acquire-load of completed
+// to close the race window.  All handle reads in drain_cq use acquire for the
+// same reason.
 struct uring_token {
-    std::coroutine_handle<> handle;
+    std::coroutine_handle<> handle {};
     int32_t res = 0;
     uring_timespec ts {};   // stable buffer for an optional linked timeout SQE
+    bool completed = false; // set by drain_cq once the CQE has been processed
 };
 
 // Sentinel user_data value - CQEs with this are discarded (timeout SQEs, NOPs)

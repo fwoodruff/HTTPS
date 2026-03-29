@@ -95,18 +95,63 @@ struct file_fd {
 };
 
 task<stream_result> send_body_slice(http_ctx& conn, int fd, ssize_t begin, ssize_t end, bool end_of_data = true) {
-    std::vector<uint8_t> buffer;
-    ssize_t offset = begin;
-    while (offset < end) {
-        auto chunk = std::min(FILE_READ_SIZE, end - offset);
-        buffer.resize(static_cast<size_t>(chunk));
-        auto nread = co_await disk_read(fd, buffer.data(), static_cast<uint32_t>(chunk), static_cast<uint64_t>(offset));
+    if (begin >= end) co_return stream_result::ok;
+
+    // Double-buffer pipeline: while writing chunk[n] submit the read for
+    // chunk[n+1] so both I/Os are in flight simultaneously.
+    std::array<std::vector<uint8_t>, 2> bufs;
+    int cur = 0;
+
+    // Prime: read first chunk before entering the loop.
+    {
+        auto chunk = std::min(FILE_READ_SIZE, end - begin);
+        bufs[cur].resize(static_cast<size_t>(chunk));
+        auto nread = co_await disk_read(fd, bufs[cur].data(),
+                                        static_cast<uint32_t>(chunk),
+                                        static_cast<uint64_t>(begin));
         if (nread <= 0) co_return stream_result::ok;
-        buffer.resize(static_cast<size_t>(nread));
+        bufs[cur].resize(static_cast<size_t>(nread));
+    }
+    ssize_t offset = begin;
+    offset += static_cast<ssize_t>(bufs[cur].size());
+
+    // prefetch lives in the coroutine frame across co_await boundaries so its
+    // uring_token address is stable for the duration of the in-flight SQE.
+    disk_read_awaitable prefetch{};
+    bool has_prefetch = false;
+
+    while (true) {
+        const bool is_last = (offset >= end) && end_of_data;
+        int nxt = 1 - cur;
+
+        // Submit the next read *before* suspending for the write so both SQEs
+        // are in flight at the same time.
+        has_prefetch = (offset < end);
+        if (has_prefetch) {
+            auto next_chunk = std::min(FILE_READ_SIZE, end - offset);
+            bufs[nxt].resize(static_cast<size_t>(next_chunk));
+            prefetch = disk_read(fd, bufs[nxt].data(),
+                                 static_cast<uint32_t>(next_chunk),
+                                 static_cast<uint64_t>(offset));
+            prefetch.start();  // SQE submitted; coroutine continues without suspending
+        }
+
+        auto res = co_await conn.write_data(bufs[cur], is_last);
+        if (res != stream_result::ok) [[unlikely]] {
+            // Drain the in-flight read before destroying its token.
+            if (has_prefetch) co_await prefetch;
+            co_return res;
+        }
+        if (!has_prefetch) break;
+
+        // Await the pre-started read — will likely be done already if the
+        // network send was the bottleneck.
+        auto nread = co_await prefetch;
+        has_prefetch = false;
+        if (nread <= 0) break;
+        bufs[nxt].resize(static_cast<size_t>(nread));
         offset += nread;
-        const bool is_last_chunk = (offset >= end) && end_of_data;
-        auto res = co_await conn.write_data(buffer, is_last_chunk);
-        if (res != stream_result::ok) [[unlikely]] co_return res;
+        cur = nxt;
     }
     co_return stream_result::ok;
 }

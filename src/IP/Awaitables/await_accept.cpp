@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <atomic>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <sys/types.h>
@@ -77,7 +78,7 @@ bool acceptable::await_ready() const noexcept {
 bool acceptable::await_suspend(std::coroutine_handle<> coroutine) {
 #ifdef __linux__
     if (executor_singleton().m_reactor.uring_ok()) {
-        m_token.handle = coroutine;
+        std::atomic_ref<std::coroutine_handle<>>{m_token.handle}.store(coroutine, std::memory_order_release);
         if (executor_singleton().m_reactor.submit_accept(m_server_fd, &m_addr, &m_addrlen, &m_token)) {
             m_used_uring = true;
             return true;  // suspend; will resume via CQE

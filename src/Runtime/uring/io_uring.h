@@ -19,6 +19,7 @@
 #include <cstring>
 #include <atomic>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 
 // Kernel-compatible 64-bit timespec (matches struct __kernel_timespec)
@@ -180,6 +181,34 @@ static inline void io_uring_prep_sendmsg(struct io_uring_sqe* sqe, int fd,
 static inline void io_uring_prep_nop(struct io_uring_sqe* sqe) {
     std::memset(sqe, 0, sizeof(*sqe));
     sqe->opcode = IORING_OP_NOP;
+}
+
+static inline void io_uring_prep_openat(struct io_uring_sqe* sqe, int dfd,
+                                         const char* path, int flags, mode_t mode) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode     = IORING_OP_OPENAT;
+    sqe->fd         = dfd;
+    sqe->addr       = reinterpret_cast<uint64_t>(path);
+    sqe->open_flags = static_cast<uint32_t>(flags);
+    sqe->len        = static_cast<uint32_t>(mode);
+}
+
+static inline void io_uring_prep_close(struct io_uring_sqe* sqe, int fd) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode = IORING_OP_CLOSE;
+    sqe->fd     = fd;
+}
+
+static inline void io_uring_prep_statx(struct io_uring_sqe* sqe, int dfd,
+                                        const char* path, int flags, unsigned mask,
+                                        struct uring_statx_buf* buf) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode       = IORING_OP_STATX;
+    sqe->fd           = dfd;
+    sqe->addr         = reinterpret_cast<uint64_t>(path);
+    sqe->statx_flags  = static_cast<uint32_t>(flags);
+    sqe->len          = mask;
+    sqe->off          = reinterpret_cast<uint64_t>(buf);
 }
 
 // -----------------------------------------------------------------------

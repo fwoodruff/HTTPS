@@ -63,6 +63,11 @@ public:
                         uring_token* token);
     void submit_connect(int fd, struct sockaddr* addr, socklen_t addrlen,
                         uring_token* token);
+    void submit_openat (int dfd, const char* path, int flags, mode_t mode,
+                        uring_token* token);
+    void submit_close  (int fd, uring_token* token);
+    void submit_statx  (int fd, const char* path, int flags, unsigned mask,
+                        uring_statx_buf* buf, uring_token* token);
 
     // Poll-reactor fallback: used when io_uring is unavailable
     void add_task(int fd, std::coroutine_handle<> handle, IO_direction rw,

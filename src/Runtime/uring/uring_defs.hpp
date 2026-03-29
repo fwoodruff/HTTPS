@@ -85,9 +85,33 @@ enum {
     IORING_OP_LINK_TIMEOUT = 15,
     IORING_OP_ACCEPT       = 13,
     IORING_OP_CONNECT      = 16,
+    IORING_OP_OPENAT       = 18,
+    IORING_OP_CLOSE        = 19,
+    IORING_OP_STATX        = 21,
     IORING_OP_READ         = 22,
     IORING_OP_SEND         = 26,
     IORING_OP_RECV         = 27,
+};
+
+// Constants for file ops — defined here to avoid pulling in <fcntl.h> / <sys/stat.h>
+static constexpr int      URING_AT_FDCWD      = -100;    // dirfd meaning "use CWD"
+static constexpr int      URING_AT_EMPTY_PATH = 0x1000;  // stat the fd itself (empty path)
+static constexpr unsigned URING_STATX_SIZE    = 0x200u;  // request stx_size field only
+
+// Minimal statx buffer — matches the kernel ABI stable since Linux 4.11.
+// We only need stx_size; the rest is padding to keep the struct the correct size.
+struct uring_statx_buf {
+    uint32_t stx_mask;
+    uint32_t stx_blksize;
+    uint64_t stx_attributes;
+    uint32_t stx_nlink;
+    uint32_t stx_uid;
+    uint32_t stx_gid;
+    uint16_t stx_mode;
+    uint16_t _spare0;
+    uint64_t stx_ino;
+    uint64_t stx_size;   // offset 40 — the field we care about
+    uint8_t  _rest[256 - 48];
 };
 
 // SQ / CQ ring offset descriptors (populated by io_uring_setup)

@@ -121,7 +121,7 @@ jobs:
       - run:
           name: Copy binary and config to Raspberry Pi
           command: |
-            scp -o StrictHostKeyChecking=no -o BatchMode=yes target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/codeymccodeface.dev
+            scp -o StrictHostKeyChecking=no -o BatchMode=yes target/codeymccodeface.armv6 freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/codeymccodeface.dev.new
             rsync -avz --delete resources/MIME/ freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/MIME/
             rsync -avz --delete resources/tld.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/resources/
             scp -o StrictHostKeyChecking=no dev_config.txt freddiewoodruff@freddiewoodruff.co.uk:~/doc/deploy/dev_config.txt
@@ -132,6 +132,7 @@ jobs:
               cd ~/doc/deploy;
               [ -f dev_codey.pid ] && sudo kill $(cat dev_codey.pid) 2>/dev/null || true;
               rm -f dev_codey.pid;
+              mv codeymccodeface.dev.new codeymccodeface.dev;
               chmod +x codeymccodeface.dev;
               sudo sh -c "nohup ./codeymccodeface.dev --config dev_config.txt > dev_codey.log 2>&1 < /dev/null & echo \$! > dev_codey.pid"
             '

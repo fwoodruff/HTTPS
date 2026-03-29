@@ -37,7 +37,7 @@ bool readable::await_suspend(std::coroutine_handle<> continuation) {
             m_token.res = -EAGAIN;
             return false;
         }
-        m_token.handle = awaiting_coroutine;
+        m_token.handle = continuation;
         executor_singleton().m_reactor.submit_recv(
             m_fd, m_buffer->data(), static_cast<uint32_t>(m_buffer->size()),
             &m_token, m_millis);
@@ -128,7 +128,7 @@ bool writeable::await_suspend(std::coroutine_handle<> continuation) {
     assert(m_buffer);
 #ifdef __linux__
     if (executor_singleton().m_reactor.uring_ok()) {
-        m_token.handle = awaiting_coroutine;
+        m_token.handle = continuation;
         executor_singleton().m_reactor.submit_send(
             m_fd, m_buffer->data(), static_cast<uint32_t>(m_buffer->size()),
             &m_token, m_millis);

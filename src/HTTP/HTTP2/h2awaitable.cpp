@@ -90,7 +90,7 @@ bool h2readable::await_suspend(std::coroutine_handle<> continuation) {
     m_bytes_read = cx.read_data(m_data, m_stream_id);
     if(m_bytes_read == std::nullopt) {
         std::scoped_lock lk { h2_contx->m_coro_mut };
-        h2_contx->m_coros.insert({m_stream_id, {continuation, true}});
+        h2_contx->m_coros.insert({static_cast<uint32_t>(m_stream_id), {continuation, true}});
         return true;
     }
     return false;

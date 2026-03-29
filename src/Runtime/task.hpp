@@ -42,7 +42,18 @@ public:
         bool await_ready() const noexcept { return false; }
         template<typename PROMISE>
         std::coroutine_handle<> await_suspend(std::coroutine_handle<PROMISE> coro) noexcept {
-            return coro.promise().m_continuation;
+            auto& p = coro.promise();
+            if (p.m_started) {
+                // Eager-start protocol — mirrors the uring_token release/acquire pattern:
+                //   Release-store 'done' so the awaiter's acquire-load of 'done' sees it.
+                //   Acquire-load 'cont' to close the window where the awaiter stored the
+                //   handle between our done-store and this cont-load.
+                p.m_eager_done.store(true, std::memory_order_release);
+                void* ptr = p.m_eager_cont.load(std::memory_order_acquire);
+                if (ptr) return std::coroutine_handle<>::from_address(ptr);
+                return std::noop_coroutine(); // await_suspend will detect done=true
+            }
+            return p.m_continuation;
         }
         void await_resume() noexcept { }
     };
@@ -58,6 +69,17 @@ public:
     void unhandled_exception() {
         m_exception = std::current_exception();
     }
+
+    // Eager-start support.
+    // m_started is set by task::start() before resuming the coroutine.
+    // final_suspend and task::awaitable::await_suspend use the release/acquire
+    // atomic protocol on m_eager_done / m_eager_cont to avoid a race between
+    // the task completing on one thread and the awaiter registering its handle
+    // on another.
+    bool m_started = false;
+    std::atomic<bool>  m_eager_done { false };
+    std::atomic<void*> m_eager_cont { nullptr }; // nullptr = no awaiter yet
+
 protected:
     std::exception_ptr m_exception = nullptr;
 private:
@@ -126,16 +148,40 @@ class task {
 public:
     using promise_type = task_promise<T>;
     struct awaitable {
-        bool await_ready() const noexcept { return !m_coroutine || m_coroutine.done(); }
+        std::coroutine_handle<promise_type> m_coroutine;
+
+        bool await_ready() const noexcept {
+            if (!m_coroutine || m_coroutine.done()) return true;
+            if (m_coroutine.promise().m_started) {
+                // For an eager-started task: check the atomic done flag (acquire
+                // so we see the stored result before calling await_resume).
+                return m_coroutine.promise().m_eager_done.load(std::memory_order_acquire);
+            }
+            return false;
+        }
         template<class Promise>
         std::coroutine_handle<> await_suspend( std::coroutine_handle<Promise> awaiting_coroutine ) noexcept {
-            m_coroutine.promise().set_continuation( awaiting_coroutine );
+            auto& p = m_coroutine.promise();
+            if (p.m_started) {
+                // Eager-start protocol — mirrors the uring_token release/acquire pattern:
+                //   Release-store 'cont' so final_suspend's acquire-load of 'cont' sees it.
+                //   Acquire-load 'done' to close the window where final_suspend stored done
+                //   between our cont-store and this done-load.
+                p.m_eager_cont.store(awaiting_coroutine.address(), std::memory_order_release);
+                if (p.m_eager_done.load(std::memory_order_acquire)) {
+                    // Task completed between await_ready() and here; final_suspend saw
+                    // cont==null and returned noop.  Resume the awaiter immediately.
+                    return awaiting_coroutine;
+                }
+                // Not done yet; final_suspend will load our cont and resume us.
+                return std::noop_coroutine();
+            }
+            p.set_continuation( awaiting_coroutine );
             return m_coroutine;
         }
         decltype(auto) await_resume() {
             return m_coroutine.promise().result();
         }
-        std::coroutine_handle<promise_type> m_coroutine;
     };
     awaitable operator co_await() {
         return { m_coroutine };
@@ -162,6 +208,24 @@ public:
         return *this;
     }
     explicit task(std::coroutine_handle<promise_type> coroutine) : m_coroutine(coroutine) {}
+
+    explicit operator bool() const noexcept { return m_coroutine != nullptr; }
+
+    // Start the task without suspending the caller.
+    //
+    // Drives the task's coroutine until it first suspends (typically at an
+    // io_uring SQE submission).  Returns immediately; the caller can do other
+    // work and co_await the task later.  The result is retrieved via the normal
+    // co_await path, which uses the eager-start atomic protocol to avoid a race
+    // between the task completing on another thread and the awaiter registering.
+    //
+    // Requires: the task has not already been started or awaited.
+    void start() {
+        assert(m_coroutine && !m_coroutine.promise().m_started && !m_coroutine.done());
+        m_coroutine.promise().m_started = true;
+        m_coroutine.resume();
+    }
+
 private:
     std::coroutine_handle<promise_type> m_coroutine;
 };

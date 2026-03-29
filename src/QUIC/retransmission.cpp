@@ -13,6 +13,7 @@
 #include <map>
 #include <span>
 #include <limits>
+#include <algorithm>
 #include <cassert>
 
 // see RFC 9002 for pseudocode

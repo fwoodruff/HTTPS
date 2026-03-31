@@ -68,6 +68,8 @@ public:
     void submit_close  (int fd, uring_token* token);
     void submit_statx  (int fd, const char* path, int flags, unsigned mask,
                         uring_statx_buf* buf, uring_token* token);
+    void submit_write  (int fd, const void* buf, uint32_t len, uint64_t offset,
+                        uring_token* token);
 
     // Poll-reactor fallback: used when io_uring is unavailable
     void add_task(int fd, std::coroutine_handle<> handle, IO_direction rw,

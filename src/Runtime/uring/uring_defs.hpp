@@ -89,6 +89,7 @@ enum {
     IORING_OP_CLOSE        = 19,
     IORING_OP_STATX        = 21,
     IORING_OP_READ         = 22,
+    IORING_OP_WRITE        = 23,
     IORING_OP_SEND         = 26,
     IORING_OP_RECV         = 27,
 };

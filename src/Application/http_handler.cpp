@@ -7,6 +7,7 @@
 
 #include "http_handler.hpp"
 #include "../Runtime/task.hpp"
+#include "../Runtime/disk_io.hpp"
 #include "../HTTP/common/HTTP.hpp"
 #include "../HTTP/common/string_utils.hpp"
 #include "../HTTP/common/mimemap.hpp"
@@ -319,15 +320,8 @@ task<bool> handle_request(http_ctx& connection) {
     const auto path = find_header(request_headers, ":path");
     [[maybe_unused]] const auto scheme = find_header(request_headers, ":scheme");
 
-    FILE* ip_ban = fopen(fbw::project_options.ip_ban_file.c_str(), "a");
-    if (!ip_ban) {
-        throw std::runtime_error("failed to open ip ban file");
-    }
-    auto timestamp = build_iso_8601_current_timestamp();
-    auto ip = connection.get_ip();
-    fprintf(ip_ban, "[%s] HTTP    ip=%s detail=%s %s\n", timestamp.c_str(), ip.c_str(), method.value_or("BAD").c_str(), path.value_or("/malformed").c_str());
-    fflush(ip_ban);
-    fclose(ip_ban);
+    write_to_file(project_options.ip_ban_file.string(), "[" + build_iso_8601_current_timestamp() + "] HTTP    ip=" + connection.get_ip()
+                        + " detail=" + method.value_or("BAD") + " " + path.value_or("/malformed") + "\n");
     
     if(is_websocket_upgrade(request_headers)) {
         co_await handle_websocket(connection, request_headers);

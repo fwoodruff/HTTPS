@@ -11,15 +11,18 @@
 #define disk_io_hpp
 
 #include <cstdint>
+#include <string>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "task.hpp"
+#include "executor.hpp"
+
 #ifdef __linux__
 
 #include "uring_reactor.hpp"
-#include "executor.hpp"
 
 struct disk_read_awaitable {
     int      fd;
@@ -85,6 +88,28 @@ struct file_close_awaitable {
     void await_resume() const noexcept {}
 };
 
+// Async write: caller owns the buffer in their coroutine frame; suspends until the CQE fires.
+// offset = -1 uses current file position (respects O_APPEND).
+struct file_write_awaitable {
+    int         fd;
+    std::string msg;    // owned here — lives in the coroutine frame
+    uring_token token {};
+    bool        m_sync = false;
+
+    bool await_ready() noexcept {
+        m_sync = !executor_singleton().m_reactor.uring_ok();
+        if (m_sync) ::write(fd, msg.data(), static_cast<unsigned>(msg.size()));
+        return m_sync;
+    }
+    void await_suspend(std::coroutine_handle<> h) {
+        token.handle = h;
+        executor_singleton().m_reactor.submit_write(fd, msg.data(),
+                                                     static_cast<unsigned>(msg.size()),
+                                                     static_cast<uint64_t>(-1), &token);
+    }
+    void await_resume() const noexcept {}
+};
+
 // Async stat: returns file size >= 0 on success, or negative errno on failure.
 struct file_stat_size_awaitable {
     int              fd;
@@ -115,6 +140,17 @@ struct file_stat_size_awaitable {
 };
 
 #else // non-Linux: synchronous wrappers as always-ready awaitables
+
+struct file_write_awaitable {
+    int fd;
+    std::string msg;
+    file_write_awaitable(int fd_, std::string msg_) : fd(fd_), msg(std::move(msg_)) {
+        ::write(fd, msg.data(), msg.size());
+    }
+    bool await_ready()                       const noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) noexcept {}
+    void await_resume()                      const noexcept {}
+};
 
 struct disk_read_awaitable {
     int      fd;
@@ -175,6 +211,23 @@ inline file_close_awaitable file_close(int fd) {
 
 inline file_stat_size_awaitable file_stat_size(int fd) {
     return { fd };
+}
+
+inline file_write_awaitable file_write(int fd, std::string msg) {
+    return { fd, std::move(msg) };
+}
+
+// Fire-and-forget: opens path, appends msg, closes. Caller does not co_await this.
+inline task<void> write_to_file_task(std::string path, std::string msg) {
+    int fd = co_await file_open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd >= 0) {
+        co_await file_write(fd, std::move(msg));
+        co_await file_close(fd);
+    }
+}
+
+inline void write_to_file(std::string path, std::string msg) {
+    async_spawn(write_to_file_task(std::move(path), std::move(msg)));
 }
 
 #endif // disk_io_hpp

@@ -175,6 +175,16 @@ void uring_reactor::submit_statx(int fd, const char* path, int flags,
     io_uring_submit(&m_ring);
 }
 
+void uring_reactor::submit_write(int fd, const void* buf, uint32_t len,
+                                  uint64_t offset, uring_token* token) {
+    std::scoped_lock lk { m_sq_mut };
+    auto* sqe = io_uring_get_sqe(&m_ring);
+    if (!sqe) throw std::runtime_error("io_uring SQ ring full (submit_write)");
+    io_uring_prep_write(sqe, fd, buf, len, offset);
+    io_uring_sqe_set_data64(sqe, reinterpret_cast<uint64_t>(token));
+    io_uring_submit(&m_ring);
+}
+
 // -----------------------------------------------------------------------
 // Poll reactor fallback delegation
 // -----------------------------------------------------------------------

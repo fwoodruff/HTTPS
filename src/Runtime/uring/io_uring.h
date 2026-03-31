@@ -158,6 +158,16 @@ static inline void io_uring_prep_read(struct io_uring_sqe* sqe, int fd,
     sqe->len    = len;
 }
 
+static inline void io_uring_prep_write(struct io_uring_sqe* sqe, int fd,
+                                        const void* buf, unsigned len, uint64_t offset) {
+    std::memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode = IORING_OP_WRITE;
+    sqe->fd     = fd;
+    sqe->off    = offset;
+    sqe->addr   = reinterpret_cast<uint64_t>(buf);
+    sqe->len    = len;
+}
+
 static inline void io_uring_prep_recvmsg(struct io_uring_sqe* sqe, int fd,
                                           struct msghdr* msg, unsigned flags) {
     std::memset(sqe, 0, sizeof(*sqe));

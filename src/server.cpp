@@ -9,6 +9,7 @@
 
 #include "TLS/protocol.hpp"
 #include "Runtime/executor.hpp"
+#include "Runtime/disk_io.hpp"
 #include "IP/listener.hpp"
 #include "HTTP/common/HTTP.hpp"
 #include "HTTP/HTTP2/h2proto.hpp"
@@ -136,16 +137,7 @@ task<void> https_server(std::shared_ptr<limiter> ip_connections, fbw::tcplistene
                 }
                 continue;
             }
-            FILE* ip_ban = fopen(fbw::project_options.ip_ban_file.c_str(), "a");
-            if (!ip_ban) {
-                throw std::runtime_error("failed to open ip ban file");
-            }
-
-            auto timestamp = fbw::build_iso_8601_current_timestamp();
-            auto ip = client->get_ip();
-            fprintf(ip_ban, "[%s] CONNECT ip=%s\n", timestamp.c_str(), ip.c_str());
-            fflush(ip_ban);
-            fclose(ip_ban);
+            write_to_file(fbw::project_options.ip_ban_file.string(), "[" + fbw::build_iso_8601_current_timestamp() + "] CONNECT ip=" + client->get_ip() + "\n");
             auto conn = co_await ip_connections->add_connection(client->m_ip);
             if(conn == std::nullopt) [[unlikely]] {
                 continue;
@@ -173,16 +165,7 @@ task<void> redirect_server(std::shared_ptr<limiter> ip_connections, fbw::tcplist
                 continue;
             }
 
-            FILE* ip_ban = fopen(fbw::project_options.ip_ban_file.c_str(), "a");
-            if (!ip_ban) {
-                throw std::runtime_error("failed to open ip ban file");
-            }
-            auto timestamp = fbw::build_iso_8601_current_timestamp();
-            auto ip = client->get_ip();
-            fprintf(ip_ban, "[%s] CONNECT ip=%s\n", timestamp.c_str(), ip.c_str());
-            fflush(ip_ban);
-            fclose(ip_ban);
-
+            write_to_file(fbw::project_options.ip_ban_file.string(), "[" + fbw::build_iso_8601_current_timestamp() + "] CONNECT ip=" + client->get_ip() + "\n");
             auto conn = co_await ip_connections->add_connection(client->m_ip);
             if(conn == std::nullopt) [[unlikely]] {
                 continue;

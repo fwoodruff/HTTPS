@@ -130,7 +130,7 @@ jobs:
               cd ~/doc/deploy;
               mv codeymccodeface.dev.new codeymccodeface.dev;
               chmod +x codeymccodeface.dev;
-              sudo systemctl restart codeymccodefacemccodeface-dev
+              sudo systemctl restart codeymccodeface-dev
             '
       - run:
           name: Smoke-test dev deployment

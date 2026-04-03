@@ -45,7 +45,7 @@ struct proxy_rule {
 struct options {
     std::string redirect_port;
     std::string server_port;
-    std::string ip_ban_file;
+    std::filesystem::path ip_ban_file;
     std::filesystem::path certificate_file;
     std::filesystem::path key_file;
     std::filesystem::path key_folder;

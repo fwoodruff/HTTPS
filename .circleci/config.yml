@@ -98,11 +98,9 @@ jobs:
           command: |
             ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
               cd ~/doc/deploy;
-              [ -f codey.pid ] && sudo kill $(cat codey.pid) || true;
-              rm -f codey.pid;
               mv codeymccodeface.armv6 codeymccodeface
               mv bench_chacha.armv6 bench_chacha
-              sudo sh -c "nohup ./codeymccodeface --config config.txt >codey.log 2>&1 < /dev/null & echo \$! > codey.pid"
+              sudo systemctl restart codeymccodeface
             '
 
   deploy-dev:
@@ -130,11 +128,9 @@ jobs:
           command: |
             ssh -o StrictHostKeyChecking=no freddiewoodruff@freddiewoodruff.co.uk '
               cd ~/doc/deploy;
-              [ -f dev_codey.pid ] && sudo kill $(cat dev_codey.pid) 2>/dev/null || true;
-              rm -f dev_codey.pid;
               mv codeymccodeface.dev.new codeymccodeface.dev;
               chmod +x codeymccodeface.dev;
-              sudo sh -c "nohup ./codeymccodeface.dev --config dev_config.txt > dev_codey.log 2>&1 < /dev/null & echo \$! > dev_codey.pid"
+              sudo systemctl restart codeymccodeface-dev
             '
       - run:
           name: Smoke-test dev deployment

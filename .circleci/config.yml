@@ -151,19 +151,17 @@ workflows:
     jobs:
       - test
       - docker-build
-      - deploy:
-          requires:
-            - test
-            - docker-build
-          filters:
-            branches:
-              only:
-                - main
       - deploy-dev:
           requires:
             - test
             - docker-build
           filters:
             branches:
-              ignore:
+              ignore: []
+      - deploy:
+          requires:
+            - deploy-dev
+          filters:
+            branches:
+              only:
                 - main

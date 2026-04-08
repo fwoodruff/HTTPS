@@ -9,6 +9,7 @@
 #include "../../../global.hpp"
 #include "AES.hpp"
 #include "../../TLS_enums.hpp"
+#include "../../TLS_utils.hpp"
 #include "../one_way/sha2.hpp"
 
 #include <cstdlib>
@@ -248,7 +249,7 @@ std::vector<uint8_t> aes_gcm_ad(roundkey rk, std::vector<uint8_t> iv,
     aes_gcm_gctr(rk, J0, crypt.data(), crypt.size(), plain.data());
     std::vector<uint8_t> S = aes_gcm_ghash(H, aad, crypt.data(), crypt.size());
     aes_gctr(rk, J0, S.data(), S.size(), &T[0]);
-    if(!std::equal(tag.begin(), tag.end(), T.begin())) [[unlikely]] {
+    if(!ct_equal(tag, T)) [[unlikely]] {
         throw ssl_error("bad tag", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     return plain;

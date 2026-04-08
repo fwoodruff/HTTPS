@@ -12,6 +12,7 @@
 #include "../../../global.hpp"
 #include "../one_way/keccak.hpp"
 #include "../../TLS_enums.hpp"
+#include "../../TLS_utils.hpp"
 
 #include <algorithm>
 #include <iomanip>
@@ -174,7 +175,7 @@ tls_record AES_CBC_SHA::deprotect(tls_record record) {
     auto machash = std::move(ctx).hash();
     
 
-    if(!std::equal(mac_calc.cbegin(), mac_calc.cend(), machash.cbegin())) {
+    if(!ct_equal(mac_calc, machash)) {
         throw ssl_error("bad client MAC", AlertLevel::fatal, AlertDescription::bad_record_mac);
     }
     if(pad_oracle_attack) {

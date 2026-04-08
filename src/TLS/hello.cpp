@@ -275,7 +275,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
 
     // cipher suites
     auto cipher_bytes = der_span_read(hello, idx, 2);
-    for(size_t i = 0; i < cipher_bytes.size()-1; i+= 2) {
+    for(size_t i = 0; i + 1 < cipher_bytes.size(); i+= 2) {
         auto suite_value = try_bigend_read(cipher_bytes, i, 2);
         record.cipher_su.push_back(static_cast<cipher_suites>(suite_value));
     }
@@ -395,11 +395,15 @@ void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
 }
 
 std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
-    assert(!peer_key.key.empty());
+    if (peer_key.key.empty()) {
+        throw ssl_error("empty key share", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
     switch(peer_key.key_type) {
         case NamedGroup::x25519:
         {
-            assert(peer_key.key.size() == curve25519::PUBKEY_SIZE);
+            if (peer_key.key.size() != curve25519::PUBKEY_SIZE) {
+                throw ssl_error("bad x25519 key share size", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
             std::array<uint8_t, curve25519::PUBKEY_SIZE> cli_pub;
             std::copy(peer_key.key.begin(), peer_key.key.end(), cli_pub.begin());
             auto shared_secret = curve25519::multiply(server_private_key_ephem, cli_pub);
@@ -408,7 +412,9 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
         }
         case NamedGroup::secp256r1:
         {
-            assert(peer_key.key.size() == secp256r1::PUBKEY_SIZE);
+            if (peer_key.key.size() != secp256r1::PUBKEY_SIZE) {
+                throw ssl_error("bad secp256r1 key share size", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
             std::array<uint8_t, secp256r1::PUBKEY_SIZE> cli_pub;
             std::copy_n(peer_key.key.begin(), secp256r1::PUBKEY_SIZE, cli_pub.begin());
             auto shared_secret = secp256r1::multiply(server_private_key_ephem, cli_pub);
@@ -416,8 +422,7 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
             return shared_secret_str;
         }
         default:
-            assert(false);
-            break;
+            throw ssl_error("unsupported key share group", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 }
 

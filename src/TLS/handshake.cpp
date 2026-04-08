@@ -527,7 +527,7 @@ void handshake_ctx::client_handshake_finished13_record(const std::vector<uint8_t
     auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
     auto verify_data = do_hmac(*hash_ctor, client_finished_key, server_finished_hash);
 
-    if (handshake_message.size() < 4 + verify_data.size()) {
+    if (handshake_message.size() != 4 + verify_data.size()) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     {

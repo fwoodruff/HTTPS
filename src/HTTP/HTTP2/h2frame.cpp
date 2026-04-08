@@ -56,11 +56,15 @@ h2_continuation::h2_continuation() {
 }
 
 std::unique_ptr<h2frame> h2frame::deserialise(const std::vector<uint8_t>& frame_bytes) { // todo, span
-    assert(frame_bytes.size() >= H2_FRAME_HEADER_SIZE);
+    if(frame_bytes.size() < H2_FRAME_HEADER_SIZE) {
+        throw h2_error("frame too short for header", h2_code::FRAME_SIZE_ERROR);
+    }
     auto type = static_cast<h2_type>(frame_bytes[3]);
     try {
         auto size = try_bigend_read(frame_bytes, 0, 3);
-        assert(size == frame_bytes.size() - H2_FRAME_HEADER_SIZE);
+        if(size != frame_bytes.size() - H2_FRAME_HEADER_SIZE) {
+            throw h2_error("frame length field mismatch", h2_code::FRAME_SIZE_ERROR);
+        }
         using enum h2_type;
         switch(type) {
             case DATA: 
@@ -100,7 +104,9 @@ std::unique_ptr<h2frame> h2frame::deserialise(const std::vector<uint8_t>& frame_
 
 std::unique_ptr<h2_data> deserialise_DATA(const std::vector<uint8_t>& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
-    assert(size + H2_FRAME_HEADER_SIZE == frame_bytes.size());
+    if(size + H2_FRAME_HEADER_SIZE != frame_bytes.size()) {
+        throw h2_error("DATA frame length mismatch", h2_code::FRAME_SIZE_ERROR);
+    }
     auto frame = std::make_unique<h2_data>();
     set_base_frame_values(*frame, frame_bytes);
     if(frame->flags & h2_flags::PADDED) {
@@ -119,7 +125,9 @@ std::unique_ptr<h2_data> deserialise_DATA(const std::vector<uint8_t>& frame_byte
 
 std::unique_ptr<h2_headers> deserialise_HEADERS(const std::vector<uint8_t>& frame_bytes) {
     auto size = try_bigend_read(frame_bytes, 0, 3);
-    assert(size + H2_FRAME_HEADER_SIZE == frame_bytes.size());
+    if(size + H2_FRAME_HEADER_SIZE != frame_bytes.size()) {
+        throw h2_error("HEADERS frame length mismatch", h2_code::FRAME_SIZE_ERROR);
+    }
     auto frame = std::make_unique<h2_headers>();
     set_base_frame_values(*frame, frame_bytes);
     size_t idx = 0;

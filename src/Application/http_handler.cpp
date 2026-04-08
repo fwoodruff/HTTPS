@@ -138,7 +138,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size,
     std::string mid_bound =  "--" + boundary_string + "\r\nContent-Type: " + mime + "\r\n";
     std::string end_bound = "--" + boundary_string + "--\r\n";
 
-    auto content_size = 0;
+    size_t content_size = 0;
     for(auto& range : ranges) {
         content_size += mid_bound.size();
         content_size += http1_1_range_header(range, file_size).size();

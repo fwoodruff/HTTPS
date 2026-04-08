@@ -32,6 +32,9 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
             switch(entry[0]) {
                 case 0: // DNS hostname
                 {
+                    if(entry.size() < 3) {
+                        return {};
+                    }
                     size_t name_len = try_bigend_read(entry, 1, 2);
                     const auto subdomain_name_span = entry.subspan(3);
                     if(name_len != subdomain_name_span.size()) {
@@ -109,7 +112,7 @@ std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_
 std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
     std::vector<CertificateCompressionAlgorithm> out;
     auto cert_algos = der_span_read(extension_data, 0, 1);
-    while(!cert_algos.empty()) {
+    while(cert_algos.size() >= 2) {
         auto algo = static_cast<CertificateCompressionAlgorithm>(try_bigend_read(cert_algos, 0, 2));
         out.push_back(algo);
         cert_algos = cert_algos.subspan(2);
@@ -162,6 +165,9 @@ preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
         auto psk = der_span_read(psk_ids, 0, 2);
         pre_shared_key_entry psk_entry {};
         psk_entry.m_key = {psk.begin(), psk.end()};
+        if(psk_ids.size() < psk.size() + 6) {
+            throw ssl_error("truncated PSK identity extension", AlertLevel::fatal, AlertDescription::decode_error);
+        }
         psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size() + 2, 4);
         psk_exts.m_keys.push_back(std::move(psk_entry));
         psk_ids = psk_ids.subspan(psk.size() + 6);

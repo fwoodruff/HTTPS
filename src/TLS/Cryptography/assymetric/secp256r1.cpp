@@ -274,12 +274,37 @@ std::pair<ct_u256,ct_u256> point_multiply(ct_u256 secret, const ct_u256& x_coord
     return project_to_affine(out);
 }
 
+// Checks that a peer point is a valid, non-identity point on secp256r1.
+// Rejects the point at infinity and points not satisfying y^2 = x^3 - 3x + b (mod p).
+// This prevents invalid-curve attacks that can leak the server's private key.
+static bool is_valid_public_point(const ct_u256& x, const ct_u256& y) noexcept {
+    if (x >= secp256r1_p || y >= secp256r1_p) return false;
+    if (x == "0x0"_xl && y == "0x0"_xl) return false; // point at infinity
+    constexpr ct_u256 b = "0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b"_xl;
+    // Compute lhs = y^2 mod p, rhs = x^3 - 3x + b mod p using Montgomery arithmetic.
+    auto xm = REDC(x * RR_P);
+    auto ym = REDC(y * RR_P);
+    auto y2 = REDC(ym * ym);                        // y^2
+    auto x2 = REDC(xm * xm);                        // x^2
+    auto x3 = REDC(x2 * xm);                        // x^3
+    auto bm = REDC(b * RR_P);
+    // x^3 - 3x + b: add b, subtract 3x
+    auto rhs = add_mod(x3, bm, secp256r1_p);
+    auto x3x = add_mod(xm, add_mod(xm, xm, secp256r1_p), secp256r1_p); // 3x
+    rhs = sub_mod(rhs, x3x, secp256r1_p);
+    return y2 == rhs;
+}
+
 std::array<uint8_t, 32> multiply(const std::array<uint8_t, 32>& private_key, const std::array<uint8_t, 65>& peer_public_key) noexcept {
     // convert point to x and y coords
     std::array<uint8_t, 32> x_coord {};
     std::array<uint8_t, 32> y_coord {};
     std::copy(peer_public_key.begin() + 1, peer_public_key.begin() + 33, x_coord.begin());
     std::copy(peer_public_key.begin() + 33, peer_public_key.end(), y_coord.begin());
+
+    if (!is_valid_public_point(ct_u256(x_coord), ct_u256(y_coord))) {
+        return {};  // caller (get_shared_secret) checks for empty result and throws ssl_error
+    }
 
     auto [ x, y ] = point_multiply(private_key, x_coord, y_coord);
     const auto xser = x.serialise();

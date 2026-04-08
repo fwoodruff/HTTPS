@@ -421,9 +421,15 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
             if (peer_key.key.size() != secp256r1::PUBKEY_SIZE) {
                 throw ssl_error("bad secp256r1 key share size", AlertLevel::fatal, AlertDescription::handshake_failure);
             }
+            if (peer_key.key[0] != 0x04) {
+                throw ssl_error("secp256r1 key share must be uncompressed", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
             std::array<uint8_t, secp256r1::PUBKEY_SIZE> cli_pub;
             std::copy_n(peer_key.key.begin(), secp256r1::PUBKEY_SIZE, cli_pub.begin());
             auto shared_secret = secp256r1::multiply(server_private_key_ephem, cli_pub);
+            if (std::all_of(shared_secret.begin(), shared_secret.end(), [](uint8_t b){ return b == 0; })) {
+                throw ssl_error("secp256r1 key share produced invalid shared secret", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
             auto shared_secret_str = std::vector<uint8_t>(shared_secret.begin(), shared_secret.end());
             return shared_secret_str;
         }
@@ -463,7 +469,7 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             return { shared_secret, { NamedGroup::X25519MLKEM768, server_keyshare } };
         }
         default:
-            assert(false);
+            throw ssl_error("unsupported key share group in process_client_key_share", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 }
 

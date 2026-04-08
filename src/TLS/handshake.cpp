@@ -43,7 +43,7 @@ cipher_suites choose_cipher(const hello_record_data& rec) {
             case TLS12:
                 throw ssl_error("inconsistent description of client version", AlertLevel::fatal, AlertDescription::decode_error);
             default:
-                assert(false);
+                break;
         }
     }
     if(rec.legacy_client_version == TLS11) {
@@ -135,7 +135,7 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
             break;
         
         default:
-            assert(false);
+            throw ssl_error("unsupported cipher suite", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     assert(hash_ctor);
     handshake_hasher = hash_ctor->clone();

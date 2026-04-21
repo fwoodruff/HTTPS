@@ -69,6 +69,7 @@ public:
             // Recheck count now that we are registered; if it went positive
             // between the failed try_acquire and the fetch_add above we would
             // otherwise sleep forever.
+            std::atomic_thread_fence(std::memory_order_seq_cst);
             int v = m_count.load(std::memory_order_acquire);
             if (v > 0) {
                 m_waiters.fetch_sub(1, std::memory_order_relaxed);
@@ -84,6 +85,7 @@ public:
     // Release n units. Wakes at most n waiters only if any are registered.
     void release(ptrdiff_t update = 1) noexcept {
         m_count.fetch_add(static_cast<int>(update), std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_seq_cst);
         if (m_waiters.load(std::memory_order_acquire) > 0) {
             futex_wake(m_count, static_cast<int>(update));
         }

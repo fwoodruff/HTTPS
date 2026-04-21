@@ -49,6 +49,28 @@ jobs:
             # cat request.txt | openssl s_client -connect localhost:8443 -tls1_3 -sess_out session.pem
             # openssl s_client -connect localhost:8443 -tls1_3 -early_data request.txt -sess_in session.pem 2>&1 
 
+  verify-memory-model:
+    docker:
+      - image: ocaml/opam:debian-12-ocaml-5.3
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - herdtools7-v2-{{ arch }}
+      - run:
+          name: Install system dependencies
+          command: sudo apt-get update && sudo apt-get install -y pkg-config libgmp-dev
+      - run:
+          name: Install herdtools7
+          command: opam install -y herdtools7
+      - save_cache:
+          key: herdtools7-v2-{{ arch }}
+          paths:
+            - ~/.opam
+      - run:
+          name: Verify memory ordering
+          command: make verify
+
   docker-build:
     docker:
       - image: cimg/base:stable
@@ -150,11 +172,13 @@ workflows:
   build_and_deploy:
     jobs:
       - test
+      - verify-memory-model
       - docker-build
       - deploy-dev:
           requires:
             - test
             - docker-build
+            - verify-memory-model
           filters:
             branches:
               ignore: []

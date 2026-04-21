@@ -108,6 +108,12 @@ test:
 test-deps:
 	pip3 install -r llm-tests/requirements.txt --break-system-packages
 
+verify:
+	herd7/run.sh
+
+verify-deps:
+	opam install herdtools7 -y
+
 armv6: | $(TARGET_DIR)
 	docker build --progress=plain -t containerymccontainerface -f Dockerfile.armv6 .
 	c_id=$$(docker create containerymccontainerface) && \
@@ -115,4 +121,4 @@ armv6: | $(TARGET_DIR)
 	  docker rm $$c_id
 
 # Phony target to prevent conflicts with files named "clean"
-.PHONY: clean test test-deps bench armv6
+.PHONY: clean test test-deps bench armv6 verify verify-deps

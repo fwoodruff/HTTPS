@@ -46,11 +46,14 @@ void write_body(std::string body) {
     auto path = (project_options.webpage_folder/project_options.default_subfolder/"final.html").string();
     FILE* fout = fopen(path.c_str(), "a");
     if (!fout) return;
-    body = replace_all(std::move(body), "username=", "username: ");
-    body = replace_all(std::move(body), "&password=", ", password: ");
-    body = replace_all(std::move(body), "&confirm=", ", confirmed: ");
+    body = replace_all(std::move(body), "&", "&amp;");
     body = replace_all(std::move(body), "<", "&lt;");
     body = replace_all(std::move(body), ">", "&gt;");
+    body = replace_all(std::move(body), "\"", "&quot;");
+    body = replace_all(std::move(body), "'", "&#39;");
+    body = replace_all(std::move(body), "username=", "username: ");
+    body = replace_all(std::move(body), "&amp;password=", ", password: ");
+    body = replace_all(std::move(body), "&amp;confirm=", ", confirmed: ");
     body.insert(0, "<p>");
     body.append("</p>\n");
     fwrite(body.data(), 1, body.size(), fout);
@@ -138,7 +141,7 @@ task<void> send_multi_ranged_response(http_ctx& conn, int fd, ssize_t file_size,
     std::string mid_bound =  "--" + boundary_string + "\r\nContent-Type: " + mime + "\r\n";
     std::string end_bound = "--" + boundary_string + "--\r\n";
 
-    auto content_size = 0;
+    size_t content_size = 0;
     for(auto& range : ranges) {
         content_size += mid_bound.size();
         content_size += http1_1_range_header(range, file_size).size();
@@ -407,8 +410,15 @@ task<bool> handle_redirect(http_ctx& connection) {
     if (colon != std::string::npos) {
         domain = domain.substr(0, colon);
     }
+    // Strip CR/LF to prevent HTTP response splitting in HTTP/1.1 Location headers.
+    auto strip_crlf = [](std::string s) {
+        s.erase(std::remove_if(s.begin(), s.end(), [](char c){ return c == '\r' || c == '\n'; }), s.end());
+        return s;
+    };
+    domain = strip_crlf(std::move(domain));
 
     std::filesystem::path a_path = *path;
+    std::string clean_path = strip_crlf(a_path.string());
 
     if (*method == "GET" && a_path.string().starts_with("/.well-known/acme-challenge/")) {
         auto webroot = project_options.webpage_folder;
@@ -436,7 +446,7 @@ task<bool> handle_redirect(http_ctx& connection) {
     
     std::string https_port = project_options.server_port;
     std::string optional_port = (https_port == "443" or https_port == "https") ? "" : ":" + https_port;
-    std::string location_resource = a_path == "/" ? "" : a_path;
+    std::string location_resource = (clean_path == "/" ? "" : clean_path);
     std::vector<entry_t> out;
 
     std::string location = "https://" + domain + optional_port + location_resource;

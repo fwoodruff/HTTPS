@@ -102,6 +102,17 @@ public:
     }
 };
 
+// Constant-time equality check to prevent timing side-channel attacks on MACs/tags.
+template<typename A, typename B>
+[[nodiscard]] bool ct_equal(const A& a, const B& b) {
+    if (a.size() != b.size()) return false;
+    uint8_t diff = 0;
+    for (size_t i = 0; i < a.size(); i++) {
+        diff |= static_cast<uint8_t>(a[i]) ^ static_cast<uint8_t>(b[i]);
+    }
+    return diff == 0;
+}
+
 void certificates_serial(tls_record& record, std::string domain, bool use_tls13);
 std::optional<tls_record> try_extract_record(std::vector<uint8_t>& input);
 

@@ -6,6 +6,7 @@
 //
 
 #include "h2_ctx.hpp"
+#include <limits>
 
 namespace fbw {
 
@@ -204,7 +205,10 @@ std::vector<id_new> h2_context::receive_data_frame(const h2_data& frame) {
         return {};
     }
 
-    int32_t data_length = frame.contents.size();
+    if(frame.contents.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+        throw h2_error("DATA frame payload exceeds int32 range", h2_code::FRAME_SIZE_ERROR);
+    }
+    int32_t data_length = static_cast<int32_t>(frame.contents.size());
     
     // Check stream-level flow control
     if (data_length > stream.stream_current_receive_window_remaining) {
@@ -326,6 +330,10 @@ std::vector<id_new> h2_context::receive_continuation_frame(const h2_continuation
         headers = &strm.m_received_trailers;
     }
     strm.header_block.insert(strm.header_block.end(), frame.field_block_fragment.begin(), frame.field_block_fragment.end());
+    constexpr size_t MAX_HEADER_BLOCK_SIZE = 65536;
+    if (strm.header_block.size() > MAX_HEADER_BLOCK_SIZE) {
+        throw h2_error("header block too large", h2_code::ENHANCE_YOUR_CALM);
+    }
     if(frame.flags & h2_flags::END_HEADERS) {
         headers_partially_sent_stream_id = 0;
         *headers = m_hpack.parse_field_block(strm.header_block);

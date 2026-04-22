@@ -359,6 +359,22 @@ std::pair<ssize_t, ssize_t> get_range_bounds(ssize_t file_size, std::pair<ssize_
     return {begin, end};
 }
 
+static std::string html_escape(std::string s) {
+    // & must be replaced first to avoid double-escaping subsequent entities
+    auto replace_inplace = [](std::string& str, std::string_view from, std::string_view to) {
+        size_t pos = 0;
+        while ((pos = str.find(from, pos)) != std::string::npos) {
+            str.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    };
+    replace_inplace(s, "&", "&amp;");
+    replace_inplace(s, "<", "&lt;");
+    replace_inplace(s, ">", "&gt;");
+    replace_inplace(s, "\"", "&quot;");
+    return s;
+}
+
 std::string error_to_html(int status, std::string message) {
     auto it = http_code_map.find(status);
     std::string standard_msg;
@@ -367,7 +383,7 @@ std::string error_to_html(int status, std::string message) {
     }
     auto s = std::to_string(status);
     return "<!DOCTYPE html>\n<html>\n<head><title>\n" + s + " " + standard_msg +
-           "\n</title></head>\n\t<body><h1>\n" + s + " " + message + "</h1></body>\n</html>";
+           "\n</title></head>\n\t<body><h1>\n" + s + " " + html_escape(std::move(message)) + "</h1></body>\n</html>";
 }
 
 

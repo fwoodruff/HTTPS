@@ -190,6 +190,9 @@ bool HTTP2::resume_back_pressure() {
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(std::deque<uint8_t>& buffer)  {
     if(buffer.size() >= 3) {
         auto size = try_bigend_read(buffer, 0, 3);
+        if(size > MAX_FRAME_SIZE) {
+            throw h2_error("frame exceeds maximum allowed size", h2_code::FRAME_SIZE_ERROR);
+        }
         if(size + H2_FRAME_HEADER_SIZE <= buffer.size()) {
             std::vector<uint8_t> frame_bytes;
             frame_bytes.assign(buffer.begin(), buffer.begin() + size + H2_FRAME_HEADER_SIZE);

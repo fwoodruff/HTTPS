@@ -32,6 +32,9 @@ std::vector<std::string> get_SNI(std::span<const uint8_t> servernames) {
             switch(entry[0]) {
                 case 0: // DNS hostname
                 {
+                    if(entry.size() < 3) {
+                        return {};
+                    }
                     size_t name_len = try_bigend_read(entry, 1, 2);
                     const auto subdomain_name_span = entry.subspan(3);
                     if(name_len != subdomain_name_span.size()) {
@@ -109,7 +112,7 @@ std::vector<uint16_t> get_supported_versions(std::span<const uint8_t> extension_
 std::vector<CertificateCompressionAlgorithm> get_certificate_compression_algos(std::span<const uint8_t> extension_data) {
     std::vector<CertificateCompressionAlgorithm> out;
     auto cert_algos = der_span_read(extension_data, 0, 1);
-    while(!cert_algos.empty()) {
+    while(cert_algos.size() >= 2) {
         auto algo = static_cast<CertificateCompressionAlgorithm>(try_bigend_read(cert_algos, 0, 2));
         out.push_back(algo);
         cert_algos = cert_algos.subspan(2);
@@ -162,6 +165,9 @@ preshared_key_ext get_preshared_keys(std::span<const uint8_t> extension_data) {
         auto psk = der_span_read(psk_ids, 0, 2);
         pre_shared_key_entry psk_entry {};
         psk_entry.m_key = {psk.begin(), psk.end()};
+        if(psk_ids.size() < psk.size() + 6) {
+            throw ssl_error("truncated PSK identity extension", AlertLevel::fatal, AlertDescription::decode_error);
+        }
         psk_entry.m_obfuscated_age = try_bigend_read(psk_ids, psk.size() + 2, 4);
         psk_exts.m_keys.push_back(std::move(psk_entry));
         psk_ids = psk_ids.subspan(psk.size() + 6);
@@ -275,7 +281,7 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
 
     // cipher suites
     auto cipher_bytes = der_span_read(hello, idx, 2);
-    for(size_t i = 0; i < cipher_bytes.size()-1; i+= 2) {
+    for(size_t i = 0; i + 1 < cipher_bytes.size(); i+= 2) {
         auto suite_value = try_bigend_read(cipher_bytes, i, 2);
         record.cipher_su.push_back(static_cast<cipher_suites>(suite_value));
     }
@@ -395,11 +401,15 @@ void write_pre_shared_key_extension(tls_record& record, uint16_t key_id) {
 }
 
 std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_key_ephem, key_share peer_key) {
-    assert(!peer_key.key.empty());
+    if (peer_key.key.empty()) {
+        throw ssl_error("empty key share", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
     switch(peer_key.key_type) {
         case NamedGroup::x25519:
         {
-            assert(peer_key.key.size() == curve25519::PUBKEY_SIZE);
+            if (peer_key.key.size() != curve25519::PUBKEY_SIZE) {
+                throw ssl_error("bad x25519 key share size", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
             std::array<uint8_t, curve25519::PUBKEY_SIZE> cli_pub;
             std::copy(peer_key.key.begin(), peer_key.key.end(), cli_pub.begin());
             auto shared_secret = curve25519::multiply(server_private_key_ephem, cli_pub);
@@ -408,16 +418,23 @@ std::vector<uint8_t> get_shared_secret(std::array<uint8_t, 32> server_private_ke
         }
         case NamedGroup::secp256r1:
         {
-            assert(peer_key.key.size() == secp256r1::PUBKEY_SIZE);
+            if (peer_key.key.size() != secp256r1::PUBKEY_SIZE) {
+                throw ssl_error("bad secp256r1 key share size", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
+            if (peer_key.key[0] != 0x04) {
+                throw ssl_error("secp256r1 key share must be uncompressed", AlertLevel::fatal, AlertDescription::handshake_failure);
+            }
             std::array<uint8_t, secp256r1::PUBKEY_SIZE> cli_pub;
             std::copy_n(peer_key.key.begin(), secp256r1::PUBKEY_SIZE, cli_pub.begin());
             auto shared_secret = secp256r1::multiply(server_private_key_ephem, cli_pub);
+            if (std::all_of(shared_secret.begin(), shared_secret.end(), [](uint8_t b){ return b == 0; })) {
+                throw ssl_error("secp256r1 key share produced invalid shared secret", AlertLevel::fatal, AlertDescription::illegal_parameter);
+            }
             auto shared_secret_str = std::vector<uint8_t>(shared_secret.begin(), shared_secret.end());
             return shared_secret_str;
         }
         default:
-            assert(false);
-            break;
+            throw ssl_error("unsupported key share group", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 }
 
@@ -452,7 +469,7 @@ std::pair<std::vector<uint8_t>, key_share> process_client_key_share(const key_sh
             return { shared_secret, { NamedGroup::X25519MLKEM768, server_keyshare } };
         }
         default:
-            assert(false);
+            throw ssl_error("unsupported key share group in process_client_key_share", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
 }
 

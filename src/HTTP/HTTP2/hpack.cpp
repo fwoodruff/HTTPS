@@ -238,6 +238,9 @@ void hpack::set_decoder_max_capacity(uint32_t capacity) {
 }
 
 std::string decode_string(const std::vector<uint8_t>& encoded, size_t& offset) {
+    if(offset >= encoded.size()) {
+        throw h2_error("HPACK string decode out of bounds", h2_code::COMPRESSION_ERROR);
+    }
     bool is_huffman = (encoded[offset] & 0x80) != 0;
     uint32_t size = decode_integer(encoded, offset, 7);
     if(is_huffman) {
@@ -272,7 +275,7 @@ std::string decode_huffman(std::span<const uint8_t> encoded_str) {
                 current_bits = 0;
                 bit_size = 0;
             }
-            if(bit_size > 32) {
+            if(bit_size > 30) {
                 throw h2_error("bad Huffman encoding", h2_code::COMPRESSION_ERROR);
             }
         }
@@ -466,7 +469,9 @@ std::vector<uint8_t> dynamic_table_size_update(size_t size) {
 }
 
 std::pair<hpack::prefix_type, uint32_t> hpack::decode_prefix(const std::vector<uint8_t>& encoded, size_t& offset) {
-    assert(offset < encoded.size());
+    if(offset >= encoded.size()) {
+        throw h2_error("HPACK prefix decode out of bounds", h2_code::COMPRESSION_ERROR);
+    }
     uint8_t byte = encoded[offset];
     int prefix_bytes = 0;
     prefix_type type;

@@ -80,12 +80,14 @@ template<typename T>
 
 template<typename T>
 [[nodiscard("returns span")]] inline std::span<const uint8_t> der_span_read(const T& container, size_t idx, size_t nbytes) {
-    auto size = try_bigend_read(container, idx, nbytes );
-    if(container.size() < idx + nbytes + size) {
+    auto size = try_bigend_read(container, idx, nbytes);
+    // Use subtraction-based check to avoid idx+nbytes+size wrapping on 32-bit builds.
+    const size_t prefix = idx + nbytes; // safe: try_bigend_read verified idx+nbytes-1 < container.size()
+    if(size > container.size() - prefix) {
         throw std::out_of_range{"out of range"};
     }
-    std::span<const uint8_t> a_view( container.begin() + idx + nbytes, size);
-    return  a_view;
+    std::span<const uint8_t> a_view(container.begin() + prefix, size);
+    return a_view;
 }
 
 

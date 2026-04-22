@@ -43,7 +43,7 @@ cipher_suites choose_cipher(const hello_record_data& rec) {
             case TLS12:
                 throw ssl_error("inconsistent description of client version", AlertLevel::fatal, AlertDescription::decode_error);
             default:
-                assert(false);
+                break;
         }
     }
     if(rec.legacy_client_version == TLS11) {
@@ -135,7 +135,7 @@ void handshake_ctx::set_cipher_ctx(cipher_suites cipher_suite) {
             break;
         
         default:
-            assert(false);
+            throw ssl_error("unsupported cipher suite", AlertLevel::fatal, AlertDescription::handshake_failure);
     }
     assert(hash_ctor);
     handshake_hasher = hash_ctor->clone();
@@ -275,7 +275,7 @@ std::tuple<std::vector<uint8_t>, std::optional<size_t>, bool> handshake_ctx::get
         }
         auto received_binder = client_hello.pre_shared_key->m_psk_binder_entries[i];
         std::vector<uint8_t> computed_binder = compute_binder(*hash_ctor, ticket->resumption_secret, prefix_hash);
-        if(received_binder != computed_binder ) {
+        if(!ct_equal(received_binder, computed_binder)) {
             continue;
         }
         auto ticket_number = ticket->number_once;
@@ -527,9 +527,14 @@ void handshake_ctx::client_handshake_finished13_record(const std::vector<uint8_t
     auto client_finished_key = hkdf_expand_label(*hash_ctor, tls13_key_schedule.client_handshake_traffic_secret, "finished", std::string(""), hash_ctor->get_hash_size());
     auto verify_data = do_hmac(*hash_ctor, client_finished_key, server_finished_hash);
 
-    if (handshake_message.size() < 4 + verify_data.size() or 
-        ! std::equal(verify_data.begin(), verify_data.end(), handshake_message.begin() + 4)) {
+    if (handshake_message.size() != 4 + verify_data.size()) {
         throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
+    }
+    {
+        std::vector<uint8_t> got(handshake_message.begin() + 4, handshake_message.begin() + 4 + verify_data.size());
+        if (!ct_equal(verify_data, got)) {
+            throw ssl_error("bad verification", AlertLevel::fatal, AlertDescription::handshake_failure);
+        }
     }
     handshake_hasher->update(handshake_message);
     auto client_finished_hash = handshake_hasher->hash();
@@ -723,8 +728,11 @@ void handshake_ctx::client_handshake_finished12_record(const std::vector<uint8_t
     auto handshake_hash = handshake_hasher->hash();
     std::vector<uint8_t> expected_finished = prf(*hash_ctor, tls12_master_secret, "client finished", handshake_hash, 12);
 
-    if (!std::equal(expected_finished.begin(), expected_finished.end(), handshake_message.begin() + 4)) [[unlikely]] {
-        throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
+    {
+        std::vector<uint8_t> got(handshake_message.begin() + 4, handshake_message.begin() + 4 + expected_finished.size());
+        if (!ct_equal(expected_finished, got)) [[unlikely]] {
+            throw ssl_error("handshake verification failed", AlertLevel::fatal, AlertDescription::handshake_failure);
+        }
     }
     handshake_hasher->update(handshake_message);
 }

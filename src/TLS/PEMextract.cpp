@@ -16,6 +16,16 @@
 
 
 namespace fbw {
+
+// Reject SNI values containing path traversal characters.
+static bool is_safe_domain(const std::string& domain) {
+    if (domain.empty()) return false;
+    for (char c : domain) {
+        if (c == '/' || c == '\\' || c == '\0') return false;
+    }
+    if (domain.find("..") != std::string::npos) return false;
+    return true;
+}
 uint8_t letter_to_num(uint8_t byt) {
     if(byt >='A' and byt <= 'Z') {
         return byt-'A';
@@ -75,6 +85,9 @@ std::array<uint8_t,32> deserialise(std::vector<uint8_t> asn1) {
 }
 
 std::array<uint8_t,32> privkey_for_domain(std::string domain) {
+    if (!is_safe_domain(domain)) {
+        domain = "";
+    }
     auto privkey_file = project_options.key_folder / domain / project_options.key_file;
     if (!std::filesystem::exists(privkey_file) && domain.starts_with("www.")) {
         privkey_file = project_options.key_folder / domain.substr(4) / project_options.key_file;
@@ -117,6 +130,9 @@ std::array<uint8_t,32> privkey_from_file(std::filesystem::path filename) {
 }
 
 std::vector<std::vector<uint8_t>> der_cert_for_domain(std::string domain) {
+    if (!is_safe_domain(domain)) {
+        domain = "";
+    }
     auto cert_file = project_options.key_folder / domain / project_options.certificate_file;
     if (!std::filesystem::exists(cert_file) && domain.starts_with("www.")) {
         cert_file = project_options.key_folder / domain.substr(4) / project_options.certificate_file;

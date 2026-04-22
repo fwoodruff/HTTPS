@@ -146,7 +146,7 @@ task<void> HTTP1::client() {
             for(auto& entry : headers ) {
                 if(entry.name == "content-length") {
                     try {
-                        content_length_to_read = std::stoi( entry.value );
+                        content_length_to_read = std::stoll( entry.value );
                     } catch(const std::exception& e) {
                         throw http_error(400, "Bad Request");
                     }

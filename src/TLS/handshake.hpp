@@ -36,7 +36,7 @@ enum class ServerHelloType {
     hello_retry,
 };
 
-constexpr size_t SESSION_HASHSET_SIZE = 256;
+constexpr size_t SESSION_HASHSET_SIZE = 16384;
 extern std::array<std::atomic<uint64_t>, SESSION_HASHSET_SIZE> session_ticket_numbers_once;
 
 class handshake_ctx {  

@@ -38,7 +38,7 @@ struct hazard_pointer {
         for(;;) {
             T* local = src.load(acquire);
             m_ptr->store(local, seq_cst);
-            if (local == src.load(acquire)) {
+            if (local == src.load(seq_cst)) {
                 return local;
             }
         }

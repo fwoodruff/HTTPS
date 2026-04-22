@@ -108,7 +108,11 @@ std::optional<std::pair<std::vector<uint8_t>, uint64_t>> decrypt_message(std::ve
     macgen.absorb(ciphertext.data(), ciphertext.size() - mac_size);
     macgen.squeeze(mac.data(), mac.size());
 
-    if(!std::equal(mac.begin(), mac.end(), ciphertext.end() - mac_size)) {
+    std::array<uint8_t, mac_size> mac_got;
+    std::copy(ciphertext.end() - mac_size, ciphertext.end(), mac_got.begin());
+    uint8_t mac_diff = 0;
+    for (size_t i = 0; i < mac_size; i++) mac_diff |= mac[i] ^ mac_got[i];
+    if(mac_diff != 0) {
         return std::nullopt;
     }
     ciphertext.resize(ciphertext.size() - mac_size);

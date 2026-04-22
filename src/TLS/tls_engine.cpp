@@ -591,8 +591,12 @@ std::pair<bool, tls_record> tls_engine::client_heartbeat_record(tls_record recor
     }
 
     auto payload_length = try_bigend_read(heartbeat_message, 1, 2);
-    if (payload_length >  heartbeat_message.size() - 3) {
+    if (payload_length > heartbeat_message.size() - 3) {
         return { true, {}};
+    }
+    constexpr size_t MAX_HEARTBEAT_PAYLOAD = 256;
+    if (payload_length > MAX_HEARTBEAT_PAYLOAD) {
+        payload_length = MAX_HEARTBEAT_PAYLOAD;
     }
 
     std::vector<uint8_t> length_and_payload(heartbeat_message.begin() + 1,

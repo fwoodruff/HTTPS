@@ -11,6 +11,9 @@
 
 #include "../common/string_utils.hpp"
 
+#include <algorithm>
+#include <string_view>
+
 namespace fbw {
 
 extern const std::unordered_map<hpack_huffman_bit_pattern, uint8_t> huffman_decode;
@@ -283,6 +286,64 @@ std::string decode_huffman(std::span<const uint8_t> encoded_str) {
     return result;
 }
 
+// RFC 9110 5.6.2 tchar, minus the uppercase letters that RFC 9113 8.2.1 forbids in
+// HTTP/2 field names.
+static bool is_lowercase_tchar(unsigned char c) {
+    if(c >= 'a' and c <= 'z') {
+        return true;
+    }
+    if(c >= '0' and c <= '9') {
+        return true;
+    }
+    switch(c) {
+        case '!': case '#': case '$': case '%': case '&': case '\'':
+        case '*': case '+': case '-': case '.': case '^': case '_':
+        case '`': case '|': case '~':
+            return true;
+        default:
+            return false;
+    }
+}
+
+// HPACK places no restriction on the octets a field carries, so without this check a
+// peer can smuggle CR/LF (or NUL) through a header value. Anything that later
+// re-serialises the request as HTTP/1.1 - the reverse proxy, the request log - would
+// then emit attacker-chosen header lines or whole extra requests.
+// RFC 9113 8.2.1 and 8.2.2.
+static void validate_field(const entry_t& entry) {
+    if(entry.name.empty()) {
+        throw h2_error("empty header field name", h2_code::PROTOCOL_ERROR);
+    }
+    const bool is_pseudo = entry.name.front() == ':';
+    for(size_t i = is_pseudo ? 1 : 0; i < entry.name.size(); i++) {
+        if(!is_lowercase_tchar(static_cast<unsigned char>(entry.name[i]))) {
+            throw h2_error("invalid header field name", h2_code::PROTOCOL_ERROR);
+        }
+    }
+    static const std::array<std::string_view, 5> connection_specific {
+        "connection", "keep-alive", "proxy-connection", "transfer-encoding", "upgrade"
+    };
+    if(std::find(connection_specific.begin(), connection_specific.end(), entry.name) != connection_specific.end()) {
+        throw h2_error("connection-specific header field", h2_code::PROTOCOL_ERROR);
+    }
+    if(entry.name == "te" and entry.value != "trailers") {
+        throw h2_error("te header field may only carry \"trailers\"", h2_code::PROTOCOL_ERROR);
+    }
+    for(char ch : entry.value) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        if(c == 0x00 or c == 0x0a or c == 0x0d) {
+            throw h2_error("invalid header field value", h2_code::PROTOCOL_ERROR);
+        }
+    }
+    if(!entry.value.empty()) {
+        const char first = entry.value.front();
+        const char last = entry.value.back();
+        if(first == ' ' or first == '\t' or last == ' ' or last == '\t') {
+            throw h2_error("header field value is padded with whitespace", h2_code::PROTOCOL_ERROR);
+        }
+    }
+}
+
 std::vector<entry_t> hpack::parse_field_block(const std::vector<uint8_t>& field_block_fragment) {
     size_t offset = 0;
     std::vector<entry_t> entries;
@@ -291,6 +352,7 @@ std::vector<entry_t> hpack::parse_field_block(const std::vector<uint8_t>& field_
         if(!entry) {
             continue;
         }
+        validate_field(*entry);
         entries.push_back(std::move(*entry));
     }
     if(offset != field_block_fragment.size()) {
@@ -497,7 +559,9 @@ std::pair<hpack::prefix_type, uint32_t> hpack::decode_prefix(const std::vector<u
 }
 
 std::optional<entry_t> hpack::decode_hpack_string(const std::vector<uint8_t>& encoded, size_t& offset) {
-    assert(offset < encoded.size());
+    if(offset >= encoded.size()) {
+        throw h2_error("HPACK field decode out of bounds", h2_code::COMPRESSION_ERROR);
+    }
     auto [type, idx] = decode_prefix(encoded, offset);
     using enum prefix_type;
 

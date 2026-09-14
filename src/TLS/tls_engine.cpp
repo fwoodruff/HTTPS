@@ -234,6 +234,10 @@ void tls_engine::write_record_sync(std::queue<packet_timed>& output, tls_record 
     output.push({record.serialise(), timeout});
 }
 
+// Cap on a partially received handshake message. The protocol allows up to 2^24-1
+// bytes, which would let a peer pin that much memory per connection for free.
+constexpr size_t MAX_HANDSHAKE_REASSEMBLY = 1u << 16;
+
 std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshake_record, std::vector<uint8_t>& fragment) {
     std::vector<std::vector<uint8_t>> messages;
     fragment.insert(fragment.end(), handshake_record.m_contents.begin(), handshake_record.m_contents.end());
@@ -242,14 +246,17 @@ std::vector<std::vector<uint8_t>> extract_handshake_messages(tls_record handshak
     while(offset + 4 <= fragment.size()) {
         size_t message_size = try_bigend_read(fragment, offset + 1, 3);
         if (offset + 4 + message_size > fragment.size()) {
-            fragment.assign(fragment.begin() + offset, fragment.end());
             break;
         }
         messages.emplace_back(fragment.begin() + offset, fragment.begin() + offset + 4 + message_size);
         offset += 4 + message_size;
     }
-    if (offset == fragment.size()) {
-        fragment.clear();
+    // Drop consumed messages unconditionally. Trimming only on the incomplete-message
+    // path left the consumed bytes in place whenever 1-3 bytes of the next message
+    // header trailed behind, so those messages were replayed on the next record.
+    fragment.erase(fragment.begin(), fragment.begin() + offset);
+    if (fragment.size() > MAX_HANDSHAKE_REASSEMBLY) [[unlikely]] {
+        throw ssl_error("handshake message too large to reassemble", AlertLevel::fatal, AlertDescription::record_overflow);
     }
     return messages;
 }

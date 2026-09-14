@@ -14,8 +14,12 @@
 
 #include <deque>
 #include <optional>
+#include <string_view>
 
 namespace fbw {
+
+// Upper bound on a single chunk we will buffer from a backend response.
+constexpr size_t MAX_BACKEND_CHUNK_SIZE = 8u << 20;
 
 // Strip absolute-form URI (e.g. from Zscaler/forward proxies):
 //   "https://example.com/foo?bar" -> "/foo?bar"
@@ -31,6 +35,11 @@ static std::string effective_path(const std::string& path) {
         return (path_start != std::string::npos) ? path.substr(path_start) : "/";
     }
     return path;
+}
+
+// CR, LF and NUL end (or split) a line in every HTTP/1.1 parser worth worrying about.
+static bool has_request_delimiter(std::string_view s) {
+    return s.find_first_of(std::string_view("\r\n\0", 3)) != std::string_view::npos;
 }
 
 // Parse a chunk-size line, stripping optional chunk extensions ("; ext=val")
@@ -74,11 +83,20 @@ task<void> handle_proxy_request(http_ctx& conn,
     // Normalise path: strip absolute-form URI that forward proxies may send
     std::string norm_path = effective_path(path);
 
-    std::string stripped = norm_path.substr(rule.frontend_path.size());
+    std::string stripped = (norm_path.size() >= rule.frontend_path.size())
+                             ? norm_path.substr(rule.frontend_path.size())
+                             : std::string{};
     if (stripped.empty() || stripped[0] == '?') {
         stripped = "/" + stripped;
     }
     std::string backend_request_path = rule.backend_path + stripped;
+
+    // Anything that reaches the request line or a header line has to be free of the
+    // octets that terminate them, or the client controls what the backend parses as a
+    // separate header - or as a whole second, smuggled request.
+    if (has_request_delimiter(method) || has_request_delimiter(backend_request_path)) {
+        throw http_error(400, "Bad Request");
+    }
 
     // Build HTTP/1.1 request
     std::string request = method + " " + backend_request_path + " HTTP/1.1\r\n";
@@ -98,9 +116,20 @@ task<void> handle_proxy_request(http_ctx& conn,
             }
             continue;
         }
+        if (has_request_delimiter(h.name) || has_request_delimiter(h.value)) {
+            throw http_error(400, "Bad Request");
+        }
         request += h.name + ": " + h.value + "\r\n";
-        if (h.name == "content-length" && std::stoll(h.value) > 0) {
-            has_body = true;
+        if (h.name == "content-length") {
+            // A non-numeric Content-Length would otherwise escape as a std::invalid_argument,
+            // which no caller on this path catches.
+            try {
+                if (std::stoll(h.value) > 0) {
+                    has_body = true;
+                }
+            } catch (const std::exception&) {
+                throw http_error(400, "Bad Request");
+            }
         }
     }
     request += "connection: close\r\n\r\n";
@@ -204,6 +233,9 @@ task<void> handle_proxy_request(http_ctx& conn,
             }
             size_t chunk_sz = *chunk_sz_opt;
             if (chunk_sz == 0) {
+                break;
+            }
+            if (chunk_sz > MAX_BACKEND_CHUNK_SIZE) {
                 break;
             }
             while (resp_buf.size() < chunk_sz) {

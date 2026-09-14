@@ -415,7 +415,9 @@ tls_record handshake_ctx::server_hello_record() {
 
     // session_id
     if(middlebox_compatibility()) {
-        hello_record.write1(32);
+        // legacy_session_id_echo must be the client's id verbatim; writing a fixed 32
+        // here produced a malformed ServerHello for any other length.
+        hello_record.write1(uint8_t(client_hello.client_session_id.size()));
         hello_record.write(client_hello.client_session_id); // session ID
     } else {
         hello_record.write1(0); // session ID

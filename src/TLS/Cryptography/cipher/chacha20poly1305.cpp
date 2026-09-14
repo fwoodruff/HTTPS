@@ -18,6 +18,7 @@
 #include <cstring>
 #include <algorithm>
 #include <array>
+#include <bit>
 
 namespace fbw::cha {
 

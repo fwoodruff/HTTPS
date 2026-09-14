@@ -220,29 +220,38 @@ task<void> handle_get_request(http_ctx& conn, const std::filesystem::path& file_
     int fd = co_await file_open(to_serve.c_str(), O_RDONLY);
     if (fd < 0) throw http_error(404, "Not Found");
 
-    ssize_t file_size = co_await file_stat_size(fd);
-    if (file_size < 0) {
-        co_await file_close(fd);
-        throw http_error(404, "Not Found");
-    }
+    // Everything past the open must funnel through the close below: parse_range_header
+    // throws a 416 on a malformed Range header, and leaking the descriptor there lets a
+    // client exhaust the process file table with a few thousand bad requests.
+    std::exception_ptr pending;
+    try {
+        ssize_t file_size = co_await file_stat_size(fd);
+        if (file_size < 0) {
+            throw http_error(404, "Not Found");
+        }
 
-    std::string mime = Mime_from_file(to_serve);
-    auto range_hdr = find_header(headers, "range");
-    if (range_hdr) {
-        auto ranges = parse_range_header(*range_hdr, file_size);
-        if(ranges.empty()) {
-            co_await file_close(fd);
-            throw http_error(400, "Bad Request");
-        }
-        if(ranges.size() == 1) {
-            co_await send_ranged_response(conn, fd, file_size, mime, ranges[0], send_body);
+        std::string mime = Mime_from_file(to_serve);
+        auto range_hdr = find_header(headers, "range");
+        if (range_hdr) {
+            auto ranges = parse_range_header(*range_hdr, file_size);
+            if(ranges.empty()) {
+                throw http_error(400, "Bad Request");
+            }
+            if(ranges.size() == 1) {
+                co_await send_ranged_response(conn, fd, file_size, mime, ranges[0], send_body);
+            } else {
+                co_await send_multi_ranged_response(conn, fd, file_size, mime, ranges, send_body);
+            }
         } else {
-            co_await send_multi_ranged_response(conn, fd, file_size, mime, ranges, send_body);
+            co_await send_full_response(conn, fd, file_size, mime, send_body);
         }
-    } else {
-        co_await send_full_response(conn, fd, file_size, mime, send_body);
+    } catch(...) {
+        pending = std::current_exception();
     }
     co_await file_close(fd);
+    if(pending) {
+        std::rethrow_exception(pending);
+    }
 }
 
 task<stream_result> read_all(http_ctx& connection, std::deque<uint8_t>& request_body) {
@@ -250,6 +259,11 @@ task<stream_result> read_all(http_ctx& connection, std::deque<uint8_t>& request_
         auto [stream_st, data_done] = co_await connection.append_http_data(request_body);
         if(stream_st != stream_result::ok) {
             co_return stream_st;
+        }
+        // HTTP/2 signals the end of a body by stream state, not by Content-Length, so
+        // without this the peer can stream an unbounded body into memory.
+        if(request_body.size() > size_t(MAX_BODY_SIZE)) {
+            throw http_error(413, "Payload Too Large");
         }
         if(data_done) {
             break;
@@ -276,6 +290,9 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
     if(request_size < 0) {
         throw http_error(400, "Bad Request");
     }
+    if(request_size > MAX_BODY_SIZE) {
+        throw http_error(413, "Payload Too Large");
+    }
 
     std::deque<uint8_t> request_body;
     if(co_await read_all(connection, request_body) != stream_result::ok) {
@@ -287,15 +304,36 @@ task<void> handle_post_request(http_ctx& connection, const std::filesystem::path
     int fd = co_await file_open(file_path.c_str(), O_RDONLY);
     if (fd < 0) throw http_error(404, "Not Found");
 
-    ssize_t file_size = co_await file_stat_size(fd);
-    if (file_size < 0) {
-        co_await file_close(fd);
-        throw http_error(404, "Not Found");
+    std::exception_ptr pending;
+    try {
+        ssize_t file_size = co_await file_stat_size(fd);
+        if (file_size < 0) {
+            throw http_error(404, "Not Found");
+        }
+        co_await send_full_response(connection, fd, file_size, mime, true);
+    } catch(...) {
+        pending = std::current_exception();
     }
-
-    co_await send_full_response(connection, fd, file_size, mime, true);
     co_await file_close(fd);
+    if(pending) {
+        std::rethrow_exception(pending);
+    }
     co_return;
+}
+
+// True when `candidate` is `root` itself or sits underneath it. The three-iterator
+// std::mismatch used before walked off the end of `candidate` whenever it was a proper
+// prefix of `root` (reachable with e.g. a Host header of "..", which canonicalises to
+// the webroot's parent), dereferencing an end iterator.
+bool path_is_within(const std::filesystem::path& root, const std::filesystem::path& candidate) {
+    auto c = candidate.begin();
+    const auto c_end = candidate.end();
+    for(auto r = root.begin(); r != root.end(); ++r, ++c) {
+        if(c == c_end or *c != *r) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string get_host(const std::vector<entry_t>& request_headers) {
@@ -366,7 +404,7 @@ task<bool> handle_request(http_ctx& connection) {
     auto canonical_webroot = std::filesystem::canonical(webroot);
     auto canonical_file = std::filesystem::weakly_canonical(file_path);
 
-    if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
+    if (!path_is_within(canonical_webroot, canonical_file)) {
         throw http_error(403, "Forbidden");
     }
     if(method == "POST") {
@@ -432,7 +470,7 @@ task<bool> handle_redirect(http_ctx& connection) {
         auto file_path = (webroot / acme_domain / a_path.relative_path());
         auto canonical_webroot = std::filesystem::canonical(webroot);
         auto canonical_file = std::filesystem::weakly_canonical(file_path);
-        if (std::mismatch(canonical_webroot.begin(), canonical_webroot.end(), canonical_file.begin()).first != canonical_webroot.end()) {
+        if (!path_is_within(canonical_webroot, canonical_file)) {
             throw http_error(403, "Forbidden");
         }
         co_await handle_get_request(connection, file_path, request_headers, true);

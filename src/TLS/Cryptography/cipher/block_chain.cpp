@@ -131,33 +131,37 @@ tls_record AES_CBC_SHA::deprotect(tls_record record) {
     }
     
     
+    constexpr size_t mac_size = 20; // SHA-1 digest
+
+    // A conforming record always carries a full MAC plus the padding-length byte.
+    // Without this check a short record (e.g. a single ciphertext block) leaves
+    // fewer than mac_size bytes here, and the MAC copy below reads out of bounds.
+    if(plaintext.size() < mac_size + 1) {
+        throw ssl_error("record too short for MAC and padding", AlertLevel::fatal, AlertDescription::bad_record_mac);
+    }
+
     bool pad_oracle_attack = false;
-    
-    assert(plaintext.size() >= 1);
-    size_t siz = plaintext[plaintext.size()-1];
-    if(siz+1+client_MAC_key.size() > plaintext.size()) {
+
+    size_t siz = plaintext.back();
+    if(siz + 1 + mac_size > plaintext.size()) {
         pad_oracle_attack = true;
     }
     const size_t clamped_siz = std::min(siz, plaintext.size() - 1);
     for(size_t i = 0; i < clamped_siz+1; i++) {
-        if(plaintext.size() < 1+i) {
-            throw ssl_error("padding attack", AlertLevel::fatal, AlertDescription::decrypt_error);
-        }
         if(plaintext[plaintext.size()-1-i] != siz) {
             pad_oracle_attack = true;
         }
     }
-    
+
     if(pad_oracle_attack) {
+        // strip only the padding-length byte, so the MAC check below still runs
         siz = 0;
     }
-    
-    assert(plaintext.size() >= siz + 1);
-    plaintext.resize(plaintext.size()-siz-1);
-    std::array<uint8_t, 20> mac_calc {};
-    std::copy(plaintext.crbegin(), plaintext.crbegin() + 20, mac_calc.rbegin());
-    
-    assert(plaintext.size() >= mac_calc.size());
+
+    plaintext.resize(plaintext.size()-siz-1); // leaves at least mac_size bytes
+    std::array<uint8_t, mac_size> mac_calc {};
+    std::copy(plaintext.cend() - mac_size, plaintext.cend(), mac_calc.begin());
+
     plaintext.resize(plaintext.size() - mac_calc.size());
 
     auto ctx = hmac(sha1(), client_MAC_key);

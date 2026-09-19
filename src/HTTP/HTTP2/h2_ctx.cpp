@@ -259,7 +259,7 @@ std::vector<id_new> h2_context::receive_headers_frame(const h2_headers& frame) {
         if(!is_higher_odd(last_client_stream_id, frame.stream_id)) {
             throw h2_error("bad stream id", h2_code::PROTOCOL_ERROR);
         }
-        if(stream_ctx_map.size() > server_settings.max_concurrent_streams) {
+        if(stream_ctx_map.size() >= server_settings.max_concurrent_streams) {
             throw h2_error("too many streams", h2_code::FLOW_CONTROL_ERROR);
         }
         if(go_away_received) {

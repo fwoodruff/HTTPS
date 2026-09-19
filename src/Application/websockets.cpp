@@ -54,7 +54,8 @@ bool is_websocket_upgrade(const std::vector<entry_t>& headers) {
     auto protocol   = find_header(headers, ":protocol");
 
     bool want_http1 = upgrade and (*upgrade) == "websocket" and connection;
-    bool want_http2 = method and to_lower(*method) == "CONNECT" and protocol and to_lower(*protocol) == "websocket";
+    // methods are case sensitive, and to_lower(*method) could never equal "CONNECT"
+    bool want_http2 = method and *method == "CONNECT" and protocol and to_lower(*protocol) == "websocket";
 
     if (want_http1) {
         bool conn_ok = false;

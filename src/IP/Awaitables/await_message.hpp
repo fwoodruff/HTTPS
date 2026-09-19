@@ -21,6 +21,8 @@
 
 #include <span>
 #include <array>
+#include <vector>
+#include <cstdint>
 #include <coroutine>
 #include <optional>
 #include <chrono>

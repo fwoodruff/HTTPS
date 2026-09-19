@@ -276,6 +276,11 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
     // session ID
     size_t idx = 38;
     auto session_id_span = der_span_read(hello, idx, 1);
+    // RFC 8446 4.1.2 caps legacy_session_id at 32 bytes, and the ServerHello echoes it
+    // back behind a one-byte length that the writer hard-codes to 32.
+    if(session_id_span.size() > 32) {
+        throw ssl_error("session id too long", AlertLevel::fatal, AlertDescription::illegal_parameter);
+    }
     record.client_session_id.insert(record.client_session_id.end(), session_id_span.begin(), session_id_span.end());
     idx += (session_id_span.size() + 1);
 
@@ -316,8 +321,8 @@ hello_record_data parse_client_hello(const std::vector<uint8_t>& hello) {
             if(!extensions.empty()) {
                 throw ssl_error("preshared key must be last extension", AlertLevel::fatal, AlertDescription::illegal_parameter);
             }
-            const uint8_t* dptr = &extension_span.front();
-            const uint8_t* dfrom = &hello.front();
+            const uint8_t* dptr = extension_span.data();
+            const uint8_t* dfrom = hello.data();
             assert(record.pre_shared_key);
             auto diff = dptr - dfrom;
             assert(record.pre_shared_key->idxbinders == 0);

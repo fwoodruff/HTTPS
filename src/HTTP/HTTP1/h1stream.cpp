@@ -15,6 +15,11 @@ bool HTTP1::is_done() {
     return false;
 }
 
+static std::string strip_line_delimiters(std::string s) {
+    std::erase_if(s, [](char c) { return c == '\r' or c == '\n' or c == '\0'; });
+    return s;
+}
+
 std::string convert_response_to_http1_headers(const std::vector<entry_t>& headers) {
     std::string status;
     std::ostringstream out;
@@ -32,7 +37,10 @@ std::string convert_response_to_http1_headers(const std::vector<entry_t>& header
             if (h.name.starts_with(":")) {
                 continue;
             }
-            out << h.name << ": " << h.value << "\r\n";
+            // Response headers can originate from a proxied backend. A CR or LF in one
+            // would close the header block early and let the backend dictate the rest of
+            // the response we send to the client.
+            out << strip_line_delimiters(h.name) << ": " << strip_line_delimiters(h.value) << "\r\n";
         }
         out << "\r\n";
         return out.str();
@@ -144,6 +152,12 @@ task<void> HTTP1::client() {
                 continue;
             }
             for(auto& entry : headers ) {
+                // Chunked bodies are not decoded anywhere in this server, so a request
+                // carrying one would leave its body in the read buffer to be parsed as a
+                // pipelined request - or forwarded verbatim to a proxy backend.
+                if(entry.name == "transfer-encoding") {
+                    throw http_error(501, "Not Implemented");
+                }
                 if(entry.name == "content-length") {
                     try {
                         content_length_to_read = std::stoll( entry.value );

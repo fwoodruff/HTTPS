@@ -190,7 +190,10 @@ bool HTTP2::resume_back_pressure() {
 std::pair<std::unique_ptr<h2frame>, bool> extract_frame(std::deque<uint8_t>& buffer)  {
     if(buffer.size() >= 3) {
         auto size = try_bigend_read(buffer, 0, 3);
-        if(size > MAX_FRAME_SIZE) {
+        // The peer must respect SETTINGS_MAX_FRAME_SIZE, which h2_context leaves at the
+        // protocol default. Accepting up to MAX_FRAME_SIZE let a peer make us buffer 16MB
+        // per connection for the price of a 9 byte header.
+        if(size > DEFAULT_MINIMUM_MAX_FRAME_SIZE) {
             throw h2_error("frame exceeds maximum allowed size", h2_code::FRAME_SIZE_ERROR);
         }
         if(size + H2_FRAME_HEADER_SIZE <= buffer.size()) {

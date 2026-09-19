@@ -3,6 +3,7 @@ Regression tests for the HTTP/1.1 request handler: descriptor lifetime, request
 smuggling, and webroot containment.
 """
 
+import os
 import re
 import socket
 import ssl
@@ -51,15 +52,29 @@ def _status(response: bytes) -> int:
 
 
 def _server_pid() -> int:
-    out = subprocess.run(["pgrep", "-f", "codeymccodeface"],
-                         capture_output=True, text=True).stdout.split()
+    try:
+        out = subprocess.run(["pgrep", "-f", "codeymccodeface"],
+                             capture_output=True, text=True).stdout.split()
+    except FileNotFoundError:
+        pytest.skip("pgrep unavailable")
     if not out:
         pytest.skip("cannot locate the server process to count descriptors")
     return int(out[0])
 
 
 def _open_fd_count(pid: int) -> int:
-    proc = subprocess.run(["lsof", "-p", str(pid)], capture_output=True, text=True)
+    # Linux (the CI image) exposes the descriptor table directly; it is both
+    # exact and always present, unlike lsof.  macOS has no /proc, so fall back.
+    fd_dir = os.path.join("/proc", str(pid), "fd")
+    if os.path.isdir(fd_dir):
+        try:
+            return len(os.listdir(fd_dir))
+        except OSError:
+            pytest.skip("cannot read /proc/<pid>/fd")
+    try:
+        proc = subprocess.run(["lsof", "-p", str(pid)], capture_output=True, text=True)
+    except FileNotFoundError:
+        pytest.skip("no /proc and lsof unavailable")
     if proc.returncode != 0 or not proc.stdout:
         pytest.skip("lsof unavailable")
     return len(proc.stdout.splitlines())
